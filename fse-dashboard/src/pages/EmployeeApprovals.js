@@ -151,20 +151,25 @@ export default function EmployeeApprovals() {
   const loadChangeRequests = async () => {
     setChangeReqLoading(true);
     try {
-      const res  = await fetch('http://localhost:4000/api/requests/all');
+      // const res  = await fetch('http://localhost:4000/api/requests/all');
+
+      const res = await fetch(`${EMP_API.replace('/auth', '')}/requests/all`);
+
       const data = await res.json();
       setChangeRequests(Array.isArray(data) ? data : []);
     } catch { } finally { setChangeReqLoading(false); }
   };
 
   const approveChangeReq = async (id) => {
-    const res = await fetch(`http://localhost:4000/api/requests/${id}/approve`, { method: 'PUT' });
+    // const res = await fetch(`http://localhost:4000/api/requests/${id}/approve`, { method: 'PUT' });
+    const res = await fetch(`${EMP_API.replace('/auth', '')}/requests/${id}/approve`, { method: 'PUT' });
     if (res.ok) { setSnack({ open: true, msg: 'Request approved and applied!', sev: 'success' }); loadChangeRequests(); load(); }
     else setSnack({ open: true, msg: 'Failed', sev: 'error' });
   };
 
   const rejectChangeReq = async (id) => {
-    const res = await fetch(`http://localhost:4000/api/requests/${id}/reject`, { method: 'PUT' });
+    // const res = await fetch(`http://localhost:4000/api/requests/${id}/reject`, { method: 'PUT' });
+    const res = await fetch(`${EMP_API.replace('/auth', '')}/requests/${id}/reject`, { method: 'PUT' });
     if (res.ok) { setSnack({ open: true, msg: 'Request rejected', sev: 'warning' }); loadChangeRequests(); }
     else setSnack({ open: true, msg: 'Failed', sev: 'error' });
   };
