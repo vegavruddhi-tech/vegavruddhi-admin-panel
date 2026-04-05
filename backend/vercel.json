@@ -10,7 +10,7 @@
   "crons": [
     {
       "path": "/api/cron_sync",
-      "schedule": "46 16 * * *"
+      "schedule": "55 16 * * *"
     }
   ]
 }
