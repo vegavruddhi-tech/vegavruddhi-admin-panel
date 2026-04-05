@@ -7,6 +7,8 @@ import time
 import threading
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+import subprocess
+import threading
 
 from connect_sheet import load_sheet
 from clean_duplicates import clean_duplicate_columns
@@ -241,6 +243,19 @@ CACHE_DURATION = 300  # seconds (5 minutes)
 def home():
     return {"message": "FSE Dashboard API Running"}
 
+
+
+@app.get("/cron/sync-sheets")
+def cron_sync():
+    try:
+        threading.Thread(
+            target=lambda: subprocess.run(["python", "sync_sheet.py"]),
+            daemon=True
+        ).start()
+
+        return {"status": "Sync started"}
+    except Exception as e:
+        return {"status": "Error", "error": str(e)}
 
 # -----------------------------
 # DATA PIPELINE FUNCTION

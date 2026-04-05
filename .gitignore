@@ -52,3 +52,4 @@ temp/
 *.cache
 
 credentials.json
+google_credentials.json
