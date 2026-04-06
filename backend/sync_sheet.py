@@ -152,8 +152,9 @@ mongo_client.close()
 # ── EXCEL FILE SYNC (Sheet 2 — MSME & Insurance) ──────────────
 import io, requests, openpyxl
 
-EXCEL_RELEVANT = ['MSME MARCH','INSURANCE MARCH','MSME FEB26','INSURANCE FEB26',
-                  'TL CONNECT MARCH','TL CONNECT FEB26']
+# EXCEL_RELEVANT = ['MSME MARCH','INSURANCE MARCH','MSME FEB26','INSURANCE FEB26',
+#                   'TL CONNECT MARCH','TL CONNECT FEB26']
+EXCEL_RELEVANT = [s for s in wb.sheetnames if any(s.upper().startswith(prefix) for prefix in ['MSME', 'INSURANCE'])]
 
 if SHEET_ID_2:
     print(f"\n{'='*55}\n  BC Onboarding Report (Excel)\n{'='*55}")
