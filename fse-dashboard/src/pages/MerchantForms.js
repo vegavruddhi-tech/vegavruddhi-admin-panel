@@ -381,15 +381,14 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditP
     try {
       const phones   = forms.map(f => f.customerNumber).join(',');
       const names    = forms.map(f => encodeURIComponent(f.customerName)).join(',');
-      const products = forms.map(f => encodeURIComponent(f.formFillingFor || '')).join(',');
+      const products = forms.map(f => encodeURIComponent(f.tideProduct || f.formFillingFor || '')).join(',');
       const months   = forms.map(f => encodeURIComponent(
-  new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' })
-)).join(',');
-// e.g. "April 2026"
-
+        new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' })
+      )).join(',');
       const res = await fetch(
-        `${EMP_API}/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&month=${encodeURIComponent(month)}`
+        `${EMP_API}/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`
       );
+
 
       if (res.ok) setVerifyMap(await res.json());
     } catch { /* ignore */ } finally { setVerifying(false); }
