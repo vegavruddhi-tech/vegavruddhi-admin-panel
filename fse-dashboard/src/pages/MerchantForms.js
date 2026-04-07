@@ -844,7 +844,7 @@ export default function MerchantForms() {
       <DuplicatePanel duplicates={duplicates} open={dupOpen} onClose={() => setDupOpen(false)}
         onNotify={handleNotify} notifying={notifying}
         onSettle={handleSettle} settling={settling} />
-      <Button
+      {/* <Button
         variant={todayOnly ? 'contained' : 'outlined'}
         onClick={() => setTodayOnly(prev => !prev)}
         sx={{
@@ -855,7 +855,7 @@ export default function MerchantForms() {
           '&:hover': { bgcolor: todayOnly ? '#0f3320' : BRAND.primaryLight }}}
 >
   Today Only
-</Button>
+</Button> */}
 
 
       {/* Edit Points Dialog */}
