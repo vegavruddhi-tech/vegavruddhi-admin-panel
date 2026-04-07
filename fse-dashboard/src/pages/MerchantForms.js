@@ -29,11 +29,11 @@ function flattenForm(f) {
     'Customer Phone':    f.customerNumber || '',
     'Location':          f.location       || '',
     'Visit Status':      f.status         || '',
-    'Product':           f.formFillingFor || (f.attemptedProducts || []).join(', '),
+    'Product': f.brand || f.tideProduct || f.formFillingFor || (f.attemptedProducts || []).join(', '),
     'Tide QR Posted':    f.tide_qrPosted    || '',
     'Tide UPI Txn Done': f.tide_upiTxnDone  || '',
-    'Kotak Txn Done':    f.kotak_txnDone    || '',
-    'Kotak WiFi/BT Off': f.kotak_wifiBtOff  || '',
+    // 'Kotak Txn Done':    f.kotak_txnDone    || '',
+    // 'Kotak WiFi/BT Off': f.kotak_wifiBtOff  || '',
     'Insurance Vehicle No':   f.ins_vehicleNumber  || '',
     'Insurance Vehicle Type': f.ins_vehicleType    || '',
     'Insurance Type':         f.ins_insuranceType  || '',
@@ -41,7 +41,7 @@ function flattenForm(f) {
     'PineLab WiFi Connected': f.pine_wifiConnected || '',
     'Credit Card Name':       f.cc_cardName        || '',
     'Tide Insurance Type':    f.tideIns_type        || '',
-    'BharatPay Product':      f.bp_product          || '',
+    // 'BharatPay Product':      f.bp_product          || '',
     'Submitted On':      f.createdAt ? new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '',
   };
 }
@@ -151,7 +151,8 @@ const POINTS_MAP = { 'Tide': 2, 'MSME': 0.3, 'Tide Insurance': 1, 'Tide Credit C
 
 function calcAutoPoints(forms, verifiedPhones) {
   return forms.reduce((sum, f) => {
-    if (verifiedPhones.has(f.customerNumber)) sum += POINTS_MAP[f.formFillingFor] || 0;
+    if (verifiedPhones.has(f.customerNumber)) sum += POINTS_MAP[f.tideProduct] || POINTS_MAP[f.formFillingFor] || 0;
+
     return sum;
   }, 0);
 }
@@ -381,14 +382,21 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditP
       const phones   = forms.map(f => f.customerNumber).join(',');
       const names    = forms.map(f => encodeURIComponent(f.customerName)).join(',');
       const products = forms.map(f => encodeURIComponent(f.formFillingFor || '')).join(',');
+      const months   = forms.map(f => encodeURIComponent(
+  new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' })
+)).join(',');
+// e.g. "April 2026"
+
       const res = await fetch(
-        `${EMP_API}/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}`
+        `${EMP_API}/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&month=${encodeURIComponent(month)}`
       );
+
       if (res.ok) setVerifyMap(await res.json());
     } catch { /* ignore */ } finally { setVerifying(false); }
   }, [forms, verifyMap, verifying]);
 
   // Admin can't know verification status — show only adjustment + note
+  const products = forms.map(f => encodeURIComponent(f.brand || f.tideProduct || f.formFillingFor || '')).join(',');
   const adjustment  = empPointsData?.pointsAdjustment || 0;
   const verified    = empPointsData?.verifiedPoints    || 0;
   const totalPoints = Math.round((verified + adjustment) * 10) / 10;
@@ -467,10 +475,8 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditP
                     <TableCell><Typography variant="body2" color="text.secondary">{f.location}</Typography></TableCell>
                     <TableCell><StatusChip status={f.status} /></TableCell>
                     <TableCell>
-                      {f.formFillingFor
-                        ? <ProductChip product={f.formFillingFor} />
-                        : <Typography variant="caption" color="text.secondary">{(f.attemptedProducts || []).join(', ') || '–'}</Typography>
-                      }
+                      <ProductChip product={f.tideProduct || f.brand || f.formFillingFor || (f.attemptedProducts || []).join(', ') || '–'} />
+
                     </TableCell>
                     <TableCell>
                       {verifying
@@ -520,6 +526,7 @@ export default function MerchantForms() {
   const [editPtsEmp,   setEditPtsEmp]   = useState(null); // {empName, empData, autoPoints}
   const [editPtsValue, setEditPtsValue] = useState('');
   const [editPtsSaving,setEditPtsSaving]= useState(false);
+  const [todayOnly, setTodayOnly] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -633,23 +640,55 @@ export default function MerchantForms() {
   }, [duplicates]);
 
   // Group forms by employee, filtered by search
+  // const grouped = useMemo(() => {
+  //   const q = search.toLowerCase();
+  //   // const filtered = forms.filter(f =>
+  //   //   !q ||
+  //   //   (f.customerName   || '').toLowerCase().includes(q) ||
+  //   //   (f.customerNumber || '').includes(q) ||
+  //   //   (f.employeeName   || '').toLowerCase().includes(q) ||
+  //   //   (f.location       || '').toLowerCase().includes(q)
+  //   // );
+  //   const today = new Date().toDateString();
+  // const filtered = forms.filter(f => {
+  //   if (todayOnly && new Date(f.createdAt).toDateString() !== today) return false;
+  //   return (
+  //     !q ||
+  //     (f.customerName   || '').toLowerCase().includes(q) ||
+  //     (f.customerNumber || '').includes(q) ||
+  //     (f.employeeName   || '').toLowerCase().includes(q) ||
+  //     (f.location       || '').toLowerCase().includes(q)
+  //   );
+  //   // const map = {};
+  //   // filtered.forEach(f => {
+  //   //   const key = f.employeeName || 'Unknown';
+  //   //   if (!map[key]) map[key] = [];
+  //   //   map[key].push(f);
+  //   // });
+  //   // return Object.entries(map).sort((a, b) => b[1].length - a[1].length);
+  // }, [forms, search]);
   const grouped = useMemo(() => {
-    const q = search.toLowerCase();
-    const filtered = forms.filter(f =>
+  const q = search.toLowerCase();
+  const today = new Date().toDateString();
+  const filtered = forms.filter(f => {
+    if (todayOnly && new Date(f.createdAt).toDateString() !== today) return false;
+    return (
       !q ||
       (f.customerName   || '').toLowerCase().includes(q) ||
       (f.customerNumber || '').includes(q) ||
       (f.employeeName   || '').toLowerCase().includes(q) ||
       (f.location       || '').toLowerCase().includes(q)
     );
-    const map = {};
-    filtered.forEach(f => {
-      const key = f.employeeName || 'Unknown';
-      if (!map[key]) map[key] = [];
-      map[key].push(f);
-    });
-    return Object.entries(map).sort((a, b) => b[1].length - a[1].length);
-  }, [forms, search]);
+  });
+  const map = {};
+  filtered.forEach(f => {
+    const key = f.employeeName || 'Unknown';
+    if (!map[key]) map[key] = [];
+    map[key].push(f);
+  });
+  return Object.entries(map).sort((a, b) => b[1].length - a[1].length);
+}, [forms, search, todayOnly]);
+
 
   const totalDupCount = duplicates.length;
   const settledCount  = duplicates.filter(d => d.settled).length;
@@ -661,6 +700,8 @@ export default function MerchantForms() {
     empPoints.forEach(e => { m[e.newJoinerName] = e; });
     return m;
   }, [empPoints]);
+
+
 
   return (
     <Box sx={{ maxWidth: 1100, mx: 'auto', px: { xs: 2, md: 4 }, py: 4 }}>
@@ -686,6 +727,19 @@ export default function MerchantForms() {
               </IconButton>
             </Badge>
           </Tooltip>
+          <Button
+  variant={todayOnly ? 'contained' : 'outlined'}
+  onClick={() => setTodayOnly(prev => !prev)}
+  sx={{
+    borderColor: BRAND.primary,
+    color: todayOnly ? '#fff' : BRAND.primary,
+    bgcolor: todayOnly ? BRAND.primary : 'transparent',
+    fontWeight: 700,
+    '&:hover': { bgcolor: todayOnly ? '#0f3320' : BRAND.primaryLight }
+  }}
+>
+  Today Only
+</Button>
 
           {/* Export Button */}
           <Button
@@ -791,6 +845,19 @@ export default function MerchantForms() {
       <DuplicatePanel duplicates={duplicates} open={dupOpen} onClose={() => setDupOpen(false)}
         onNotify={handleNotify} notifying={notifying}
         onSettle={handleSettle} settling={settling} />
+      <Button
+        variant={todayOnly ? 'contained' : 'outlined'}
+        onClick={() => setTodayOnly(prev => !prev)}
+        sx={{
+          borderColor: BRAND.primary,
+          color: todayOnly ? '#fff' : BRAND.primary,
+          bgcolor: todayOnly ? BRAND.primary : 'transparent',
+          fontWeight: 700,
+          '&:hover': { bgcolor: todayOnly ? '#0f3320' : BRAND.primaryLight }}}
+>
+  Today Only
+</Button>
+
 
       {/* Edit Points Dialog */}
       <Dialog open={editPtsOpen} onClose={() => setEditPtsOpen(false)} maxWidth="xs" fullWidth>
