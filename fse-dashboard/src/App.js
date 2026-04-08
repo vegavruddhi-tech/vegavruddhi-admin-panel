@@ -5,6 +5,7 @@ import Login from "./pages/Login";
 import VerificationRules from "./pages/VerificationRules";
 import EmployeeApprovals from "./pages/EmployeeApprovals";
 import MerchantForms from "./pages/MerchantForms";
+import TLOverview from './pages/TLOverview';
 
 import { ThemeProvider, createTheme } from "@mui/material/styles";
 import CssBaseline from "@mui/material/CssBaseline";
@@ -202,6 +203,8 @@ function App() {
             <Tab value="overview"      label="Overview" />
             <Tab value="products"      label="Products" />
             <Tab value="merchants"     label="Merchant Forms" />
+            <Tab value="tl" label="TL Overview" />
+
             <Tab value="verification"  label="Verification Rules" />
             <Tab value="approvals" label={
               <Badge badgeContent={pendingCount} color="error" max={99} sx={{ '& .MuiBadge-badge': { right: -8, top: -2 } }}>
@@ -275,10 +278,13 @@ function App() {
         }}
       >
         {page === "overview"     ? <Dashboard /> :
-         page === "products"     ? <ProductDashboard /> :
-         page === "merchants"    ? <MerchantForms /> :
-         page === "verification" ? <VerificationRules token={user?.token} /> :
-         page === "approvals"    ? <EmployeeApprovals /> : null}
+          page === "products"     ? <ProductDashboard /> :
+          page === "merchants"    ? <MerchantForms /> :
+          page === "verification" ? <VerificationRules token={user?.token} /> :
+          page === "approvals"    ? <EmployeeApprovals /> :
+          page === "tl"           ? <TLOverview /> : null}
+
+
       </Box>
       </>)}
     </ThemeProvider>
