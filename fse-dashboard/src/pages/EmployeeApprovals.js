@@ -15,7 +15,7 @@ import EditIcon         from '@mui/icons-material/Edit';
 import { BRAND }        from '../theme';
 
 const EMP_API = (process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api') + '/auth';
-
+const TL_API = (process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api') + '/tl';
 function initials(name) {
   return (name || '?').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 }
@@ -118,7 +118,8 @@ export default function EmployeeApprovals() {
   const [posReqLoading,  setPosReqLoading]  = useState(false);
   const [changeRequests,     setChangeRequests]     = useState([]);
   const [changeReqLoading,   setChangeReqLoading]   = useState(false);
-
+  const [tlPending,    setTlPending]    = useState([]);
+  const [tlReqLoading, setTlReqLoading] = useState(false);
   // Edit modal state
   const [editOpen,   setEditOpen]   = useState(false);
   const [editEmp,    setEditEmp]    = useState(null);
@@ -143,6 +144,7 @@ export default function EmployeeApprovals() {
     load();
     loadPosRequests();
     loadChangeRequests();
+    loadTlPending();
     // Poll every 10 seconds for near real-time updates
     const interval = setInterval(() => { load(); loadPosRequests(); loadChangeRequests(); }, 10000);
     return () => clearInterval(interval);
@@ -159,6 +161,26 @@ export default function EmployeeApprovals() {
       setChangeRequests(Array.isArray(data) ? data : []);
     } catch { } finally { setChangeReqLoading(false); }
   };
+  const loadTlPending = async () => {
+  setTlReqLoading(true);
+  try {
+    const res  = await fetch(`${TL_API}/pending`);
+    const data = await res.json();
+    setTlPending(Array.isArray(data) ? data : []);
+  } catch { } finally { setTlReqLoading(false); }
+};
+
+const approveTL = async (id) => {
+  const res = await fetch(`${TL_API}/approve/${id}`, { method: 'PUT' });
+  if (res.ok) { setSnack({ open: true, msg: 'TL approved!', sev: 'success' }); loadTlPending(); }
+  else setSnack({ open: true, msg: 'Failed', sev: 'error' });
+};
+
+const rejectTL = async (id) => {
+  const res = await fetch(`${TL_API}/reject/${id}`, { method: 'PUT' });
+  if (res.ok) { setSnack({ open: true, msg: 'TL rejected', sev: 'warning' }); loadTlPending(); }
+  else setSnack({ open: true, msg: 'Failed', sev: 'error' });
+};
 
   const approveChangeReq = async (id) => {
     // const res = await fetch(`http://localhost:4000/api/requests/${id}/approve`, { method: 'PUT' });
@@ -377,7 +399,14 @@ export default function EmployeeApprovals() {
                 <Box sx={{ pr: 2 }}>Change Requests</Box>
               </Badge>
             } />
+            <Tab value="tlpending" label={
+              <Badge badgeContent={tlPending.length} color="error" max={99} sx={{ '& .MuiBadge-badge': { right: -8, top: -2 } }}>
+                <Box sx={{ pr: 2 }}>TL Approvals</Box>
+              </Badge>
+            } />
+
           </Tabs>
+          
         </Box>
 
         <CardContent sx={{ p: 0 }}>
@@ -390,6 +419,73 @@ export default function EmployeeApprovals() {
               {tab === 'pending'  && tableFor(pending,  true,  '⏳ Pending Approval')}
               {tab === 'approved' && tableFor(approved, false, '✓ Approved Employees')}
               {tab === 'rejected' && tableFor(rejected, false, '✗ Rejected Registrations')}
+              {tab === 'tlpending' && (
+  <Box>
+    <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <Typography variant="subtitle1" fontWeight={700} sx={{ color: BRAND.primary }}>🧑‍💼 TL Approval Requests</Typography>
+      <Typography variant="caption" color="text.secondary">{tlPending.length} pending</Typography>
+    </Box>
+    {tlReqLoading ? (
+      <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress size={28} sx={{ color: BRAND.primary }} /></Box>
+    ) : tlPending.length === 0 ? (
+      <Box sx={{ textAlign: 'center', py: 5, color: 'text.secondary' }}>
+        <Typography variant="body2">No pending TL approvals</Typography>
+      </Box>
+    ) : (
+      <TableContainer>
+        <Table size="small">
+          <TableHead>
+            <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider', py: 1.5 } }}>
+              <TableCell>Name</TableCell>
+              <TableCell>Email</TableCell>
+              <TableCell>Phone</TableCell>
+              <TableCell>Location</TableCell>
+              <TableCell>Registered On</TableCell>
+              <TableCell>Actions</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {tlPending.map(tl => (
+              <TableRow key={tl._id} hover sx={{ '&:last-child td': { border: 0 } }}>
+                <TableCell>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Avatar sx={{ bgcolor: BRAND.primary, width: 30, height: 30, fontSize: 12, fontWeight: 700 }}>
+                      {initials(tl.name || tl.email)}
+                    </Avatar>
+                    <Typography variant="body2" fontWeight={700}>{tl.name || tl.email}</Typography>
+                  </Box>
+                </TableCell>
+                <TableCell><Typography variant="body2" color="text.secondary">{tl.emailId || tl.email}</Typography></TableCell>
+                <TableCell><Typography variant="body2">{tl.phone}</Typography></TableCell>
+                <TableCell><Typography variant="body2" color="text.secondary">{tl.location || '–'}</Typography></TableCell>
+                <TableCell>
+                  <Typography variant="caption" color="text.secondary">
+                    {tl.createdAt ? new Date(tl.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '–'}
+                  </Typography>
+                </TableCell>
+                <TableCell>
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button size="small" variant="contained" startIcon={<CheckCircleIcon />}
+                      onClick={() => approveTL(tl._id)}
+                      sx={{ bgcolor: '#2e7d32', fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: '#1b5e20' } }}>
+                      Approve
+                    </Button>
+                    <Button size="small" variant="outlined" startIcon={<CancelIcon />}
+                      onClick={() => rejectTL(tl._id)}
+                      sx={{ color: '#c62828', borderColor: '#c62828', fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: '#fdecea' } }}>
+                      Reject
+                    </Button>
+                  </Box>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    )}
+  </Box>
+)}
+
               {tab === 'posreq'   && (
                 <Box>
                   <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -503,6 +599,58 @@ export default function EmployeeApprovals() {
                   )}
                 </Box>
               )}
+              {/* {tab === 'tlpending' && (
+  <Box>
+    <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+      <Typography variant="subtitle1" fontWeight={700} sx={{ color: BRAND.primary }}>⏳ TL Pending Approvals</Typography>
+    </Box>
+    {tlReqLoading ? (
+      <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress size={28} sx={{ color: BRAND.primary }} /></Box>
+    ) : tlPending.length === 0 ? (
+      <Box sx={{ textAlign: 'center', py: 5, color: 'text.secondary' }}><Typography variant="body2">No pending TL approvals</Typography></Box>
+    ) : (
+      <TableContainer>
+        <Table size="small">
+          <TableHead>
+            <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider', py: 1.5 } }}>
+              <TableCell>Name</TableCell>
+              <TableCell>Email</TableCell>
+              <TableCell>Phone</TableCell>
+              <TableCell>Location</TableCell>
+              <TableCell>Reporting Manager</TableCell>
+              <TableCell>Actions</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {tlPending.map(tl => (
+              <TableRow key={tl._id} hover sx={{ '&:last-child td': { border: 0 } }}>
+                <TableCell><Typography variant="body2" fontWeight={700}>{tl.name}</Typography></TableCell>
+                <TableCell><Typography variant="caption" color="text.secondary">{tl.email}</Typography></TableCell>
+                <TableCell><Typography variant="body2">{tl.phone}</Typography></TableCell>
+                <TableCell><Typography variant="body2">{tl.location}</Typography></TableCell>
+                <TableCell><Typography variant="body2">{tl.reportingManager}</Typography></TableCell>
+                <TableCell>
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Button size="small" variant="contained" startIcon={<CheckCircleIcon />}
+                      onClick={() => approveTL(tl._id)}
+                      sx={{ bgcolor: BRAND.primary, fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: BRAND.primaryMid } }}>
+                      Approve
+                    </Button>
+                    <Button size="small" variant="outlined" startIcon={<CancelIcon />}
+                      onClick={() => rejectTL(tl._id)}
+                      sx={{ color: '#c62828', borderColor: '#c62828', fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: '#fdecea' } }}>
+                      Reject
+                    </Button>
+                  </Box>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TableContainer>
+    )}
+  </Box>
+)} */}
             </>
           )}
         </CardContent>
