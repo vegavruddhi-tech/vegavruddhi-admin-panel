@@ -135,10 +135,10 @@ def sync_spreadsheet(sheet_id, label):
 sync_spreadsheet(SHEET_ID_1, "VV - Tide Link Onboarding")
 
 # Sync Sheet 2 — MSME & Insurance (only if ID is set)
-if SHEET_ID_2:
-    sync_spreadsheet(SHEET_ID_2, "VV - MSME & Insurance")
-else:
-    print("\nGOOGLE_SHEET_ID_2 not set — skipping second sheet")
+# if SHEET_ID_2:
+#     sync_spreadsheet(SHEET_ID_2, "VV - MSME & Insurance")
+# else:
+#     print("\nGOOGLE_SHEET_ID_2 not set — skipping second sheet")
 
 print(f"\n{'='*55}")
 print(f"  SYNC COMPLETE")
@@ -146,61 +146,115 @@ print(f"  Total Inserted : {total_ins}")
 print(f"  Total Updated  : {total_upd}")
 print(f"{'='*55}\n")
 
-mongo_client.close()
+
 
 
 # ── EXCEL FILE SYNC (Sheet 2 — MSME & Insurance) ──────────────
+# ── EXCEL FILE SYNC (Sheet 2 — MSME & Insurance) ──────────────
 import io, requests, openpyxl
-
-# EXCEL_RELEVANT = ['MSME MARCH','INSURANCE MARCH','MSME FEB26','INSURANCE FEB26',
-#                   'TL CONNECT MARCH','TL CONNECT FEB26']
-EXCEL_RELEVANT = [s for s in wb.sheetnames if any(s.upper().startswith(prefix) for prefix in ['MSME', 'INSURANCE'])]
 
 if SHEET_ID_2:
     print(f"\n{'='*55}\n  BC Onboarding Report (Excel)\n{'='*55}")
     try:
         scope2 = ['https://www.googleapis.com/auth/drive']
-        creds2 = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope2)
+        # creds2 = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope2)
+        if creds_json:
+            creds2 = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope2)
+        else:
+            creds2 = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope2)
+
         creds2.get_access_token()
         token2 = creds2.access_token
-        resp = requests.get(f'https://www.googleapis.com/drive/v3/files/{SHEET_ID_2}?alt=media',
-            headers={'Authorization': f'Bearer {token2}'}, verify=certifi.where())
+
+        resp = requests.get(
+            f'https://docs.google.com/spreadsheets/d/{SHEET_ID_2}/export?format=xlsx',
+            headers={'Authorization': f'Bearer {token2}'},
+            verify=certifi.where())
+        print(f"  Response status: {resp.status_code}, size: {len(resp.content)} bytes")
+        print(f"  Content preview: {resp.content[:300]}")
+
         wb = openpyxl.load_workbook(io.BytesIO(resp.content), read_only=True, data_only=True)
+        print(f"  Sheet names found: {wb.sheetnames}")
+        EXCEL_RELEVANT = [
+            s for s in wb.sheetnames
+            if 'MSME' in s.upper() or 'INSURANCE' in s.upper()
+        ]
 
         for sheet_name in EXCEL_RELEVANT:
-            if sheet_name not in wb.sheetnames: continue
+
+            if sheet_name not in wb.sheetnames:
+                continue
+
             ws  = wb[sheet_name]
             col = tab_to_collection(sheet_name)
             print(f"\n  --- {sheet_name} -> {col}")
+
             rows = list(ws.iter_rows(values_only=True))
-            if not rows: continue
-            header_row_idx = next((i for i,r in enumerate(rows) if any(v for v in r)), 0)
+            if not rows:
+                continue
+
+            header_row_idx = next(
+                (i for i, r in enumerate(rows) if r and any(str(v).strip() for v in r)),
+                0
+            )
             raw_headers = rows[header_row_idx]
-            headers = []; seen = {}
+
+            headers = []
+            seen = {}
+
             for h in raw_headers:
                 ck = clean_key(h) if h else None
-                if not ck: headers.append(None); continue
-                if ck in seen: seen[ck]+=1; ck=f"{ck}_{seen[ck]}"
-                else: seen[ck]=0
+                if not ck:
+                    headers.append(None)
+                    continue
+                if ck in seen:
+                    seen[ck] += 1
+                    ck = f"{ck}_{seen[ck]}"
+                else:
+                    seen[ck] = 0
                 headers.append(ck)
+
             data_rows = rows[header_row_idx+1:]
             valid_h = [h for h in headers if h]
-            PCOLS = ['Phone_Number','Mobile_Number','Mobile_No_','Mobile','phone','Number']
+
+            PCOLS = [
+                        'Phone_Number','Mobile_Number','Mobile_No_',
+                        'Mobile','phone','Number','Mobile_Number'
+                    ]
             phone_col = next((h for h in valid_h if h in PCOLS), None)
+
             print(f"  Rows:{len(data_rows)} Phone:{phone_col}")
+
             collection = db[col]
             ops = []
+
             for idx, row in enumerate(data_rows):
-                if all(v is None or str(v).strip()=='' for v in row): continue
-                cleaned = {h:(str(v).strip() if isinstance(v,str) else v) for h,v in zip(headers,row) if h}
-                cleaned['_tab']=sheet_name; cleaned['_sheet']='BC Onboarding Report'
-                cleaned['_synced_at']=datetime.now(timezone.utc)
-                filt = {phone_col:str(cleaned[phone_col])} if phone_col and cleaned.get(phone_col) else {'_row_index':idx}
-                if not phone_col: cleaned['_row_index']=idx
-                ops.append(UpdateOne(filt,{'$set':cleaned},upsert=True))
+                if all(v is None or str(v).strip()=='' for v in row):
+                    continue
+
+                cleaned = {
+                    h: (str(v).strip() if isinstance(v, str) else v)
+                    for h, v in zip(headers, row) if h
+                }
+
+                cleaned['_tab'] = sheet_name
+                cleaned['_sheet'] = 'BC Onboarding Report'
+                cleaned['_synced_at'] = datetime.now(timezone.utc)
+
+                filt = {phone_col: str(cleaned[phone_col])} if phone_col and cleaned.get(phone_col) else {'_row_index': idx}
+                if not phone_col:
+                    cleaned['_row_index'] = idx
+
+                ops.append(UpdateOne(filt, {'$set': cleaned}, upsert=True))
+
             if ops:
                 r2 = collection.bulk_write(ops)
-                total_inserted+=r2.upserted_count; total_updated+=r2.modified_count
+                total_ins += r2.upserted_count
+                total_upd += r2.modified_count
+
                 print(f"  Inserted:{r2.upserted_count} Updated:{r2.modified_count}")
+
     except Exception as e:
         print(f"  Excel sync error: {e}")
+
+mongo_client.close()
