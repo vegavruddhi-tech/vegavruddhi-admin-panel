@@ -7,10 +7,17 @@ import {
 import Autocomplete from "@mui/material/Autocomplete";
 
 function uniqueValues(data, key) {
-  return Array.from(
-    new Set((Array.isArray(data) ? data : []).map((r) => r?.[key]).filter(Boolean))
-  ).sort((a, b) => String(a).localeCompare(String(b)));
+  const seen = new Map();
+  (Array.isArray(data) ? data : []).forEach(r => {
+    const val = r?.[key];
+    if (val) {
+      const lower = String(val).trim().toLowerCase();
+      if (!seen.has(lower)) seen.set(lower, String(val).trim());
+    }
+  });
+  return [...seen.values()].sort((a, b) => a.localeCompare(b));
 }
+
 
 export default function FiltersBar({
   data,

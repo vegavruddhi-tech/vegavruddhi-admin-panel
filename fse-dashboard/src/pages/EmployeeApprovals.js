@@ -146,8 +146,6 @@ export default function EmployeeApprovals() {
     loadChangeRequests();
     loadTlPending();
     // Poll every 10 seconds for near real-time updates
-    const interval = setInterval(() => { load(); loadPosRequests(); loadChangeRequests(); }, 10000);
-    return () => clearInterval(interval);
   }, [load]);
 
   const loadChangeRequests = async () => {

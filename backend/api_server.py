@@ -1,3 +1,5 @@
+from dotenv import load_dotenv
+load_dotenv()
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -5,18 +7,18 @@ from typing import Any
 import pandas as pd
 import time
 import threading
-import gspread
+# import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import subprocess
 import threading
 
-from connect_sheet import load_sheet
+# from connect_sheet import load_sheet
 from clean_duplicates import clean_duplicate_columns
 from smart_column_detection import smart_detect_columns
 from handle_missing_values import handle_missing_values
 from convert_data_types import convert_data_types
 from feature_engineering import feature_engineering
-from history_store import merge_with_history
+# from history_store import merge_with_history
 
 # -----------------------------
 # CREATE FASTAPI APP
@@ -36,7 +38,7 @@ app.add_middleware(
 # "google_sheet" — fetch from Google Sheets (current default)
 # "database"     — fetch from database (plug in your DB loader below when ready)
 # -----------------------------
-DATA_SOURCE = "google_sheet"
+DATA_SOURCE = "database"
 
 # MongoDB connection for April+ data
 import os
@@ -46,15 +48,14 @@ import certifi
 MONGO_URI = os.environ.get("MONGO_URI", "")
 
 # Months that exist in Google Sheets — anything else falls back to MongoDB
-SHEET_MONTHS = {"January 2026", "February 2026", "March 2026"}
+# SHEET_MONTHS = {"January 2026", "February 2026", "March 2026"}
+SHEET_MONTHS = set()
 
 def load_from_mongodb_for_month(month_label: str) -> pd.DataFrame:
-    """
-    Load merchant form responses from MongoDB for a given month label (e.g. 'April 2026').
-    Maps Forms_respones fields to the same schema the dashboard expects.
-    """
+    print(f"[Debug] MONGO_URI set: {bool(MONGO_URI)}, loading: {month_label}")
     if not MONGO_URI:
         return pd.DataFrame()
+
 
     try:
         client = MongoClient(MONGO_URI, tlsCAFile=certifi.where(), serverSelectionTimeoutMS=5000)
@@ -75,15 +76,51 @@ def load_from_mongodb_for_month(month_label: str) -> pd.DataFrame:
         forms = list(db["Forms_respones"].find({
             "createdAt": {"$gte": start, "$lte": end}
         }))
-        client.close()
 
         if not forms:
+            client.close()
             return pd.DataFrame()
 
-        # Map Forms_respones fields → dashboard schema
+        tl_docs = list(db["TeamLeads"].find({"status": "Active"}, {"email": 1, "emailId": 1, "name": 1}))
+        def is_name(val):
+            return val and '@' not in val and not val.replace('.','').isdigit()
+
+        canonical_tls = []
+        for t in tl_docs:
+            for field in ['emailId', 'email', 'name']:
+                val = (t.get(field) or "").strip()
+                if is_name(val):
+                    canonical_tls.append(val)
+                    break
+        canonical_tls = list(set(canonical_tls))
+
+
+        def match_tl(raw_name):
+            if not raw_name:
+                return "Unknown"
+            raw_lower = raw_name.strip().lower()
+            for tl in canonical_tls:
+                if tl.lower() == raw_lower:
+                    return tl
+            for tl in canonical_tls:
+                if tl.lower() in raw_lower or raw_lower in tl.lower():
+                    return tl
+            return None
+
+
+        users = list(db["Users"].find({}, {"newJoinerName": 1, "reportingManager": 1}))
+        fse_to_tl = {}
+        for u in users:
+            name = (u.get("newJoinerName") or "").strip()
+            tl   = match_tl(u.get("reportingManager") or "")
+            if tl is not None:
+                fse_to_tl[name] = tl
+
+        client.close()
         rows = []
         for f in forms:
-            product = f.get("formFillingFor", "") or ""
+            # product = f.get("formFillingFor", "") or ""
+            product = f.get("tideProduct") or f.get("formFillingFor") or f.get("brand") or ""
             status  = f.get("status", "")
             name    = f.get("employeeName", f.get("customerName", "Unknown"))
             tl      = f.get("employeeName", "Unknown")  # employee is the TL equivalent
@@ -91,23 +128,33 @@ def load_from_mongodb_for_month(month_label: str) -> pd.DataFrame:
             month   = month_label
 
             row = {
-                "Name":             f.get("customerName", ""),
-                "TL":               tl,
-                "Email ID":         f.get("newJoinerEmailId", ""),
-                "Employee status":  f.get("status", "Active"),
+                "Name":             f.get("employeeName", ""),
+                "Employee status":  "Active",
+                "TL": fse_to_tl.get((f.get("employeeName") or "").strip(), ""),
+
+
+                # "Email ID":         f.get("newJoinerEmailId", ""),
+                "Email ID": f.get("employeeName", ""),
+
+                # "Employee status":  f.get("status", "Active"),
                 "_month":           month,
                 "_source":          "mongodb",
                 # Product columns — 1 if this form was for that product
-                "Tide":             1 if "tide" in product.lower() and "insurance" not in product.lower() else 0,
-                "Tide Insurance":   1 if product == "Tide Insurance" else 0,
-                "Tide MSME":        1 if product == "MSME" else 0,
-                "Airtel Payments Bank": 1 if product == "Airtel Payments Bank" else 0,
-                "Kotak 811":        1 if product == "Kotak 811" else 0,
-                "Insurance":        1 if product == "Insurance" else 0,
-                "PineLab":          1 if product == "PineLab" else 0,
-                "Credit Card":      1 if product == "Credit Card" else 0,
-                "Bharat Pay":       1 if product == "Bharat Pay" else 0,
+                "Tide":        1 if product.lower() == "tide" else 0,
+                "Tide MSME":   1 if product in ("MSME", "Tide MSME") else 0,
+                "Tide Insurance": 1 if product in ("Tide Insurance",) else 0,
+                "Tide Credit Card": 1 if product in ("Tide Credit Card", "Credit Card") else 0,
+
+
+                # "Airtel Payments Bank": 1 if product == "Airtel Payments Bank" else 0,
+                # "Kotak 811":        1 if product == "Kotak 811" else 0,
+                # "Insurance":        1 if product == "Insurance" else 0,
+                # "PineLab":          1 if product == "PineLab" else 0,
+                # "Credit Card":      1 if product == "Credit Card" else 0,
+                # "Bharat Pay":       1 if product == "Bharat Pay" else 0,
                 # Visit status
+                "Total_Meetings_Calc": 1,  # each form = 1 meeting/visit
+
                 "Visit_Status":     status,
                 "Ready_Onboarding": 1 if status == "Ready for Onboarding" else 0,
                 "Not_Interested":   1 if status == "Not Interested" else 0,
@@ -119,6 +166,28 @@ def load_from_mongodb_for_month(month_label: str) -> pd.DataFrame:
                 date_col = created.strftime("%Y-%m-%d")
                 row[date_col] = 1
             rows.append(row)
+                # Add all registered FSEs (even those with no forms)
+        fse_names_with_forms = set(f.get("employeeName", "").strip() for f in forms)
+        for u in users:
+            name = (u.get("newJoinerName") or "").strip()
+            if not name or name in fse_names_with_forms:
+                continue
+            tl = match_tl(u.get("reportingManager") or "")
+            rows.append({
+                "Name": name, "Email ID": name,
+                "Employee status": "Working", "Employment type": "FSE",
+                "TL": tl or "", "_month": month_label, "_source": "mongodb",
+                "Total_Meetings_Calc": 0, "Total_Product_Sales": 0,
+                "Tide": 0, "Tide Insurance": 0, "Tide MSME": 0,
+                "Airtel Payments Bank": 0, "Kotak 811": 0,
+                "Insurance": 0, "PineLab": 0, "Credit Card": 0, "Bharat Pay": 0,
+                "Visit_Status": "", "Ready_Onboarding": 0,
+                "Not_Interested": 0, "Need_Revisit": 0, "Try_Error": 0,
+            })
+
+        df = pd.DataFrame(rows)
+        print(f"[MongoDB] Loaded {len(df)} rows for {month_label}")
+        return df
 
         df = pd.DataFrame(rows)
         print(f"[MongoDB] Loaded {len(df)} rows for {month_label}")
@@ -151,7 +220,7 @@ def load_from_database() -> pd.DataFrame:
             {"$sort": {"_id.year": 1, "_id.month": 1}}
         ]
         months_raw = list(db["Forms_respones"].aggregate(pipeline))
-        client.close()
+
 
         import calendar
         dfs = []
@@ -164,45 +233,68 @@ def load_from_database() -> pd.DataFrame:
                 if not df.empty:
                     dfs.append(df)
 
-        return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+        # return pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+        result = pd.concat(dfs, ignore_index=True) if dfs else pd.DataFrame()
+        client.close()
+        return result
+
     except Exception as e:
         print(f"[MongoDB] Error: {e}")
         return pd.DataFrame()
 
 
+# def load_raw_data() -> pd.DataFrame:
+#     """
+#     Load data from Google Sheets AND MongoDB, merge them.
+#     Sheet data covers Jan-March, MongoDB covers April onwards.
+#     """
+#     sheet_df = pd.DataFrame()
+#     mongo_df = pd.DataFrame()
+
+#     # Always load sheet data (Jan-March)
+#     # try:
+#     #     sheet_df = load_sheet()
+#     #     print(f"[Sheet] Loaded {len(sheet_df)} rows")
+#     # except Exception as e:
+#     #     print(f"[Sheet] Error: {e}")
+#     sheet_df = pd.DataFrame()
+#     print("[Sheet] Skipped — using MongoDB only")
+
+#     # Load MongoDB data for months not in sheet
+#     try:
+#         mongo_df = load_from_database()
+#         if not mongo_df.empty:
+#             print(f"[MongoDB] Loaded {len(mongo_df)} rows for new months")
+#     except Exception as e:
+#         print(f"[MongoDB] Error: {e}")
+
+#     # Merge both sources
+#     if not sheet_df.empty and not mongo_df.empty:
+#         combined = pd.concat([sheet_df, mongo_df], ignore_index=True)
+#         print(f"[Combined] Total {len(combined)} rows")
+#         return combined
+#     elif not sheet_df.empty:
+#         return sheet_df
+#     elif not mongo_df.empty:
+#         return mongo_df
+#     else:
+#         return pd.DataFrame()
 def load_raw_data() -> pd.DataFrame:
     """
-    Load data from Google Sheets AND MongoDB, merge them.
-    Sheet data covers Jan-March, MongoDB covers April onwards.
+    Load data ONLY from MongoDB
     """
-    sheet_df = pd.DataFrame()
-    mongo_df = pd.DataFrame()
-
-    # Always load sheet data (Jan-March)
-    try:
-        sheet_df = load_sheet()
-        print(f"[Sheet] Loaded {len(sheet_df)} rows")
-    except Exception as e:
-        print(f"[Sheet] Error: {e}")
-
-    # Load MongoDB data for months not in sheet
     try:
         mongo_df = load_from_database()
+
         if not mongo_df.empty:
-            print(f"[MongoDB] Loaded {len(mongo_df)} rows for new months")
+            print(f"[MongoDB] Loaded {len(mongo_df)} rows")
+            return mongo_df
+        else:
+            print("[MongoDB] No data found")
+            return pd.DataFrame()
+
     except Exception as e:
         print(f"[MongoDB] Error: {e}")
-
-    # Merge both sources
-    if not sheet_df.empty and not mongo_df.empty:
-        combined = pd.concat([sheet_df, mongo_df], ignore_index=True)
-        print(f"[Combined] Total {len(combined)} rows")
-        return combined
-    elif not sheet_df.empty:
-        return sheet_df
-    elif not mongo_df.empty:
-        return mongo_df
-    else:
         return pd.DataFrame()
 
 # -----------------------------
@@ -269,7 +361,7 @@ def get_clean_data():
         df = clean_duplicate_columns(df)
 
         # Merge with historical data so previous months are preserved
-        df = merge_with_history(df)
+        # df = merge_with_history(df)
 
         numeric_cols, text_cols, date_cols = smart_detect_columns(df)
 

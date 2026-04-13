@@ -8,8 +8,17 @@ function Filters({
 }) {
 
   const uniqueValues = (key) => {
-    return [...new Set(data.map(item => item[key]).filter(Boolean))];
-  };
+  const seen = new Map();
+  data.forEach(item => {
+    const val = item[key];
+    if (val) {
+      const lower = val.trim().toLowerCase();
+      if (!seen.has(lower)) seen.set(lower, val.trim());
+    }
+  });
+  return [...seen.values()].sort();
+};
+
 
   const handleChange = (key, value) => {
     setFilters({

@@ -21,6 +21,7 @@ import { fetchData, updateRow } from "../services/api";
 import FiltersBar from "../components/FiltersBar";
 import TideDrillTable from "../components/TideDrillTable";
 import MeetingTrend from "../components/MeetingTrend";
+import { BRAND } from "../theme";
 
 const COLORS = ["#7c3aed", "#10b981", "#3b82f6", "#f59e0b", "#14b8a6", "#ec4899", "#0ea5e9", "#ef4444"];
 
@@ -203,9 +204,9 @@ function ChartCard({ title, subtitle, children }) {
 const OTHER_PRODUCT_COLS = [
   { col: "Vehicle Insurance",    label: "Vehicle Insurance",    color: "#10b981" },
   { col: "Vehicle Points Earned",label: "Vehicle Points Earned",color: "#3b82f6" },
-  { col: "Aditya Birla",         label: "Aditya Birla",         color: "#f59e0b" },
-  { col: "Airtel Payments Bank", label: "Airtel Payments Bank", color: "#ec4899" },
-  { col: "Hero FinCorp",         label: "Hero FinCorp",         color: "#7c3aed" },
+  // { col: "Aditya Birla",         label: "Aditya Birla",         color: "#f59e0b" },
+  // { col: "Airtel Payments Bank", label: "Airtel Payments Bank", color: "#ec4899" },
+  // { col: "Hero FinCorp",         label: "Hero FinCorp",         color: "#7c3aed" },
 ];
 
 function OtherProductKPI({ rows, openDrill }) {
@@ -215,6 +216,7 @@ function OtherProductKPI({ rows, openDrill }) {
     ...k,
     value: rows.reduce((s, r) => s + (Number(r[k.col]) || 0), 0),
   }));
+  const visibleKpis = kpis.filter(k => k.value > 0);
 
   const openKpiModal = (k) => {
     if (k.value === 0) return;
@@ -239,7 +241,8 @@ function OtherProductKPI({ rows, openDrill }) {
           Other Products
         </Typography>
         <Box sx={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 2, mb: 3 }}>
-          {kpis.map((k) => (
+          {kpis.filter(k => k.value > 0).map((k) => 
+ (
             <Card key={k.col} variant="outlined"
               onClick={() => openKpiModal(k)}
               sx={{
@@ -479,6 +482,9 @@ export default function ProductDashboard() {
   const [chartFullscreen, setChartFullscreen] = useState(false);
   const [showCustomTable, setShowCustomTable] = useState(false);
   const [groupBy, setGroupBy] = useState("employee"); // "employee" | "tl"
+  const [dateFilter, setDateFilter] = useState('all');
+  const [toDate, setToDate]         = useState('');
+  const [fromDate, setFromDate]     = useState('');
 
   const toggleCol = (col) =>
     setSelectedCols((prev) =>
@@ -532,16 +538,33 @@ export default function ProductDashboard() {
 
   // ── filtered rows — filter by _month tag, then by other filters ───────────
   const rows = useMemo(() => {
-    return (Array.isArray(raw) ? raw : []).filter((row) => {
-      // Month filter: use _month tag which is set per-sheet on the backend
-      if (selectedMonth && row["_month"] !== selectedMonth) return false;
-      if (filters.tl && row["TL"] !== filters.tl) return false;
-      if (filters.employee && row["Name"] !== filters.employee) return false;
-      if (filters.status && row["Employee status"] !== filters.status) return false;
-      if (filters.employment && row["Employment type"] !== filters.employment) return false;
-      return true;
-    });
-  }, [raw, filters, selectedMonth]);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const weekStart = new Date(today); weekStart.setDate(today.getDate() - today.getDay());
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  return (Array.isArray(raw) ? raw : []).filter((row) => {
+    if (selectedMonth && row["_month"] !== selectedMonth) return false;
+    if (filters.tl && row["TL"] !== filters.tl) return false;
+    if (filters.employee && row["Name"] !== filters.employee) return false;
+    if (filters.status && row["Employee status"] !== filters.status) return false;
+    if (filters.employment && row["Employment type"] !== filters.employment) return false;
+    if (dateFilter !== 'all') {
+      const dateCols = Object.keys(row).filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k) && row[k] > 0);
+      if (dateCols.length === 0) return false;
+      const rowDate = new Date(dateCols[0]);
+      if (dateFilter === 'today' && rowDate < today) return false;
+      if (dateFilter === 'week'  && rowDate < weekStart) return false;
+      if (dateFilter === 'month' && rowDate < monthStart) return false;
+      if (dateFilter === 'custom') {
+        if (fromDate && rowDate < new Date(fromDate)) return false;
+        if (toDate   && rowDate > new Date(toDate + 'T23:59:59')) return false;
+      }
+    }
+    return true;
+  });
+}, [raw, filters, selectedMonth, dateFilter, fromDate, toDate]);
+
 
   // ── Onboard column — changes per month based on backend config ───────────
   // Hardcoded fallback in case backend hasn't restarted yet
@@ -922,6 +945,27 @@ export default function ProductDashboard() {
         setFilters={setFilters}
         monthOptions={monthOptions}
       />
+      <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+  {['all', 'today', 'week', 'month'].map(f => (
+    <Button key={f} size="small"
+      variant={dateFilter === f ? 'contained' : 'outlined'}
+      onClick={() => { setDateFilter(f); setFromDate(''); setToDate(''); }}
+      sx={{ fontWeight: 700, textTransform: 'capitalize',
+        bgcolor: dateFilter === f ? BRAND.primary : 'transparent',
+        borderColor: BRAND.primary, color: dateFilter === f ? '#fff' : BRAND.primary,
+        '&:hover': { bgcolor: dateFilter === f ? '#0f3320' : BRAND.primaryLight }
+      }}>
+      {f === 'all' ? 'All' : f === 'today' ? 'Today' : f === 'week' ? 'This Week' : 'This Month'}
+    </Button>
+  ))}
+  <TextField size="small" type="date" label="From" value={fromDate}
+    onChange={e => { setFromDate(e.target.value); setDateFilter('custom'); }}
+    InputLabelProps={{ shrink: true }} sx={{ minWidth: 150 }} />
+  <TextField size="small" type="date" label="To" value={toDate}
+    onChange={e => { setToDate(e.target.value); setDateFilter('custom'); }}
+    InputLabelProps={{ shrink: true }} sx={{ minWidth: 150 }} />
+</Box>
+
 
       <TideKPI rows={rows} tideColumns={tideColumns} ct={ct} openDrill={openDrill} onboardCol={onboardCol} />
 

@@ -35,7 +35,14 @@ function buildStaticKPIs(rows) {
     const email = r["Email ID"].trim();
     if (!emailStatusMap[email]) emailStatusMap[email] = r["Employee status"] || "";
   });
-  const activeEmployees = Object.values(emailStatusMap).filter((s) => isActiveStatus(s)).length;
+const activeNames = new Set(
+  validRows
+    .filter(r => (Number(r["Total_Meetings_Calc"]) || 0) > 0)
+    .map(r => r["Email ID"].trim())
+);
+const activeEmployees = activeNames.size;
+
+
 
   return [
     { label: "Total Employees", value: totalEmployees, color: KPI_COLORS[0], type: "employees" },

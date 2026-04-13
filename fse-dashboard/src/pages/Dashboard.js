@@ -2,8 +2,9 @@ import React, { useEffect, useMemo, useState } from "react";
 import { fetchData } from "../services/api";
 
 import {
-  Box, Typography, useTheme, Card, CardContent
+  Box, Typography, useTheme, Card, CardContent, Button, TextField
 } from "@mui/material";
+import { BRAND } from "../theme";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
   ResponsiveContainer, Legend, ComposedChart, Line, Cell
@@ -40,6 +41,9 @@ function Dashboard() {
   const [selectedStatus, setSelectedStatus] = useState(null);
   const [openStatusModal, setOpenStatusModal] = useState(false);
   const [filters, setFilters] = useState({ tl: "", employee: "", status: "", employment: "" });
+  const [dateFilter, setDateFilter] = useState('all'); // 'all' | 'today' | 'week' | 'month' | 'custom'
+  const [fromDate, setFromDate]     = useState('');
+  const [toDate, setToDate]         = useState('');
 
   const muiTheme = useTheme();
   const chartTheme = useMemo(() => {
@@ -94,16 +98,37 @@ function Dashboard() {
   }, [monthOptions]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Filtered rows using _month tag ────────────────────────────────────────
-  const filteredData = useMemo(() => {
-    return (Array.isArray(raw) ? raw : []).filter((row) => {
-      if (selectedMonth && row["_month"] !== selectedMonth) return false;
-      if (filters.tl && row["TL"] !== filters.tl) return false;
-      if (filters.employee && row["Name"] !== filters.employee) return false;
-      if (filters.status && row["Employee status"] !== filters.status) return false;
-      if (filters.employment && row["Employment type"] !== filters.employment) return false;
-      return true;
-    });
-  }, [raw, filters, selectedMonth]);
+const filteredData = useMemo(() => {
+  const now   = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const weekStart = new Date(today); weekStart.setDate(today.getDate() - today.getDay());
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  return (Array.isArray(raw) ? raw : []).filter((row) => {
+    if (selectedMonth && row["_month"] !== selectedMonth) return false;
+    if (filters.tl && row["TL"] !== filters.tl) return false;
+    if (filters.employee && row["Name"] !== filters.employee) return false;
+    if (filters.status && row["Employee status"] !== filters.status) return false;
+    if (filters.employment && row["Employment type"] !== filters.employment) return false;
+
+    // Date filter using createdAt or date columns
+if (dateFilter !== 'all') {
+  const dateCols = Object.keys(row).filter(k => /^\d{4}-\d{2}-\d{2}$/.test(k) && row[k] > 0);
+  if (dateCols.length === 0) return false;
+  const rowDate = new Date(dateCols[0]);
+  if (dateFilter === 'today' && rowDate < today) return false;
+  if (dateFilter === 'week'  && rowDate < weekStart) return false;
+  if (dateFilter === 'month' && rowDate < monthStart) return false;
+  if (dateFilter === 'custom') {
+    if (fromDate && rowDate < new Date(fromDate)) return false;
+    if (toDate   && rowDate > new Date(toDate + 'T23:59:59')) return false;
+  }
+}
+
+    return true;
+  });
+}, [raw, filters, selectedMonth, dateFilter, fromDate, toDate]);
+
 
   // ── NEW: Product Group Breakdown — total per group for selected month ─────
   const groupBreakdownData = useMemo(() => {
@@ -121,7 +146,7 @@ function Dashboard() {
   // ── NEW: Month-over-Month KPI comparison (uses raw — all months) ──────────
   const momData = useMemo(() => {
     const map = {};
-    (Array.isArray(raw) ? raw : []).forEach((r) => {
+    (Array.isArray(filteredData) ? filteredData : []).forEach((r) => {
       const m = r["_month"] || "Unknown";
       if (!map[m]) map[m] = { month: m, meetings: 0, sales: 0, employees: new Set() };
       map[m].meetings  += Number(r["Total_Meetings_Calc"]) || 0;
@@ -134,7 +159,7 @@ function Dashboard() {
         const parse = (s) => { const [mon, yr] = s.split(" "); return parseInt(yr) * 100 + new Date(`${mon} 1`).getMonth(); };
         return parse(a.month) - parse(b.month);
       });
-  }, [raw]);
+  }, [filteredData]);
 
   const tooltipStyle = { backgroundColor: chartTheme.tooltipBg, color: chartTheme.text, border: "none" };
 
@@ -150,6 +175,27 @@ function Dashboard() {
         setFilters={setFilters}
         monthOptions={monthOptions}
       />
+      <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+  {['all', 'today', 'week', 'month'].map(f => (
+    <Button key={f} size="small"
+      variant={dateFilter === f ? 'contained' : 'outlined'}
+      onClick={() => { setDateFilter(f); setFromDate(''); setToDate(''); }}
+      sx={{ fontWeight: 700, textTransform: 'capitalize',
+        bgcolor: dateFilter === f ? BRAND.primary : 'transparent',
+        borderColor: BRAND.primary, color: dateFilter === f ? '#fff' : BRAND.primary,
+        '&:hover': { bgcolor: dateFilter === f ? '#0f3320' : BRAND.primaryLight }
+      }}>
+      {f === 'all' ? 'All' : f === 'today' ? 'Today' : f === 'week' ? 'This Week' : 'This Month'}
+    </Button>
+  ))}
+  <TextField size="small" type="date" label="From" value={fromDate}
+    onChange={e => { setFromDate(e.target.value); setDateFilter('custom'); }}
+    InputLabelProps={{ shrink: true }} sx={{ minWidth: 150 }} />
+  <TextField size="small" type="date" label="To" value={toDate}
+    onChange={e => { setToDate(e.target.value); setDateFilter('custom'); }}
+    InputLabelProps={{ shrink: true }} sx={{ minWidth: 150 }} />
+</Box>
+
 
       <KPI data={filteredData} theme={chartTheme} />
 

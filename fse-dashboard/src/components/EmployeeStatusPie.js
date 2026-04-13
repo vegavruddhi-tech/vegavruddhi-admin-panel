@@ -9,7 +9,8 @@ import {
 import CloseIcon from "@mui/icons-material/Close";
 
 const statusGroups = {
-  Active: ["Working", "Workng", "Will start work for 21 feb"],
+  Active: ["Working", "Workng", "Active"],
+
   Resigned: ["Resigned"],
   Terminated: ["Termination Sent", "Termination based on PIP"],
   "Offer Issues": ["Offer letter pending", "Offer Revoked", "Offer Revoked - PIP"],
@@ -23,15 +24,20 @@ function EmployeeStatusPie({ data, theme, setSelectedStatus, setOpenStatusModal 
 
   const statusCount = { Active: 0, Resigned: 0, Terminated: 0, "Offer Issues": 0, Left: 0, Other: 0 };
 
-  data.forEach((item) => {
-    const status = item["Employee status"];
-    if (!status || status === "Unknown") return;
-    let found = false;
-    Object.keys(statusGroups).forEach((group) => {
-      if (statusGroups[group].includes(status)) { statusCount[group] += 1; found = true; }
-    });
-    if (!found) statusCount["Other"] += 1;
+const seen = new Set();
+data.forEach((item) => {
+  const id = (item["Email ID"] || item["Name"] || "").trim();
+  if (!id || seen.has(id)) return;
+  seen.add(id);
+  const status = item["Employee status"];
+  if (!status || status === "Unknown") return;
+  let found = false;
+  Object.keys(statusGroups).forEach((group) => {
+    if (statusGroups[group].includes(status)) { statusCount[group] += 1; found = true; }
   });
+  if (!found) statusCount["Other"] += 1;
+});
+
 
   const chartData = Object.keys(statusCount)
     .map((key) => ({ name: key, value: statusCount[key] }))

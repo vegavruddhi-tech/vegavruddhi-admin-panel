@@ -147,7 +147,14 @@ async function exportToGoogleSheets(forms, setExporting, setError) {
 }
 
 // ── Points calculation (client-side, mirrors backend POINTS_MAP) ─
-const POINTS_MAP = { 'Tide': 2, 'MSME': 0.3, 'Tide Insurance': 1, 'Tide Credit Card': 1 };
+const POINTS_MAP = { 
+  'Tide': 2, 
+  'Tide MSME': 0.3, 
+  'MSME': 0.3,           // keep for old records
+  'Tide Insurance': 1, 
+  'Tide Credit Card': 1 
+};
+
 
 function calcAutoPoints(forms, verifiedPhones) {
   return forms.reduce((sum, f) => {
@@ -397,8 +404,17 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditP
   // Admin can't know verification status — show only adjustment + note
   const products = forms.map(f => encodeURIComponent(f.brand || f.tideProduct || f.formFillingFor || '')).join(',');
   const adjustment  = empPointsData?.pointsAdjustment || 0;
-  const verified    = empPointsData?.verifiedPoints    || 0;
+  const autoPoints  = Object.keys(verifyMap).reduce((sum, phone) => {
+    if (verifyMap[phone]?.status === 'Fully Verified') {
+      const form = forms.find(f => f.customerNumber === phone);
+      const product = form?.tideProduct || form?.formFillingFor || '';
+      sum += POINTS_MAP[product] || 0;
+    }
+    return sum;
+  }, 0);
+  const verified    = autoPoints || empPointsData?.verifiedPoints || 0;
   const totalPoints = Math.round((verified + adjustment) * 10) / 10;
+
 
   return (
     <Card sx={{ mb: 2, border: `1.5px solid ${BRAND.primaryLight || '#c8e6c9'}`, borderRadius: 2 }}>
@@ -428,9 +444,12 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditP
               label={`⭐ ${totalPoints} pts`}
               size="small"
               onClick={e => { e.stopPropagation(); onEditPoints(empName, empPointsData, verified); }}
-              sx={{ bgcolor: '#fff8e1', color: '#e76f51', fontWeight: 800, fontSize: 11,
-                border: '1.5px solid #f4a261', cursor: 'pointer',
-                '&:hover': { bgcolor: '#ffe0b2' } }}
+              sx={{ bgcolor: '#e6f4ea', color: '#2e7d32', fontWeight: 800, fontSize: 11,
+  border: '1.5px solid #2e7d32', cursor: 'pointer',
+  '&:hover': { bgcolor: '#c8e6c9' } }}
+
+
+
             />
           </Tooltip>
           {dupCount > 0 && (
@@ -525,7 +544,10 @@ export default function MerchantForms() {
   const [editPtsEmp,   setEditPtsEmp]   = useState(null); // {empName, empData, autoPoints}
   const [editPtsValue, setEditPtsValue] = useState('');
   const [editPtsSaving,setEditPtsSaving]= useState(false);
-  const [todayOnly, setTodayOnly] = useState(false);
+  // const [todayOnly, setTodayOnly] = useState(false);
+  const [dateFilter, setDateFilter] = useState('all');
+  const [toDate, setToDate]         = useState('');
+  const [fromDate, setFromDate]     = useState('');
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -668,9 +690,23 @@ export default function MerchantForms() {
   // }, [forms, search]);
   const grouped = useMemo(() => {
   const q = search.toLowerCase();
-  const today = new Date().toDateString();
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const weekStart = new Date(todayStart); weekStart.setDate(todayStart.getDate() - todayStart.getDay());
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
   const filtered = forms.filter(f => {
-    if (todayOnly && new Date(f.createdAt).toDateString() !== today) return false;
+    if (dateFilter !== 'all') {
+      const d = new Date(f.createdAt);
+      if (dateFilter === 'today' && d < todayStart) return false;
+      if (dateFilter === 'week'  && d < weekStart) return false;
+      if (dateFilter === 'month' && d < monthStart) return false;
+      if (dateFilter === 'custom') {
+      if (fromDate && d < new Date(fromDate)) return false;
+      if (toDate   && d > new Date(toDate + 'T23:59:59')) return false;
+      }
+    }
+
     return (
       !q ||
       (f.customerName   || '').toLowerCase().includes(q) ||
@@ -686,7 +722,8 @@ export default function MerchantForms() {
     map[key].push(f);
   });
   return Object.entries(map).sort((a, b) => b[1].length - a[1].length);
-}, [forms, search, todayOnly]);
+}, [forms, search, dateFilter, fromDate, toDate]);
+
 
 
   const totalDupCount = duplicates.length;
@@ -726,7 +763,7 @@ export default function MerchantForms() {
               </IconButton>
             </Badge>
           </Tooltip>
-          <Button
+  {/* <Button
   variant={todayOnly ? 'contained' : 'outlined'}
   onClick={() => setTodayOnly(prev => !prev)}
   sx={{
@@ -737,8 +774,9 @@ export default function MerchantForms() {
     '&:hover': { bgcolor: todayOnly ? '#0f3320' : BRAND.primaryLight }
   }}
 >
+  
   Today Only
-</Button>
+</Button> */}
 
           {/* Export Button */}
           <Button
@@ -815,6 +853,29 @@ export default function MerchantForms() {
           <strong>{activeCount} cross-employee duplicate merchant(s) detected.</strong> Same merchant submitted by multiple employees.
         </Alert>
       )}
+      {/* Date Filter */}
+<Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', mb: 2 }}>
+  {['all', 'today', 'week', 'month'].map(f => (
+    <Button key={f} size="small"
+      variant={dateFilter === f ? 'contained' : 'outlined'}
+      onClick={() => { setDateFilter(f); setFromDate(''); setToDate(''); }}
+      sx={{ fontWeight: 700, textTransform: 'capitalize',
+        bgcolor: dateFilter === f ? BRAND.primary : 'transparent',
+        borderColor: BRAND.primary, color: dateFilter === f ? '#fff' : BRAND.primary,
+        '&:hover': { bgcolor: dateFilter === f ? '#0f3320' : BRAND.primaryLight }
+      }}>
+      {f === 'all' ? 'All' : f === 'today' ? 'Today' : f === 'week' ? 'This Week' : 'This Month'}
+    </Button>
+  ))}
+  <TextField size="small" type="date" label="From" value={fromDate}
+    onChange={e => { setFromDate(e.target.value); setDateFilter('custom'); }}
+    InputLabelProps={{ shrink: true }} sx={{ minWidth: 150 }} />
+  <TextField size="small" type="date" label="To" value={toDate}
+    onChange={e => { setToDate(e.target.value); setDateFilter('custom'); }}
+    InputLabelProps={{ shrink: true }} sx={{ minWidth: 150 }} />
+</Box>
+
+
 
       {/* Search */}
       <TextField fullWidth size="small" placeholder="Search by merchant name, phone, employee or location…"
