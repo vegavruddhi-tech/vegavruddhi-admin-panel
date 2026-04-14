@@ -10,10 +10,7 @@ def load_history() -> pd.DataFrame:
     if not os.path.exists(HISTORY_FILE):
         return pd.DataFrame()
     try:
-        with open(HISTORY_FILE, "r") as f:
-            records = json.load(f)
-        return pd.DataFrame(records)
-    except Exception as e:
+       with open(HISTORY_FILE, "r") as f:
         print(f"[History] Failed to load history: {e}")
         return pd.DataFrame()
 

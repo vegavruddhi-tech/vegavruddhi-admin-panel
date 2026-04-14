@@ -5,7 +5,7 @@ import { jwtDecode } from "jwt-decode";
 import { BRAND } from "../theme";
 
 // Allowed admin emails — add more to REACT_APP_ADMIN_EMAILS in .env (comma-separated)
-const ALLOWED_EMAILS = (process.env.REACT_APP_ADMIN_EMAILS || "")
+const ALLOWED_EMAILS = (process.env.REACT_APP_ADMIN_EMAILS || "data.analyst@vegavruddhi.com")
   .split(",")
   .map(e => e.trim().toLowerCase())
   .filter(Boolean);
