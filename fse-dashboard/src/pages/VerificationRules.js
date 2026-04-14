@@ -29,9 +29,13 @@ const OPERATORS = [
 
 // ── Condition Row — loads real columns from collection ─────────
 function ConditionRow({ cond, index, onChange, onDelete, disabled, collectionColumns }) {
-  const fieldOptions = collectionColumns && collectionColumns.length > 0
-    ? collectionColumns
-    : ["UPI_Active", "Stage-3", "Pass_Live", "QR_Load_Amount"];
+const fieldOptions = collectionColumns && collectionColumns.length > 0
+  ? collectionColumns
+  : ["UPI_Active", "Stage-3", "Pass_Live", "QR_Load_Amount"];
+const allFieldOptions = cond.field && !fieldOptions.includes(cond.field) && cond.field !== "__custom__"
+  ? [cond.field, ...fieldOptions]
+  : fieldOptions;
+
 
   return (
     <Box sx={{ display: "flex", gap: 1.5, alignItems: "center", flexWrap: "wrap", mb: 1.5 }}>
@@ -42,7 +46,7 @@ function ConditionRow({ cond, index, onChange, onDelete, disabled, collectionCol
         <InputLabel>Field</InputLabel>
         <Select value={cond.field} label="Field" disabled={disabled}
           onChange={e => onChange(index, "field", e.target.value)}>
-          {fieldOptions.map(f => <MenuItem key={f} value={f}>{f}</MenuItem>)}
+          {allFieldOptions.map(f => <MenuItem key={f} value={f}>{f}</MenuItem>)}
           <MenuItem value="__custom__"><em>Custom…</em></MenuItem>
         </Select>
       </FormControl>
@@ -136,6 +140,7 @@ function RuleCard({ rule, token, onSaved }) {
   const [active,     setActive]     = useState(rule.active);
   const [snack,      setSnack]      = useState({ open: false, msg: "", sev: "success" });
   const [collectionColumns, setCollectionColumns] = useState([]);
+  const [productTypes, setProductTypes] = useState(rule.productTypes || []);
 
   // Load real column names from the collection when editing starts
   const loadColumns = async () => {
@@ -182,7 +187,7 @@ function RuleCard({ rule, token, onSaved }) {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`,
         },
-        body: JSON.stringify({ conditions: resolved, active }),
+        body: JSON.stringify({ conditions: resolved, active, productTypes }),
       });
 
       if (!res.ok) throw new Error(await res.text());
@@ -216,37 +221,78 @@ function RuleCard({ rule, token, onSaved }) {
             </Typography>
           </Box>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-            <FormControlLabel
-              control={
-                <Switch checked={active} disabled={!editing}
-                  onChange={e => setActive(e.target.checked)}
-                  sx={{ "& .MuiSwitch-thumb": { bgcolor: active ? BRAND.primary : "#ccc" } }} />
-              }
-              label={<Typography variant="caption" fontWeight={700}>{active ? "Active" : "Inactive"}</Typography>}
-            />
-            {!editing ? (
-              <Button startIcon={<EditIcon />} variant="outlined" size="small"
-                onClick={() => { setEditing(true); loadColumns(); }}
-                sx={{ borderColor: BRAND.primary, color: BRAND.primary, fontWeight: 700 }}>
-                Edit Rules
-              </Button>
-            ) : (
-              <Box sx={{ display: "flex", gap: 1 }}>
-                <Button startIcon={<CancelIcon />} variant="outlined" size="small" color="inherit"
-                  onClick={handleCancel} disabled={saving}>
-                  Cancel
-                </Button>
-                <Button startIcon={saving ? <CircularProgress size={14} /> : <SaveIcon />}
-                  variant="contained" size="small" onClick={handleSave} disabled={saving}
-                  sx={{ bgcolor: BRAND.primary, "&:hover": { bgcolor: BRAND.primaryMid }, fontWeight: 700 }}>
-                  {saving ? "Saving…" : "Save"}
-                </Button>
-              </Box>
-            )}
-          </Box>
+  <FormControlLabel
+    control={
+      <Switch checked={active} disabled={!editing}
+        onChange={e => setActive(e.target.checked)}
+        sx={{ "& .MuiSwitch-thumb": { bgcolor: active ? BRAND.primary : "#ccc" } }} />
+    }
+    label={<Typography variant="caption" fontWeight={700}>{active ? "Active" : "Inactive"}</Typography>}
+  />
+  <Button
+    startIcon={<DeleteIcon />}
+    variant="outlined"
+    size="small"
+    color="error"
+    onClick={async () => {
+      if (!window.confirm(`Delete rule for ${rule.collectionName}?`)) return;
+      await fetch(`${EMPLOYEE_API}/verify/rules/${rule._id}`, { method: 'DELETE' });
+      onSaved();
+    }}
+    sx={{ fontWeight: 700 }}
+  >
+    Delete
+  </Button>
+  {!editing ? (
+    <Button startIcon={<EditIcon />} variant="outlined" size="small"
+      onClick={() => { setEditing(true); loadColumns(); }}
+      sx={{ borderColor: BRAND.primary, color: BRAND.primary, fontWeight: 700 }}>
+      Edit Rules
+    </Button>
+  ) : (
+    <Box sx={{ display: "flex", gap: 1 }}>
+      <Button startIcon={<CancelIcon />} variant="outlined" size="small" color="inherit"
+        onClick={handleCancel} disabled={saving}>
+        Cancel
+      </Button>
+      <Button startIcon={saving ? <CircularProgress size={14} /> : <SaveIcon />}
+        variant="contained" size="small" onClick={handleSave} disabled={saving}
+        sx={{ bgcolor: BRAND.primary, "&:hover": { bgcolor: BRAND.primaryMid }, fontWeight: 700 }}>
+        {saving ? "Saving…" : "Save"}
+      </Button>
+    </Box>
+  )}
+</Box>
+
         </Box>
 
         <Divider sx={{ mb: 2 }} />
+        {/* Product Types */}
+        <Typography variant="overline" sx={{ color: "text.secondary", fontWeight: 700, letterSpacing: 1.2 }}>
+          Product Types (which products use this collection)
+        </Typography>
+        <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, mt: 1, mb: 2 }}>
+          {['Tide', 'Tide MSME', 'Tide Insurance', 'Tide Credit Card', 'Tide BT'].map(p => (
+            <Chip
+              key={p}
+              label={p}
+              clickable={editing}
+              onClick={() => {
+                if (!editing) return;
+                setProductTypes(prev =>
+                  prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p]
+                );
+              }}
+              sx={{
+                fontWeight: 700,
+                bgcolor: productTypes.includes(p) ? BRAND.primary : BRAND.primaryLight,
+                color: productTypes.includes(p) ? '#fff' : BRAND.primary,
+                border: `1.5px solid ${BRAND.primary}`,
+                opacity: editing ? 1 : 0.85,
+              }}
+            />
+          ))}
+        </Box>
 
         {/* Conditions */}
         <Typography variant="overline" sx={{ color: "text.secondary", fontWeight: 700, letterSpacing: 1.2 }}>

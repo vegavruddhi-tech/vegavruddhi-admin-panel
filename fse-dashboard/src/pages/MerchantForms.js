@@ -376,151 +376,146 @@ function VerifyChip({ status }) {
 
 // ── Employee Group Row ────────────────────────────────────────
 function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditPoints }) {
-  const [expanded,   setExpanded]   = useState(false);
-  const [verifyMap,  setVerifyMap]  = useState({});
-  const [verifying,  setVerifying]  = useState(false);
+
+  // ✅ FIXED: consistent + safe product
+  const getProduct = (f) =>
+    (f?.tideProduct || f?.formFillingFor || f?.brand || '').toLowerCase().trim();
+
+  // ✅ FIXED: unique key
+  const getKey = (f) => {
+    const p = getProduct(f);
+    return p ? `${f.customerNumber}__${p}` : f.customerNumber;
+  };
+
+  const [expanded, setExpanded] = useState(false);
+  const [verifyMap, setVerifyMap] = useState({});
+  const [verifying, setVerifying] = useState(false);
+
   const dupCount = forms.filter(f => duplicatePhones.has(f.customerNumber)).length;
 
-  // Fetch verification status when expanded
+  // ✅ FIXED: consistent product usage
   const fetchVerification = useCallback(async () => {
     if (verifying || Object.keys(verifyMap).length > 0) return;
+
     setVerifying(true);
     try {
       const phones   = forms.map(f => f.customerNumber).join(',');
       const names    = forms.map(f => encodeURIComponent(f.customerName)).join(',');
-      const products = forms.map(f => encodeURIComponent(f.tideProduct || f.formFillingFor || '')).join(',');
-      const months   = forms.map(f => encodeURIComponent(
-        new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' })
-      )).join(',');
+      const products = forms.map(f => encodeURIComponent(getProduct(f))).join(',');
+      const months   = forms.map(f =>
+        encodeURIComponent(
+          new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' })
+        )
+      ).join(',');
+
       const res = await fetch(
         `${EMP_API}/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`
       );
 
+      if (res.ok) {
+        const data = await res.json();
+        setVerifyMap(data);
+      }
 
-      if (res.ok) setVerifyMap(await res.json());
-    } catch { /* ignore */ } finally { setVerifying(false); }
+    } catch (err) {
+      console.error("Verification error:", err);
+    } finally {
+      setVerifying(false);
+    }
   }, [forms, verifyMap, verifying]);
 
-  // Admin can't know verification status — show only adjustment + note
-  const products = forms.map(f => encodeURIComponent(f.brand || f.tideProduct || f.formFillingFor || '')).join(',');
-  const adjustment  = empPointsData?.pointsAdjustment || 0;
-  const autoPoints  = Object.keys(verifyMap).reduce((sum, phone) => {
-    if (verifyMap[phone]?.status === 'Fully Verified') {
-      const form = forms.find(f => f.customerNumber === phone);
-      const product = form?.tideProduct || form?.formFillingFor || '';
+  // ✅ FIXED: safe points calculation
+  const autoPoints = Object.keys(verifyMap).reduce((sum, key) => {
+    if (verifyMap[key]?.status === 'Fully Verified') {
+      const form = forms.find(f => getKey(f) === key);
+      if (!form) return sum;
+
+      const product = getProduct(form);
       sum += POINTS_MAP[product] || 0;
     }
     return sum;
   }, 0);
+
+  const adjustment  = empPointsData?.pointsAdjustment || 0;
   const verified    = autoPoints || empPointsData?.verifiedPoints || 0;
   const totalPoints = Math.round((verified + adjustment) * 10) / 10;
 
-
   return (
     <Card sx={{ mb: 2, border: `1.5px solid ${BRAND.primaryLight || '#c8e6c9'}`, borderRadius: 2 }}>
+
+      {/* HEADER */}
       <Box
         onClick={() => {
           const next = !expanded;
           setExpanded(next);
           if (next) fetchVerification();
         }}
-        sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          px: 2.5, py: 1.5, cursor: 'pointer',
-          '&:hover': { bgcolor: 'action.hover' }, borderRadius: 2 }}
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          px: 2.5,
+          py: 1.5,
+          cursor: 'pointer',
+          '&:hover': { bgcolor: 'action.hover' },
+          borderRadius: 2
+        }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          <Avatar sx={{ bgcolor: BRAND.primary, width: 34, height: 34, fontSize: 13, fontWeight: 700 }}>
-            {initials(empName)}
-          </Avatar>
+          <Avatar sx={{ bgcolor: BRAND.primary }}>{initials(empName)}</Avatar>
+
           <Box>
-            <Typography fontWeight={700} sx={{ color: 'text.primary' }}>{empName}</Typography>
-            <Typography variant="caption" color="text.secondary">{forms.length} merchant{forms.length !== 1 ? 's' : ''}</Typography>
+            <Typography fontWeight={700}>{empName}</Typography>
+            <Typography variant="caption">{forms.length} merchants</Typography>
           </Box>
         </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          {/* Points badge */}
-          <Tooltip title={`Verified: ${verified} pts + Adjustment: ${adjustment >= 0 ? '+' : ''}${adjustment} = ${totalPoints} pts`}>
-            <Chip
-              label={`⭐ ${totalPoints} pts`}
-              size="small"
-              onClick={e => { e.stopPropagation(); onEditPoints(empName, empPointsData, verified); }}
-              sx={{ bgcolor: '#e6f4ea', color: '#2e7d32', fontWeight: 800, fontSize: 11,
-  border: '1.5px solid #2e7d32', cursor: 'pointer',
-  '&:hover': { bgcolor: '#c8e6c9' } }}
 
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Chip label={`⭐ ${totalPoints}`} />
 
-
-            />
-          </Tooltip>
           {dupCount > 0 && (
-            <Tooltip title={`${dupCount} merchant(s) also submitted by other employees`}>
-              <Chip icon={<WarningAmberIcon sx={{ fontSize: '14px !important' }} />}
-                label={`${dupCount} dup`} size="small"
-                sx={{ bgcolor: '#fdecea', color: '#c62828', fontWeight: 700, fontSize: 11 }} />
-            </Tooltip>
+            <Chip label={`${dupCount} dup`} color="error" />
           )}
-          {expanded ? <ExpandLessIcon sx={{ color: 'text.secondary' }} /> : <ExpandMoreIcon sx={{ color: 'text.secondary' }} />}
+
+          {expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
         </Box>
       </Box>
 
+      {/* TABLE */}
       <Collapse in={expanded}>
-        <TableContainer>
-          <Table size="small">
-            <TableHead>
-              <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider', py: 1.5 } }}>
-                <TableCell>Customer</TableCell>
-                <TableCell>Phone</TableCell>
-                <TableCell>Location</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Product</TableCell>
-                <TableCell>Verification</TableCell>
-                <TableCell>Date</TableCell>
-                <TableCell align="center">Dup?</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {forms.map(f => {
-                const isDup = duplicatePhones.has(f.customerNumber);
-                return (
-                  <TableRow key={f._id} hover
-                    sx={{ bgcolor: isDup ? '#fff8f8' : 'transparent', '&:last-child td': { border: 0 } }}>
-                    <TableCell>
-                      <Typography variant="body2" fontWeight={600} sx={{ color: 'text.primary' }}>{f.customerName}</Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" sx={{ fontFamily: 'monospace', color: 'text.primary' }}>{f.customerNumber}</Typography>
-                    </TableCell>
-                    <TableCell><Typography variant="body2" color="text.secondary">{f.location}</Typography></TableCell>
-                    <TableCell><StatusChip status={f.status} /></TableCell>
-                    <TableCell>
-                      <ProductChip product={f.tideProduct || f.brand || f.formFillingFor || (f.attemptedProducts || []).join(', ') || '–'} />
+        <Table size="small">
+          <TableBody>
+            {forms.map(f => {
+              const isDup = duplicatePhones.has(f.customerNumber);
 
-                    </TableCell>
-                    <TableCell>
-                      {verifying
-                        ? <CircularProgress size={12} sx={{ color: BRAND.primary }} />
-                        : <VerifyChip status={verifyMap[f.customerNumber]?.status} />
-                      }
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="caption" color="text.secondary">
-                        {new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                      </Typography>
-                    </TableCell>
-                    <TableCell align="center">
-                      {isDup && (
-                        <Tooltip title="This merchant was also submitted by another employee">
-                          <WarningAmberIcon sx={{ color: '#c62828', fontSize: 18 }} />
-                        </Tooltip>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </TableContainer>
+              return (
+                <TableRow key={f._id}>
+
+                  <TableCell>{f.customerName}</TableCell>
+                  <TableCell>{f.customerNumber}</TableCell>
+
+                  <TableCell>
+                    <ProductChip product={getProduct(f)} />
+                  </TableCell>
+
+                  <TableCell>
+                    {verifying
+                      ? <CircularProgress size={12} />
+                      : <VerifyChip status={verifyMap[getKey(f)]?.status} />
+                    }
+                  </TableCell>
+
+                  <TableCell>
+                    {isDup && <WarningAmberIcon color="error" />}
+                  </TableCell>
+
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
       </Collapse>
+
     </Card>
   );
 }

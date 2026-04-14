@@ -101,7 +101,7 @@ function FSEGroup({ fse, forms }) {
 function TLCard({ tlData, search }) {
   const [expanded, setExpanded] = useState(false);
   const { tl, fses, forms } = tlData;
-  const tlName = tl.email || tl.name;
+  const tlName = tl.name || tl.email;
 
   const filteredFSEs = useMemo(() => {
     if (!search) return fses;
@@ -157,7 +157,9 @@ export default function TLOverview() {
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState('');
   const [search,  setSearch]  = useState('');
-
+  const [dateFilter, setDateFilter] = useState('all');
+  const [toDate, setToDate]         = useState('');
+  const [fromDate, setFromDate]     = useState('');
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
