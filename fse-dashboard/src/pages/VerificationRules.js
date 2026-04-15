@@ -272,7 +272,8 @@ function RuleCard({ rule, token, onSaved }) {
           Product Types (which products use this collection)
         </Typography>
         <Box sx={{ display: "flex", flexWrap: "wrap", gap: 1, mt: 1, mb: 2 }}>
-          {['Tide', 'Tide MSME', 'Tide Insurance', 'Tide Credit Card', 'Tide BT'].map(p => (
+              {['Tide', 'Tide MSME', 'Tide Insurance', 'Insurance 2W/4W', 'Tide Credit Card', 'Tide BT'].map(p => (
+
             <Chip
               key={p}
               label={p}

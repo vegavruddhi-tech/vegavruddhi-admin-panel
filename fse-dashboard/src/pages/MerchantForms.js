@@ -22,14 +22,27 @@ import * as XLSX          from 'xlsx';
 import { BRAND }          from '../theme';
 
 // ── Flatten a form record into a flat row for export ─────────
-function flattenForm(f) {
+function flattenForm(f, empMap = {}, tlMap = {}, verifyMap = {}) {
+  const emp = empMap[f.employeeName] || {};
+  const tl  = tlMap[(emp.reportingManager || '').toLowerCase().trim()] || {};
+  const product = f.formFillingFor || f.tideProduct || f.brand || (f.attemptedProducts || []).join(', ');
+  const vKey = (f.formFillingFor || f.tideProduct || f.brand || '')
+    ? `${f.customerNumber}__${(f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim()}`
+    : f.customerNumber;
+  const verification = verifyMap[vKey]?.status || 'Not Found';
   return {
-    'Employee Name':     f.employeeName   || '',
+    'Employee Name':   f.employeeName   || '',
+    'Employee Email':  emp.newJoinerEmailId || '',
+    'Employee Phone':  emp.newJoinerPhone   || '',
+    'Team Leader':     emp.reportingManager  || '',
+    'TL Phone':        tl.phone || '',
+    'TL Email':        tl.email || '',
     'Customer Name':     f.customerName   || '',
     'Customer Phone':    f.customerNumber || '',
     'Location':          f.location       || '',
     'Visit Status':      f.status         || '',
-    'Product': f.brand || f.tideProduct || f.formFillingFor || (f.attemptedProducts || []).join(', '),
+    'Product':           product,
+    'Verification Status': verification,
     'Tide QR Posted':    f.tide_qrPosted    || '',
     'Tide UPI Txn Done': f.tide_upiTxnDone  || '',
     // 'Kotak Txn Done':    f.kotak_txnDone    || '',
@@ -47,8 +60,33 @@ function flattenForm(f) {
 }
 
 // ── Export to Excel ───────────────────────────────────────────
-function exportToExcel(forms) {
-  const rows = forms.map(flattenForm);
+  async function exportToExcel(forms) { 
+  // Fetch employee details
+  const [empRes, tlRes] = await Promise.all([
+    fetch(`${EMP_API}/auth/all-employees`),
+    fetch(`${EMP_API}/tl/approved-list`)
+  ]);
+  const empList = empRes.ok ? await empRes.json() : [];
+  const tlList  = tlRes.ok  ? await tlRes.json()  : [];
+
+  // Build lookup maps
+  const empMap = {};
+  empList.forEach(e => { empMap[e.newJoinerName] = e; });
+  const tlMap = {};
+  tlList.forEach(t => { tlMap[t.name.toLowerCase().trim()] = t; });
+
+  // Fetch verification statuses
+  const phones   = forms.map(f => f.customerNumber).join(',');
+  const names    = forms.map(f => encodeURIComponent(f.customerName || '')).join(',');
+  const products = forms.map(f => encodeURIComponent((f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim())).join(',');
+  const months   = forms.map(f => encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))).join(',');
+  let verifyMap = {};
+  try {
+    const vRes = await fetch(`${EMP_API}/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`);
+    if (vRes.ok) verifyMap = await vRes.json();
+  } catch { /* ignore */ }
+
+  const rows = forms.map(f => flattenForm(f, empMap, tlMap, verifyMap));
   const ws   = XLSX.utils.json_to_sheet(rows);
 
   // Auto column widths
