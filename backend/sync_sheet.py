@@ -121,7 +121,9 @@ def sync_spreadsheet(sheet_id, label):
             cleaned['_sheet']     = label
             cleaned['_synced_at'] = datetime.now(timezone.utc)
 
-            filt = {phone_col: str(cleaned[phone_col])} if phone_col and cleaned.get(phone_col) else {'_row_index': idx}
+            phone_val = cleaned[phone_col]
+            filt = {phone_col: {'$in': [str(phone_val), int(float(str(phone_val)))]}} if phone_col and phone_val else {'_row_index': idx}
+
             if not phone_col: cleaned['_row_index'] = idx
             ops.append(UpdateOne(filt, {'$set': cleaned}, upsert=True))
 
