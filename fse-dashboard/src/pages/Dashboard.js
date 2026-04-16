@@ -3,7 +3,7 @@ import {
   Box, Typography, useTheme, Card, CardContent, Button, TextField, MenuItem,
   Dialog, DialogTitle, DialogContent, DialogActions, IconButton,
   Table, TableHead, TableRow, TableCell, TableBody, TableContainer, Paper,
-  Autocomplete
+  Autocomplete, Skeleton
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import { BRAND } from "../theme";
@@ -111,6 +111,7 @@ function Dashboard() {
   const [forms,        setForms]        = useState([]);
   const [employees,    setEmployees]    = useState([]);
   const [tls,          setTls]          = useState([]);
+  const [loading,      setLoading]      = useState(true);
   const [dateFilter,   setDateFilter]   = useState('all');
   const [fromDate,     setFromDate]     = useState('');
   const [toDate,       setToDate]       = useState('');
@@ -147,6 +148,8 @@ const loadData = async () => {
     setTls(data.tls || []);
   } catch (err) {
     console.error('Overview load error:', err);
+  } finally {
+    setLoading(false);
   }
 };
 
@@ -353,33 +356,58 @@ const kpiData = useMemo(() => {
 
     {/* KPI Cards */}
     <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 2, mb: 3 }}>
-      {[
-        { label: 'Total Forms',       value: kpiData.totalForms,      color: '#7c3aed', key: 'totalForms' },
-        { label: 'Total Employees',   value: kpiData.totalEmployees,  color: '#3b82f6', key: 'totalEmployees' },
-        { label: 'Active Employees',  value: kpiData.activeEmployees, color: '#10b981', key: 'activeEmployees' },
-        { label: 'Total TLs',         value: kpiData.totalTLs,        color: '#f59e0b', key: 'totalTLs' },
-        { label: 'Ready to Onboard',  value: kpiData.onboarding,      color: '#14b8a6', key: 'onboarding' },
-      ].map(k => (
-        <Card key={k.label} variant="outlined" sx={{ borderRadius: 3, cursor: 'pointer', transition: 'all 0.2s', '&:hover': { transform: 'translateY(-2px)', boxShadow: `0 4px 16px ${k.color}30` } }}
-          onClick={() => setKpiDrillOpen(k.key)}>
-          <Box sx={{ height: 5, bgcolor: k.color, borderRadius: '3px 3px 0 0' }} />
-          <CardContent>
-            <Typography variant="body2" color="text.secondary">{k.label}</Typography>
-            <Typography variant="h5" fontWeight={800} sx={{ color: k.color }}>{k.value}</Typography>
-            <Typography variant="caption" sx={{ color: k.color, opacity: 0.7 }}>click to explore ↗</Typography>
-          </CardContent>
-        </Card>
-      ))}
+      {loading ? (
+        Array.from({ length: 5 }).map((_, i) => (
+          <Card key={i} variant="outlined" sx={{ borderRadius: 3 }}>
+            <Box sx={{ height: 5, borderRadius: '3px 3px 0 0' }}>
+              <Skeleton variant="rectangular" height={5} />
+            </Box>
+            <CardContent>
+              <Skeleton variant="text" width="60%" height={20} sx={{ mb: 1 }} />
+              <Skeleton variant="text" width="40%" height={40} />
+              <Skeleton variant="text" width="50%" height={16} />
+            </CardContent>
+          </Card>
+        ))
+      ) : (
+        [
+          { label: 'Total Forms',       value: kpiData.totalForms,      color: '#7c3aed', key: 'totalForms' },
+          { label: 'Total Employees',   value: kpiData.totalEmployees,  color: '#3b82f6', key: 'totalEmployees' },
+          { label: 'Active Employees',  value: kpiData.activeEmployees, color: '#10b981', key: 'activeEmployees' },
+          { label: 'Total TLs',         value: kpiData.totalTLs,        color: '#f59e0b', key: 'totalTLs' },
+          { label: 'Ready to Onboard',  value: kpiData.onboarding,      color: '#14b8a6', key: 'onboarding' },
+        ].map(k => (
+          <Card key={k.label} variant="outlined" sx={{ borderRadius: 3, cursor: 'pointer', transition: 'all 0.2s', '&:hover': { transform: 'translateY(-2px)', boxShadow: `0 4px 16px ${k.color}30` } }}
+            onClick={() => setKpiDrillOpen(k.key)}>
+            <Box sx={{ height: 5, bgcolor: k.color, borderRadius: '3px 3px 0 0' }} />
+            <CardContent>
+              <Typography variant="body2" color="text.secondary">{k.label}</Typography>
+              <Typography variant="h5" fontWeight={800} sx={{ color: k.color }}>{k.value}</Typography>
+              <Typography variant="caption" sx={{ color: k.color, opacity: 0.7 }}>click to explore ↗</Typography>
+            </CardContent>
+          </Card>
+        ))
+      )}
     </Box>
 
     {/* Visit Status KPIs */}
     <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 2, mb: showOnboardVerify ? 1 : 3 }}>
-      {[
-        { label: 'Ready for Onboarding',          value: kpiData.onboarding, color: '#2e7d32', bg: '#e6f4ea', clickable: true },
-        { label: 'Not Interested',                value: kpiData.notInt,     color: '#c62828', bg: '#fdecea' },
-        { label: 'Try but not done due to error', value: kpiData.tryErr,     color: '#e65100', bg: '#fff3e0' },
-        { label: 'Need to visit again',           value: kpiData.revisit,    color: '#1565c0', bg: '#e3f2fd' },
-      ].map(k => (
+      {loading ? (
+        Array.from({ length: 4 }).map((_, i) => (
+          <Card key={i} sx={{ borderRadius: 3 }}>
+            <CardContent sx={{ py: 1.5 }}>
+              <Skeleton variant="text" width="70%" height={18} sx={{ mb: 0.5 }} />
+              <Skeleton variant="text" width="35%" height={44} />
+            </CardContent>
+          </Card>
+        ))
+      ) : (
+        [
+          { label: 'Ready for Onboarding',          value: kpiData.onboarding, color: '#2e7d32', bg: '#e6f4ea', clickable: true },
+          { label: 'Not Interested',                value: kpiData.notInt,     color: '#c62828', bg: '#fdecea' },
+          { label: 'Try but not done due to error', value: kpiData.tryErr,     color: '#e65100', bg: '#fff3e0' },
+          { label: 'Need to visit again',           value: kpiData.revisit,    color: '#1565c0', bg: '#e3f2fd' },
+        ].map(k => (
         <Card key={k.label} sx={{
           borderRadius: 3, bgcolor: k.bg, border: `1.5px solid ${k.color}30`,
           cursor: k.clickable ? 'pointer' : 'default',
@@ -419,7 +447,8 @@ const kpiData = useMemo(() => {
             )}
           </CardContent>
         </Card>
-      ))}
+      ))
+      )}
     </Box>
 
     {/* Onboarding Verification Sub-KPIs — shown only when Ready for Onboarding is clicked */}
@@ -438,45 +467,49 @@ const kpiData = useMemo(() => {
       <Card variant="outlined" sx={{ borderRadius: 3 }}>
         <CardContent>
           <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>Forms by Product</Typography>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart
-              data={Object.entries(kpiData.productMap).sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count }))}
-              margin={{ top: 8, right: 16, bottom: 60, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="name" angle={-30} textAnchor="end" tick={{ fontSize: 10 }} height={70} />
-              <YAxis allowDecimals={false} />
-              <Tooltip cursor={{ fill: 'rgba(124,58,237,0.08)' }} />
-              <Bar dataKey="count" radius={[6, 6, 0, 0]} style={{ cursor: 'pointer' }}
-                onClick={(data) => {
-                  if (!data?.name) return;
-                  const product = data.name;
-                  const rows = filteredForms
-                    .filter(f => {
-                      const p = f.formFillingFor || f.tideProduct || f.brand || 'Other';
-                      const normalized = p.toLowerCase() === 'msme' ? 'Tide MSME' : p;
-                      return normalized === product;
-                    })
-                    .map(f => {
-                      const emp = employees.find(e => e.newJoinerName === f.employeeName);
-                      return {
-                        merchant: f.customerName || '–',
-                        phone: f.customerNumber || '–',
-                        fse: f.employeeName || '–',
-                        fseEmail: emp?.email || emp?.newJoinerEmailId || '–',
-                        tl: emp?.reportingManager || '–',
-                        status: f.status || '–',
-                        date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
-                      };
-                    });
-                  setChartDrill({ title: `📦 ${product}`, subtitle: `${rows.length} forms`, color: '#7c3aed', cols: ['Merchant', 'Phone', 'FSE', 'FSE Email', 'TL', 'Status', 'Date'], rows });
-                }}>
-                {Object.keys(kpiData.productMap).map((_, i) => (
-                  <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block', textAlign: 'center' }}>Click any bar to explore</Typography>
+          {loading ? <Skeleton variant="rounded" height={280} /> : (
+            <Box>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart
+                  data={Object.entries(kpiData.productMap).sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count }))}
+                  margin={{ top: 8, right: 16, bottom: 60, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="name" angle={-30} textAnchor="end" tick={{ fontSize: 10 }} height={70} />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip cursor={{ fill: 'rgba(124,58,237,0.08)' }} />
+                  <Bar dataKey="count" radius={[6, 6, 0, 0]} style={{ cursor: 'pointer' }}
+                    onClick={(data) => {
+                      if (!data?.name) return;
+                      const product = data.name;
+                      const rows = filteredForms
+                        .filter(f => {
+                          const p = f.formFillingFor || f.tideProduct || f.brand || 'Other';
+                          const normalized = p.toLowerCase() === 'msme' ? 'Tide MSME' : p;
+                          return normalized === product;
+                        })
+                        .map(f => {
+                          const emp = employees.find(e => e.newJoinerName === f.employeeName);
+                          return {
+                            merchant: f.customerName || '–',
+                            phone: f.customerNumber || '–',
+                            fse: f.employeeName || '–',
+                            fseEmail: emp?.email || emp?.newJoinerEmailId || '–',
+                            tl: emp?.reportingManager || '–',
+                            status: f.status || '–',
+                            date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+                          };
+                        });
+                      setChartDrill({ title: `📦 ${product}`, subtitle: `${rows.length} forms`, color: '#7c3aed', cols: ['Merchant', 'Phone', 'FSE', 'FSE Email', 'TL', 'Status', 'Date'], rows });
+                    }}>
+                    {Object.keys(kpiData.productMap).map((_, i) => (
+                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block', textAlign: 'center' }}>Click any bar to explore</Typography>
+            </Box>
+          )}
         </CardContent>
       </Card>
 
@@ -484,36 +517,40 @@ const kpiData = useMemo(() => {
       <Card variant="outlined" sx={{ borderRadius: 3 }}>
         <CardContent>
           <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>Daily Form Submissions</Typography>
-          <ResponsiveContainer width="100%" height={280}>
-            <ComposedChart data={kpiData.dailyTrend} margin={{ top: 8, right: 16, bottom: 40, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="date" angle={-30} textAnchor="end" tick={{ fontSize: 9 }} height={60} />
-              <YAxis allowDecimals={false} />
-              <Tooltip cursor={{ fill: 'rgba(26,71,49,0.08)' }} />
-              <Bar dataKey="count" name="Forms" fill={BRAND.primary} radius={[4, 4, 0, 0]} style={{ cursor: 'pointer' }}
-                onClick={(data) => {
-                  if (!data?.date) return;
-                  const date = data.date;
-                  const rows = filteredForms
-                    .filter(f => new Date(f.createdAt).toISOString().slice(0, 10) === date)
-                    .map(f => {
-                      const emp = employees.find(e => e.newJoinerName === f.employeeName);
-                      return {
-                        merchant: f.customerName || '–',
-                        phone: f.customerNumber || '–',
-                        fse: f.employeeName || '–',
-                        fseEmail: emp?.email || emp?.newJoinerEmailId || '–',
-                        tl: emp?.reportingManager || '–',
-                        product: f.formFillingFor || f.brand || '–',
-                        status: f.status || '–',
-                      };
-                    });
-                  setChartDrill({ title: `📅 ${date}`, subtitle: `${rows.length} submissions`, color: BRAND.primary, cols: ['Merchant', 'Phone', 'FSE', 'FSE Email', 'TL', 'Product', 'Status'], rows });
-                }} />
-              <Line type="monotone" dataKey="count" stroke="#f59e0b" strokeWidth={2} dot={false} />
-            </ComposedChart>
-          </ResponsiveContainer>
-          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block', textAlign: 'center' }}>Click any bar to explore</Typography>
+          {loading ? <Skeleton variant="rounded" height={280} /> : (
+            <Box>
+              <ResponsiveContainer width="100%" height={280}>
+                <ComposedChart data={kpiData.dailyTrend} margin={{ top: 8, right: 16, bottom: 40, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                  <XAxis dataKey="date" angle={-30} textAnchor="end" tick={{ fontSize: 9 }} height={60} />
+                  <YAxis allowDecimals={false} />
+                  <Tooltip cursor={{ fill: 'rgba(26,71,49,0.08)' }} />
+                  <Bar dataKey="count" name="Forms" fill={BRAND.primary} radius={[4, 4, 0, 0]} style={{ cursor: 'pointer' }}
+                    onClick={(data) => {
+                      if (!data?.date) return;
+                      const date = data.date;
+                      const rows = filteredForms
+                        .filter(f => new Date(f.createdAt).toISOString().slice(0, 10) === date)
+                        .map(f => {
+                          const emp = employees.find(e => e.newJoinerName === f.employeeName);
+                          return {
+                            merchant: f.customerName || '–',
+                            phone: f.customerNumber || '–',
+                            fse: f.employeeName || '–',
+                            fseEmail: emp?.email || emp?.newJoinerEmailId || '–',
+                            tl: emp?.reportingManager || '–',
+                            product: f.formFillingFor || f.brand || '–',
+                            status: f.status || '–',
+                          };
+                        });
+                      setChartDrill({ title: `📅 ${date}`, subtitle: `${rows.length} submissions`, color: BRAND.primary, cols: ['Merchant', 'Phone', 'FSE', 'FSE Email', 'TL', 'Product', 'Status'], rows });
+                    }} />
+                  <Line type="monotone" dataKey="count" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                </ComposedChart>
+              </ResponsiveContainer>
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block', textAlign: 'center' }}>Click any bar to explore</Typography>
+            </Box>
+          )}
         </CardContent>
       </Card>
 
@@ -543,7 +580,11 @@ const kpiData = useMemo(() => {
             ))}
           </Box>
         </Box>
-        <ResponsiveContainer width="100%" height={280}>
+        {loading ? (
+          <Skeleton variant="rounded" height={280} />
+        ) : (
+          <Box>
+          <ResponsiveContainer width="100%" height={280}>
           <BarChart
             data={(() => {
               const POINTS_MAP = { 'tide': 2, 'tide msme': 0.3, 'tide insurance': 1, 'tide credit card': 1, 'tide bt': 1 };
@@ -652,8 +693,10 @@ const kpiData = useMemo(() => {
               ))}
             </Bar>
           </BarChart>
-        </ResponsiveContainer>
+          </ResponsiveContainer>
         <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block', textAlign: 'center' }}>Click any bar to explore FSE details</Typography>
+          </Box>
+        )}
       </CardContent>
     </Card>
 

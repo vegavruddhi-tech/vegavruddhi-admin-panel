@@ -1,8 +1,9 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   Box, Card, CardContent, Typography, useTheme, Chip, IconButton, Tooltip as MuiTooltip,
-  Collapse, Button, Divider, Dialog, DialogTitle, DialogContent,
-  Table, TableHead, TableRow, TableCell, TableBody, TextField, CircularProgress
+  Collapse, Button, Divider, Dialog, DialogTitle, DialogContent, DialogActions,
+  Table, TableHead, TableRow, TableCell, TableBody, TableContainer, Paper,
+  TextField, CircularProgress, Autocomplete
 } from "@mui/material";
 import TableChartIcon from "@mui/icons-material/TableChart";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
@@ -11,6 +12,7 @@ import FullscreenIcon from "@mui/icons-material/Fullscreen";
 import FullscreenExitIcon from "@mui/icons-material/FullscreenExit";
 import ZoomInIcon from "@mui/icons-material/ZoomIn";
 import ZoomOutIcon from "@mui/icons-material/ZoomOut";
+import CloseIcon from "@mui/icons-material/Close";
 import {
   BarChart, Bar, PieChart, Pie, Cell,
   ComposedChart, Line, Label,
@@ -24,6 +26,7 @@ import MeetingTrend from "../components/MeetingTrend";
 import { BRAND } from "../theme";
 
 const COLORS = ["#7c3aed", "#10b981", "#3b82f6", "#f59e0b", "#14b8a6", "#ec4899", "#0ea5e9", "#ef4444"];
+const PRODUCT_COLORS = ["#7c3aed","#10b981","#3b82f6","#f59e0b","#14b8a6","#ec4899","#0ea5e9","#ef4444","#f97316","#84cc16","#06b6d4","#8b5cf6"];
 
 function toChartTheme(muiTheme) {
   const isDark = muiTheme.palette.mode === "dark";
@@ -34,6 +37,100 @@ function toChartTheme(muiTheme) {
     grid: isDark ? "rgba(255,255,255,0.08)" : "rgba(26,92,56,0.15)",
     tooltipBg: isDark ? "#1e2d3d" : "#ffffff",
   };
+}
+
+// ── Onboarding Verification Sub-section (same as Overview) ─────────────────
+function OnboardVerifySection({ filteredForms, onboardVerifyMap, onboardVerifying, verifyDrillStatus, setVerifyDrillStatus }) {
+  const onboardForms = filteredForms.filter(f => f.status === 'Ready for Onboarding');
+  const getKey = (f) => {
+    const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+    return p ? `${f.customerNumber}__${p}` : f.customerNumber;
+  };
+  const fullyVerified = onboardForms.filter(f => onboardVerifyMap[getKey(f)]?.status === 'Fully Verified').length;
+  const partiallyDone = onboardForms.filter(f => onboardVerifyMap[getKey(f)]?.status === 'Partially Done').length;
+  const notFound      = onboardForms.filter(f => !onboardVerifyMap[getKey(f)] || onboardVerifyMap[getKey(f)]?.status === 'Not Found').length;
+
+  const statusColor = { 'Fully Verified': '#2e7d32', 'Partially Done': '#f57f17', 'Not Found': '#888' };
+  const statusBg    = { 'Fully Verified': '#e6f4ea', 'Partially Done': '#fff8e1', 'Not Found': '#f5f5f5' };
+
+  const buildBreakdown = (status) => {
+    const productMap = {};
+    onboardForms.forEach(f => {
+      const rawProduct = f.formFillingFor || f.tideProduct || f.brand || '–';
+      const product    = rawProduct.toLowerCase() === 'msme' ? 'Tide MSME' : rawProduct;
+      const s          = onboardVerifyMap[getKey(f)]?.status || 'Not Found';
+      if (!productMap[product]) productMap[product] = { matched: 0, total: 0 };
+      productMap[product].total++;
+      if (s === status) productMap[product].matched++;
+    });
+    return Object.entries(productMap).filter(([, v]) => v.matched > 0).sort((a, b) => b[1].matched - a[1].matched);
+  };
+
+  return (
+    <Box sx={{ mb: 3 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 2, mb: verifyDrillStatus ? 1 : 3 }}>
+        {onboardVerifying ? (
+          <Card sx={{ gridColumn: '1 / -1', borderRadius: 3, bgcolor: '#f9f9f9', border: '1.5px solid #e0e0e0' }}>
+            <CardContent sx={{ py: 1.5, textAlign: 'center' }}>
+              <Typography variant="body2" color="text.secondary">Loading verification data…</Typography>
+            </CardContent>
+          </Card>
+        ) : [
+          { label: '✓ Fully Verified', value: fullyVerified, color: '#2e7d32', bg: '#e6f4ea', status: 'Fully Verified' },
+          { label: '◑ Partially Done', value: partiallyDone, color: '#f57f17', bg: '#fff8e1', status: 'Partially Done' },
+          { label: '– Not Found',      value: notFound,      color: '#888',    bg: '#f5f5f5', status: 'Not Found'      },
+        ].map(k => (
+          <Card key={k.label} onClick={() => setVerifyDrillStatus(verifyDrillStatus === k.status ? null : k.status)}
+            sx={{ borderRadius: 3, bgcolor: k.bg, border: `1.5px solid ${k.color}30`, cursor: 'pointer',
+              outline: verifyDrillStatus === k.status ? `2px solid ${k.color}` : 'none',
+              transition: 'all 0.2s', '&:hover': { transform: 'translateY(-2px)', boxShadow: `0 4px 16px ${k.color}30` } }}>
+            <CardContent sx={{ py: 1.5 }}>
+              <Typography variant="caption" fontWeight={700} sx={{ color: k.color }}>{k.label}</Typography>
+              <Typography variant="h5" fontWeight={800} sx={{ color: k.color }}>{k.value}</Typography>
+              <Typography variant="caption" color="text.secondary">of {onboardForms.length} onboarding forms</Typography>
+              <Typography variant="caption" sx={{ display: 'block', color: k.color, opacity: 0.7 }}>
+                {verifyDrillStatus === k.status ? '▲ hide breakdown' : '▼ product breakdown'}
+              </Typography>
+            </CardContent>
+          </Card>
+        ))}
+      </Box>
+
+      {verifyDrillStatus && (() => {
+        const color     = statusColor[verifyDrillStatus];
+        const bg        = statusBg[verifyDrillStatus];
+        const breakdown = buildBreakdown(verifyDrillStatus);
+        return (
+          <Box sx={{ mb: 3, p: 2, borderRadius: 3, bgcolor: bg, border: `1.5px solid ${color}30` }}>
+            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+              <Typography variant="subtitle1" fontWeight={800} sx={{ color }}>
+                {verifyDrillStatus} — Product Breakdown
+              </Typography>
+              <Button size="small" onClick={() => setVerifyDrillStatus(null)} sx={{ color, fontWeight: 700, minWidth: 0 }}>✕ Close</Button>
+            </Box>
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 1.5 }}>
+              {breakdown.map(([product, v]) => (
+                <Card key={product} sx={{ borderRadius: 2, border: `1px solid ${color}30` }}>
+                  <CardContent sx={{ py: 1, px: 1.5 }}>
+                    <Typography variant="caption" fontWeight={700} sx={{ color, display: 'block' }}>{product}</Typography>
+                    <Typography variant="h6" fontWeight={800} sx={{ color }}>{v.matched}</Typography>
+                    <Typography variant="caption" color="text.secondary">
+                      of {v.total} · {Math.round((v.matched / v.total) * 100)}%
+                    </Typography>
+                  </CardContent>
+                </Card>
+              ))}
+              {breakdown.length === 0 && (
+                <Typography variant="body2" color="text.secondary" sx={{ gridColumn: '1/-1', py: 1 }}>
+                  No products found for this status.
+                </Typography>
+              )}
+            </Box>
+          </Box>
+        );
+      })()}
+    </Box>
+  );
 }
 
 // ── KPI strip ──────────────────────────────────────────────────────────────
@@ -434,16 +531,43 @@ export default function ProductDashboard() {
   const muiTheme = useTheme();
   const ct = useMemo(() => toChartTheme(muiTheme), [muiTheme]);
 
+  // ── Google Sheets data (for charts below) ──────────────────────────────
   const [raw, setRaw] = useState([]);
   const [selectedMonth, setSelectedMonth] = useState("");
   const [filters, setFilters] = useState({ tl: "", employee: "", status: "", employment: "" });
   const [productMeta, setProductMeta] = useState({ product_columns: [], product_totals: {}, product_groups: {} });
   const [onboardColMap, setOnboardColMap] = useState({ byMonth: {}, default: "Tide OB with PP" });
 
+  // ── MongoDB data (for top section KPIs) ────────────────────────────────
+  const EMP_API = process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api';
+  const [mongoForms,     setMongoForms]     = useState([]);
+  const [mongoEmployees, setMongoEmployees] = useState([]);
+  const [mongoTls,       setMongoTls]       = useState([]);
+
+  // Top section filters (MongoDB)
+  const [topDateFilter,   setTopDateFilter]   = useState('all');
+  const [topFromDate,     setTopFromDate]     = useState('');
+  const [topToDate,       setTopToDate]       = useState('');
+  const [topFilterTL,     setTopFilterTL]     = useState('');
+  const [topFilterFSE,    setTopFilterFSE]    = useState('');
+  const [topFilterStatus, setTopFilterStatus] = useState('');
+  const [topFilterMonth,  setTopFilterMonth]  = useState('');
+
+  // Onboarding verification state
+  const [showOnboardVerify,  setShowOnboardVerify]  = useState(false);
+  const [onboardVerifying,   setOnboardVerifying]   = useState(false);
+  const [onboardVerifyMap,   setOnboardVerifyMap]   = useState({});
+  const [verifyDrillStatus,  setVerifyDrillStatus]  = useState(null);
+
   // drill-down state
   const [drill, setDrill] = useState({ open: false, title: "", rows: [], editableCols: undefined });
   const openDrill = (title, rows, editableCols) => setDrill({ open: true, title, rows, editableCols: editableCols || undefined });
   const closeDrill = () => setDrill((p) => ({ ...p, open: false }));
+
+  // MongoDB drill-down state (for custom chart)
+  const [mongoDrill, setMongoDrill] = useState(null); // { title, data: [{name, tl, ...products}], cols }
+  const openMongoDrill = (title, data, cols) => setMongoDrill({ title, data, cols });
+  const closeMongoDrill = () => setMongoDrill(null);
 
   // employee profile popup state (custom chart bar click)
   const [empProfile, setEmpProfile] = useState(null); // { name, email, tl, status, employment, kpis: [{label, value, color}] }
@@ -508,11 +632,179 @@ export default function ProductDashboard() {
     }
   };
 
+  const loadMongoData = async () => {
+    try {
+      const res = await fetch(`${EMP_API}/forms/admin/overview`);
+      const data = res.ok ? await res.json() : { forms: [], employees: [], tls: [] };
+      setMongoForms(data.forms || []);
+      setMongoEmployees(data.employees || []);
+      setMongoTls(data.tls || []);
+    } catch (err) {
+      console.error('Product page MongoDB load error:', err);
+    }
+  };
+
   useEffect(() => {
     load();
+    loadMongoData();
     const iv = setInterval(load, 120000);
-    return () => clearInterval(iv);
+    const iv2 = setInterval(loadMongoData, 120000);
+    return () => { clearInterval(iv); clearInterval(iv2); };
   }, []);
+
+  // ── MongoDB: filtered forms for top section ───────────────────────────────
+  const topFilteredForms = useMemo(() => {
+    const now        = new Date();
+    const today      = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekStart  = new Date(today); weekStart.setDate(today.getDate() - today.getDay());
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    return mongoForms.filter(f => {
+      const d = new Date(f.createdAt);
+      if (topDateFilter === 'today'  && d < today)      return false;
+      if (topDateFilter === 'week'   && d < weekStart)  return false;
+      if (topDateFilter === 'month'  && d < monthStart) return false;
+      if (topDateFilter === 'custom') {
+        if (topFromDate && d < new Date(topFromDate))                    return false;
+        if (topToDate   && d > new Date(topToDate + 'T23:59:59'))        return false;
+      }
+      if (topFilterMonth) {
+        const m = new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+        if (m !== topFilterMonth) return false;
+      }
+      if (topFilterTL) {
+        const emp = mongoEmployees.find(e => e.newJoinerName === f.employeeName);
+        if (!emp || (emp.reportingManager || '').toLowerCase().trim() !== topFilterTL.toLowerCase().trim()) return false;
+      }
+      if (topFilterFSE    && f.employeeName !== topFilterFSE)    return false;
+      if (topFilterStatus && f.status       !== topFilterStatus) return false;
+      return true;
+    });
+  }, [mongoForms, topDateFilter, topFromDate, topToDate, topFilterMonth, topFilterTL, topFilterFSE, topFilterStatus, mongoEmployees]);
+
+  // ── MongoDB: filter options ────────────────────────────────────────────
+  const topMonthOptions = useMemo(() => {
+    const seen = new Set();
+    mongoForms.forEach(f => {
+      if (f.createdAt) {
+        const m = new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+        seen.add(m);
+      }
+    });
+    return [...seen].sort();
+  }, [mongoForms]);
+
+  const topTlOptions  = useMemo(() => [...new Set(mongoTls.map(t => t.name).filter(Boolean))].sort(), [mongoTls]);
+  const topFseOptions = useMemo(() => {
+    if (topFilterTL) {
+      return [...new Set(
+        mongoEmployees
+          .filter(e => (e.reportingManager || '').toLowerCase().trim() === topFilterTL.toLowerCase().trim())
+          .map(e => e.newJoinerName).filter(Boolean)
+      )].sort();
+    }
+    return [...new Set(mongoEmployees.map(e => e.newJoinerName).filter(Boolean))].sort();
+  }, [mongoEmployees, topFilterTL]);
+  const topStatusOptions = ['Ready for Onboarding', 'Not Interested', 'Try but not done due to error', 'Need to visit again'];
+
+  // ── MongoDB: dynamic product KPIs ─────────────────────────────────────
+  const productKpis = useMemo(() => {
+    const map = {};
+    topFilteredForms.forEach(f => {
+      const raw = f.formFillingFor || f.tideProduct || f.brand || 'Other';
+      const product = raw.toLowerCase() === 'msme' ? 'Tide MSME' : raw;
+      if (!map[product]) map[product] = 0;
+      map[product]++;
+    });
+    return Object.entries(map)
+      .sort((a, b) => b[1] - a[1])
+      .map(([product, count], i) => ({ product, count, color: PRODUCT_COLORS[i % PRODUCT_COLORS.length] }));
+  }, [topFilteredForms]);
+
+  // ── MongoDB: visit status counts ──────────────────────────────────────
+  const visitStatusCounts = useMemo(() => ({
+    onboarding: topFilteredForms.filter(f => f.status === 'Ready for Onboarding').length,
+    notInt:     topFilteredForms.filter(f => f.status === 'Not Interested').length,
+    tryErr:     topFilteredForms.filter(f => f.status === 'Try but not done due to error').length,
+    revisit:    topFilteredForms.filter(f => f.status === 'Need to visit again').length,
+  }), [topFilteredForms]);
+
+  // ── MongoDB: dynamic product columns and groups for Custom Chart ──────
+  const mongoProductMeta = useMemo(() => {
+    const productSet = new Set();
+    topFilteredForms.forEach(f => {
+      const raw = f.formFillingFor || f.tideProduct || f.brand || '';
+      if (raw) {
+        const normalized = raw.toLowerCase() === 'msme' ? 'Tide MSME' : raw;
+        productSet.add(normalized);
+      }
+    });
+    
+    const allProducts = Array.from(productSet).sort();
+    
+    // Group products by category
+    const groups = {};
+    allProducts.forEach(p => {
+      const lower = p.toLowerCase();
+      if (lower.includes('tide')) {
+        if (!groups['Tide Products']) groups['Tide Products'] = { columns: [] };
+        groups['Tide Products'].columns.push(p);
+      } else if (lower.includes('insurance') || lower.includes('vehicle')) {
+        if (!groups['Insurance']) groups['Insurance'] = { columns: [] };
+        groups['Insurance'].columns.push(p);
+      } else if (lower.includes('pinelab') || lower.includes('pine lab')) {
+        if (!groups['PineLab']) groups['PineLab'] = { columns: [] };
+        groups['PineLab'].columns.push(p);
+      } else {
+        if (!groups['Other Products']) groups['Other Products'] = { columns: [] };
+        groups['Other Products'].columns.push(p);
+      }
+    });
+
+    return {
+      product_columns: allProducts,
+      product_groups: groups
+    };
+  }, [topFilteredForms]);
+
+  // ── MongoDB: aggregated data for Custom Chart (by product) ────────────
+  const mongoAggregatedData = useMemo(() => {
+    const employeeMap = {};
+    const tlMap = {};
+
+    topFilteredForms.forEach(f => {
+      const product = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase() === 'msme' 
+        ? 'Tide MSME' 
+        : (f.formFillingFor || f.tideProduct || f.brand || 'Other');
+      
+      const empName = f.employeeName || 'Unknown';
+      const emp = mongoEmployees.find(e => e.newJoinerName === empName);
+      const tlName = emp?.reportingManager || 'Unknown';
+
+      // Aggregate by employee
+      if (!employeeMap[empName]) {
+        employeeMap[empName] = { name: empName, tl: tlName };
+        mongoProductMeta.product_columns.forEach(col => { employeeMap[empName][col] = 0; });
+      }
+      if (mongoProductMeta.product_columns.includes(product)) {
+        employeeMap[empName][product]++;
+      }
+
+      // Aggregate by TL
+      if (!tlMap[tlName]) {
+        tlMap[tlName] = { name: tlName };
+        mongoProductMeta.product_columns.forEach(col => { tlMap[tlName][col] = 0; });
+      }
+      if (mongoProductMeta.product_columns.includes(product)) {
+        tlMap[tlName][product]++;
+      }
+    });
+
+    return {
+      byEmployee: Object.values(employeeMap),
+      byTL: Object.values(tlMap)
+    };
+  }, [topFilteredForms, mongoEmployees, mongoProductMeta.product_columns]);
 
   // ── Detect available months from _month tag ──────────────────────────────
   const monthOptions = useMemo(() => {
@@ -708,28 +1000,27 @@ export default function ProductDashboard() {
   }, [productMeta.product_columns]);
 
   // ── All product columns (all groups) for the column selector ─────────────
-  const allProductCols = useMemo(() => productMeta.product_columns, [productMeta.product_columns]);
+  const allProductCols = useMemo(() => mongoProductMeta.product_columns, [mongoProductMeta.product_columns]);
 
   // ── Custom chart data — grouped by Employee or TL based on groupBy state ─
   const customChartData = useMemo(() => {
     if (selectedCols.length === 0) return [];
-    const map = {};
-    rows.forEach((r) => {
-      const key = groupBy === "tl" ? (r["TL"] || "Unknown") : (r["Name"] || "Unknown");
-      if (!map[key]) {
-        map[key] = { key, tl: r["TL"] || "", name: r["Name"] || "" };
-        selectedCols.forEach((c) => { map[key][c] = 0; });
-      }
-      selectedCols.forEach((c) => { map[key][c] += Number(r[c]) || 0; });
-    });
-    return Object.values(map)
-      .filter((d) => selectedCols.some((c) => d[c] > 0))
+    
+    const sourceData = groupBy === "tl" ? mongoAggregatedData.byTL : mongoAggregatedData.byEmployee;
+    
+    return sourceData
+      .filter((d) => selectedCols.some((c) => (d[c] || 0) > 0))
+      .map(d => {
+        const result = { key: d.name, tl: d.tl || '', name: d.name };
+        selectedCols.forEach(c => { result[c] = d[c] || 0; });
+        return result;
+      })
       .sort((a, b) => {
         const sumA = selectedCols.reduce((s, c) => s + (a[c] || 0), 0);
         const sumB = selectedCols.reduce((s, c) => s + (b[c] || 0), 0);
         return sumB - sumA;
       });
-  }, [selectedCols, rows, groupBy]);
+  }, [selectedCols, groupBy, mongoAggregatedData]);
 
   // ── CHART 4 donut: dynamic product breakdown from detected Tide columns ───
   const productBreakdown = useMemo(() => {
@@ -937,41 +1228,157 @@ export default function ProductDashboard() {
         Click any bar or slice to see the employee drill-down table. Click a number in the table to edit and sync to Google Sheet.
       </Typography>
 
-      <FiltersBar
-        data={raw}
-        selectedMonth={selectedMonth}
-        setSelectedMonth={setSelectedMonth}
-        filters={filters}
-        setFilters={setFilters}
-        monthOptions={monthOptions}
-      />
+      {/* ── TOP SECTION: MongoDB-driven filters + KPIs ─────────────────── */}
+      {/* Date quick filters */}
       <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap', alignItems: 'center' }}>
-  {['all', 'today', 'week', 'month'].map(f => (
-    <Button key={f} size="small"
-      variant={dateFilter === f ? 'contained' : 'outlined'}
-      onClick={() => { setDateFilter(f); setFromDate(''); setToDate(''); }}
-      sx={{ fontWeight: 700, textTransform: 'capitalize',
-        bgcolor: dateFilter === f ? BRAND.primary : 'transparent',
-        borderColor: BRAND.primary, color: dateFilter === f ? '#fff' : BRAND.primary,
-        '&:hover': { bgcolor: dateFilter === f ? '#0f3320' : BRAND.primaryLight }
-      }}>
-      {f === 'all' ? 'All' : f === 'today' ? 'Today' : f === 'week' ? 'This Week' : 'This Month'}
-    </Button>
-  ))}
-  <TextField size="small" type="date" label="From" value={fromDate}
-    onChange={e => { setFromDate(e.target.value); setDateFilter('custom'); }}
-    InputLabelProps={{ shrink: true }} sx={{ minWidth: 150 }} />
-  <TextField size="small" type="date" label="To" value={toDate}
-    onChange={e => { setToDate(e.target.value); setDateFilter('custom'); }}
-    InputLabelProps={{ shrink: true }} sx={{ minWidth: 150 }} />
-</Box>
+        {['all', 'today', 'week', 'month'].map(f => (
+          <Button key={f} size="small"
+            variant={topDateFilter === f ? 'contained' : 'outlined'}
+            onClick={() => { setTopDateFilter(f); setTopFromDate(''); setTopToDate(''); }}
+            sx={{ fontWeight: 700, textTransform: 'capitalize',
+              bgcolor: topDateFilter === f ? BRAND.primary : 'transparent',
+              borderColor: BRAND.primary, color: topDateFilter === f ? '#fff' : BRAND.primary }}>
+            {f === 'all' ? 'All' : f === 'today' ? 'Today' : f === 'week' ? 'This Week' : 'This Month'}
+          </Button>
+        ))}
+        <TextField size="small" type="date" label="From" value={topFromDate}
+          onChange={e => { setTopFromDate(e.target.value); setTopDateFilter('custom'); }}
+          InputLabelProps={{ shrink: true }} sx={{ minWidth: 150 }} />
+        <TextField size="small" type="date" label="To" value={topToDate}
+          onChange={e => { setTopToDate(e.target.value); setTopDateFilter('custom'); }}
+          InputLabelProps={{ shrink: true }} sx={{ minWidth: 150 }} />
+        {(topDateFilter !== 'all' || topFromDate || topToDate) && (
+          <Button size="small" variant="outlined" color="error" fontWeight={700}
+            onClick={() => { setTopDateFilter('all'); setTopFromDate(''); setTopToDate(''); }}>
+            Reset
+          </Button>
+        )}
+      </Box>
 
+      {/* Dropdown filters */}
+      <Box sx={{ display: 'flex', gap: 1.5, mb: 3, flexWrap: 'wrap', alignItems: 'center' }}>
+        <Autocomplete size="small" options={topMonthOptions} value={topFilterMonth || null}
+          onChange={(_, v) => setTopFilterMonth(v || '')}
+          renderInput={(params) => <TextField {...params} label="Month" />}
+          sx={{ minWidth: 150 }} freeSolo={false} />
+        <Autocomplete size="small" options={topTlOptions} value={topFilterTL || null}
+          onChange={(_, v) => { setTopFilterTL(v || ''); setTopFilterFSE(''); }}
+          renderInput={(params) => <TextField {...params} label="Team Leader" />}
+          sx={{ minWidth: 180 }} freeSolo={false} />
+        <Autocomplete size="small" options={topFseOptions} value={topFilterFSE || null}
+          onChange={(_, v) => {
+            setTopFilterFSE(v || '');
+            if (v) {
+              const emp = mongoEmployees.find(e => e.newJoinerName === v);
+              if (emp?.reportingManager) setTopFilterTL(emp.reportingManager);
+            }
+          }}
+          renderInput={(params) => <TextField {...params} label="Employee" />}
+          sx={{ minWidth: 180 }} freeSolo={false} />
+        <Autocomplete size="small" options={topStatusOptions} value={topFilterStatus || null}
+          onChange={(_, v) => setTopFilterStatus(v || '')}
+          renderInput={(params) => <TextField {...params} label="Status" />}
+          sx={{ minWidth: 220 }} freeSolo={false} />
+        <Button variant="outlined" size="small" onClick={() => {
+          setTopFilterTL(''); setTopFilterFSE(''); setTopFilterStatus(''); setTopFilterMonth('');
+          setTopDateFilter('all'); setTopFromDate(''); setTopToDate('');
+        }} sx={{ fontWeight: 700 }}>Reset</Button>
+      </Box>
 
-      <TideKPI rows={rows} tideColumns={tideColumns} ct={ct} openDrill={openDrill} onboardCol={onboardCol} />
+      {/* Dynamic Product KPIs from MongoDB */}
+      {productKpis.length > 0 && (
+        <Box sx={{ mb: 2 }}>
+          <Typography variant="subtitle2" color="text.secondary"
+            sx={{ fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 1, mb: 1.5 }}>
+            Forms by Product
+          </Typography>
+          <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 2, mb: 1 }}>
+            {productKpis.map(k => (
+              <Card key={k.product} variant="outlined"
+                sx={{
+                  transition: 'all 0.2s', cursor: 'default',
+                  '&:hover': { borderColor: k.color, transform: 'translateY(-2px)', boxShadow: `0 4px 20px ${k.color}33` },
+                }}>
+                <Box sx={{ height: 4, bgcolor: k.color, borderRadius: '3px 3px 0 0' }} />
+                <CardContent sx={{ textAlign: 'center', py: 1.5, px: 1.5 }}>
+                  <Typography variant="body2" color="text.secondary"
+                    sx={{ fontSize: 10, mb: 0.5, lineHeight: 1.3, minHeight: 28 }}>
+                    {k.product}
+                  </Typography>
+                  <Typography variant="h5" sx={{ color: k.color, fontWeight: 800, fontSize: '1.6rem' }}>
+                    {k.count}
+                  </Typography>
+                  <Typography variant="caption" sx={{ opacity: 0.4, fontSize: 9 }}>forms submitted</Typography>
+                </CardContent>
+              </Card>
+            ))}
+          </Box>
+        </Box>
+      )}
 
-      <OtherProductKPI rows={rows} openDrill={openDrill} />
+      {/* Visit Status KPIs */}
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 2, mb: showOnboardVerify ? 1 : 3 }}>
+        {[
+          { label: 'Ready for Onboarding',          value: visitStatusCounts.onboarding, color: '#2e7d32', bg: '#e6f4ea', clickable: true },
+          { label: 'Not Interested',                value: visitStatusCounts.notInt,     color: '#c62828', bg: '#fdecea' },
+          { label: 'Try but not done due to error', value: visitStatusCounts.tryErr,     color: '#e65100', bg: '#fff3e0' },
+          { label: 'Need to visit again',           value: visitStatusCounts.revisit,    color: '#1565c0', bg: '#e3f2fd' },
+        ].map(k => (
+          <Card key={k.label} sx={{
+            borderRadius: 3, bgcolor: k.bg, border: `1.5px solid ${k.color}30`,
+            cursor: k.clickable ? 'pointer' : 'default',
+            outline: k.clickable && showOnboardVerify ? `2px solid ${k.color}` : 'none',
+            transition: 'all 0.2s',
+            '&:hover': k.clickable ? { transform: 'translateY(-2px)', boxShadow: `0 4px 16px ${k.color}30` } : {}
+          }}
+            onClick={k.clickable ? async () => {
+              if (showOnboardVerify) { setShowOnboardVerify(false); return; }
+              setShowOnboardVerify(true);
+              setOnboardVerifying(true);
+              const onboardForms = topFilteredForms.filter(f => f.status === 'Ready for Onboarding');
+              if (!onboardForms.length) { setOnboardVerifying(false); return; }
+              const BATCH = 50;
+              const batches = [];
+              for (let i = 0; i < onboardForms.length; i += BATCH) batches.push(onboardForms.slice(i, i + BATCH));
+              try {
+                const results = await Promise.all(batches.map(batch => {
+                  const phones   = batch.map(f => f.customerNumber).join(',');
+                  const names    = batch.map(f => encodeURIComponent(f.customerName || '')).join(',');
+                  const products = batch.map(f => encodeURIComponent((f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim())).join(',');
+                  const months   = batch.map(f => encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))).join(',');
+                  return fetch(`${EMP_API}/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`)
+                    .then(r => r.ok ? r.json() : {}).catch(() => ({}));
+                }));
+                setOnboardVerifyMap(Object.assign({}, ...results));
+              } catch { /* ignore */ }
+              setOnboardVerifying(false);
+            } : undefined}>
+            <CardContent sx={{ py: 1.5 }}>
+              <Typography variant="caption" fontWeight={700} sx={{ color: k.color }}>{k.label}</Typography>
+              <Typography variant="h5" fontWeight={800} sx={{ color: k.color }}>{k.value}</Typography>
+              {k.clickable && (
+                <Typography variant="caption" sx={{ color: k.color, opacity: 0.7 }}>
+                  {showOnboardVerify ? '▲ hide verification' : '▼ show verification'}
+                </Typography>
+              )}
+            </CardContent>
+          </Card>
+        ))}
+      </Box>
 
-      {/* ── Custom Column Chart ─────────────────────────────────────────── */}
+      {/* Onboarding Verification Sub-KPIs */}
+      {showOnboardVerify && (
+        <OnboardVerifySection
+          filteredForms={topFilteredForms}
+          onboardVerifyMap={onboardVerifyMap}
+          onboardVerifying={onboardVerifying}
+          verifyDrillStatus={verifyDrillStatus}
+          setVerifyDrillStatus={setVerifyDrillStatus}
+        />
+      )}
+
+      {/* ── CHARTS SECTION: Google Sheets data ──────────── */}
+      {/* Custom Column Chart */}
       <Card variant="outlined" sx={{ mb: 3 }}>
         <CardContent sx={{ pb: "16px !important" }}>
 
@@ -986,7 +1393,7 @@ export default function ProductDashboard() {
             <Box sx={{ display: "flex", gap: 1, alignItems: "center", flexShrink: 0, ml: 2 }}>
               <Button
                 size="small" variant="outlined"
-                onClick={() => setSelectedCols(allProductCols.filter((c) => rows.some((r) => (Number(r[c]) || 0) > 0)))}
+                onClick={() => setSelectedCols(allProductCols.filter((c) => mongoAggregatedData.byEmployee.some((r) => (r[c] || 0) > 0)))}
                 sx={{ fontSize: 11, textTransform: "none", borderRadius: 2 }}
               >
                 Select All
@@ -1013,13 +1420,13 @@ export default function ProductDashboard() {
               p: 2,
               bgcolor: muiTheme.palette.mode === "dark" ? "rgba(255,255,255,0.03)" : "rgba(0,0,0,0.02)",
             }}>
-              {Object.entries(productMeta.product_groups).map(([group, meta], gi) => {
+              {Object.entries(mongoProductMeta.product_groups).map(([group, meta], gi) => {
                 const GROUP_COLORS = ["#7c3aed","#10b981","#3b82f6","#f59e0b","#ec4899","#14b8a6","#ef4444","#0ea5e9"];
                 const groupColor = GROUP_COLORS[gi % GROUP_COLORS.length];
                 const cols = meta.columns || [];
                 if (cols.length === 0) return null;
                 return (
-                  <Box key={group} sx={{ mb: gi < Object.keys(productMeta.product_groups).length - 1 ? 2 : 0 }}>
+                  <Box key={group} sx={{ mb: gi < Object.keys(mongoProductMeta.product_groups).length - 1 ? 2 : 0 }}>
                     {/* Group label with colored left border */}
                     <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: 1 }}>
                       <Box sx={{ width: 3, height: 16, borderRadius: 1, bgcolor: groupColor, flexShrink: 0 }} />
@@ -1027,15 +1434,15 @@ export default function ProductDashboard() {
                         {group}
                       </Typography>
                       <Typography variant="caption" sx={{ opacity: 0.4, fontSize: 10 }}>
-                        ({cols.filter((c) => rows.some((r) => (Number(r[c]) || 0) > 0)).length}/{cols.length} active)
+                        ({cols.filter((c) => mongoAggregatedData.byEmployee.some((r) => (r[c] || 0) > 0)).length}/{cols.length} active)
                       </Typography>
                     </Box>
                     {/* Pill chips */}
                     <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.8 }}>
                       {cols.map((col) => {
-                        const hasData = rows.some((r) => (Number(r[col]) || 0) > 0);
+                        const hasData = mongoAggregatedData.byEmployee.some((r) => (r[col] || 0) > 0);
                         const isSelected = selectedCols.includes(col);
-                        const total = rows.reduce((s, r) => s + (Number(r[col]) || 0), 0);
+                        const total = mongoAggregatedData.byEmployee.reduce((s, r) => s + (r[col] || 0), 0);
                         return (
                           <Chip
                             key={col}
@@ -1177,9 +1584,11 @@ export default function ProductDashboard() {
                         if (!e?.activePayload) return;
                         const d = e.activePayload[0]?.payload;
                         if (groupBy === "tl") {
-                          openDrill(`TL: ${d.key} — Custom Selection`, rows.filter((r) => r["TL"] === d.key), selectedCols);
+                          const tlData = mongoAggregatedData.byTL.filter(r => r.name === d.key);
+                          openMongoDrill(`TL: ${d.key} — Custom Selection`, tlData, selectedCols);
                         } else {
-                          openEmpProfile(d.key);
+                          const empData = mongoAggregatedData.byEmployee.filter(r => r.name === d.key);
+                          openMongoDrill(`Employee: ${d.key} — Custom Selection`, empData, selectedCols);
                         }
                       }}
                     >
@@ -1243,20 +1652,49 @@ export default function ProductDashboard() {
                   <Collapse in={showCustomTable}>
                     <Divider sx={{ my: 2 }} />
                     <Typography variant="subtitle2" sx={{ mb: 1, fontWeight: 700 }}>
-                      Editable Table — {selectedCols.length} column{selectedCols.length > 1 ? "s" : ""} · {rows.filter((r) => selectedCols.some((c) => (Number(r[c]) || 0) > 0)).length} employees
+                      Editable Table — {selectedCols.length} column{selectedCols.length > 1 ? "s" : ""} · {mongoAggregatedData.byEmployee.filter((r) => selectedCols.some((c) => (r[c] || 0) > 0)).length} employees
                     </Typography>
-                    {/* Reuse TideDrillTable in inline mode via a wrapper */}
-                    <InlineEditTable
-                      rows={rows.filter((r) => selectedCols.some((c) => (Number(r[c]) || 0) > 0))
-                        .sort((a, b) => {
-                          const sumA = selectedCols.reduce((s, c) => s + (Number(a[c]) || 0), 0);
-                          const sumB = selectedCols.reduce((s, c) => s + (Number(b[c]) || 0), 0);
-                          return sumB - sumA;
-                        })}
-                      editableCols={selectedCols}
-                      theme={ct}
-                      onReload={load}
-                    />
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontSize: 11 }}>
+                      Note: This table shows MongoDB form counts. Editing is not available for MongoDB data.
+                    </Typography>
+                    {/* Display-only table for MongoDB data */}
+                    <Box sx={{ overflowX: "auto", maxHeight: 420, overflowY: "auto", border: "1px solid", borderColor: "divider", borderRadius: 1 }}>
+                      <Table size="small" stickyHeader>
+                        <TableHead>
+                          <TableRow>
+                            <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>#</TableCell>
+                            <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>Name</TableCell>
+                            <TableCell sx={{ fontWeight: 700, fontSize: 11 }}>TL</TableCell>
+                            {selectedCols.map((c) => (
+                              <TableCell key={c} sx={{ fontWeight: 700, fontSize: 11, whiteSpace: "nowrap", bgcolor: "action.hover" }}>
+                                {c}
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {mongoAggregatedData.byEmployee
+                            .filter((r) => selectedCols.some((c) => (r[c] || 0) > 0))
+                            .sort((a, b) => {
+                              const sumA = selectedCols.reduce((s, c) => s + (a[c] || 0), 0);
+                              const sumB = selectedCols.reduce((s, c) => s + (b[c] || 0), 0);
+                              return sumB - sumA;
+                            })
+                            .map((row, i) => (
+                              <TableRow key={i} hover>
+                                <TableCell sx={{ fontSize: 11, color: "text.secondary" }}>{i + 1}</TableCell>
+                                <TableCell sx={{ fontSize: 12 }}>{row.name}</TableCell>
+                                <TableCell sx={{ fontSize: 12 }}>{row.tl}</TableCell>
+                                {selectedCols.map((col) => (
+                                  <TableCell key={col} sx={{ whiteSpace: "nowrap", fontSize: 12 }}>
+                                    <strong>{row[col] || 0}</strong>
+                                  </TableCell>
+                                ))}
+                              </TableRow>
+                            ))}
+                        </TableBody>
+                      </Table>
+                    </Box>
                   </Collapse>
                 </>
               ) : (
@@ -1305,9 +1743,11 @@ export default function ProductDashboard() {
                 const d = e.activePayload[0]?.payload;
                 setChartFullscreen(false);
                 if (groupBy === "tl") {
-                  openDrill(`TL: ${d.key} — Custom Selection`, rows.filter((r) => r["TL"] === d.key), selectedCols);
+                  const tlData = mongoAggregatedData.byTL.filter(r => r.name === d.key);
+                  openMongoDrill(`TL: ${d.key} — Custom Selection`, tlData, selectedCols);
                 } else {
-                  openDrill(`${d.key} — Custom Selection`, rows.filter((r) => r["Name"] === d.key), selectedCols);
+                  const empData = mongoAggregatedData.byEmployee.filter(r => r.name === d.key);
+                  openMongoDrill(`Employee: ${d.key} — Custom Selection`, empData, selectedCols);
                 }
               }}
             >
@@ -1339,669 +1779,6 @@ export default function ProductDashboard() {
         </DialogContent>
       </Dialog>
 
-      <Box sx={{ display: "grid", gridTemplateColumns: { xs: "1fr", md: "1fr 1fr" }, gap: 3, gridAutoFlow: "dense" }}>
-
-        {/* CHART 1 — All Applied Cases vs Correct Referral Code by TL */}
-        {appliedVsRefData.length > 0 && (
-        <ChartCard
-          title="Tide: All Applied Cases vs Correct Referral Code by TL"
-          subtitle="Compare total applied cases against those with correct referral codes per Team Leader"
-        >
-          <Box sx={{ position: "relative" }}>
-            <MuiTooltip title="View full table sorted by chart order">
-              <IconButton
-                size="small"
-                onClick={() => openDrill("All Applied Cases vs Correct Referral Code — by TL", appliedVsRefTableRows, ["Tide (All applied cases)", "Tide OB(with correct ref. code)"])}
-                sx={{ position: "absolute", top: -8, right: 0, zIndex: 1, opacity: 0.7, "&:hover": { opacity: 1 } }}
-              >
-                <TableChartIcon fontSize="small" />
-              </IconButton>
-            </MuiTooltip>
-            <ResponsiveContainer width="100%" height={320}>
-              <BarChart
-                data={appliedVsRefData}
-                onClick={(e) => {
-                  if (!e?.activePayload) return;
-                  const tl = e.activePayload[0]?.payload?.tl;
-                  openDrill(`TL: ${tl} — Applied vs Correct Ref`, rows.filter((r) => r["TL"] === tl && (Number(r["Tide (All applied cases)"]) || 0) > 0).sort((a, b) => (Number(b["Tide (All applied cases)"]) || 0) - (Number(a["Tide (All applied cases)"]) || 0)), ["Tide (All applied cases)", "Tide OB(with correct ref. code)"]);
-                }}
-              >
-                <CartesianGrid stroke={ct.grid} strokeDasharray="3 3" />
-                <XAxis dataKey="tl" stroke={ct.text} tick={{ fontSize: 11 }} interval={0} angle={-20} textAnchor="end" height={50} />
-                <YAxis stroke={ct.text} />
-                <Tooltip contentStyle={tooltipStyle} />
-                <Legend />
-                <Bar dataKey="allApplied" name="All Applied Cases" fill="#7c3aed" radius={[4, 4, 0, 0]} style={{ cursor: "pointer" }} />
-                <Bar dataKey="correctRef" name="Correct Referral Code" fill="#14b8a6" radius={[4, 4, 0, 0]} style={{ cursor: "pointer" }} />
-              </BarChart>
-            </ResponsiveContainer>
-          </Box>
-        </ChartCard>
-        )}
-
-        {/* CHART 2 — Onboarded Tide */}
-        {onboardedTideData.length > 0 && (
-        <ChartCard
-          title="Onboarded Tide"
-          subtitle={`All Applied Cases vs ${onboardCol} per TL — line shows gap (not yet onboarded)`}
-        >
-          <Box sx={{ position: "relative" }}>
-            <MuiTooltip title="View full table sorted by chart order">
-              <IconButton
-                size="small"
-                onClick={() => openDrill("Onboarded Tide — by TL", onboardedTideTableRows, ["Tide (All applied cases)", onboardCol])}
-                sx={{ position: "absolute", top: -8, right: 0, zIndex: 1, opacity: 0.7, "&:hover": { opacity: 1 } }}
-              >
-                <TableChartIcon fontSize="small" />
-              </IconButton>
-            </MuiTooltip>
-            <ResponsiveContainer width="100%" height={320}>
-              <ComposedChart
-                data={onboardedTideData}
-                onClick={(e) => {
-                  if (!e?.activePayload) return;
-                  const tl = e.activePayload[0]?.payload?.tl;
-                  openDrill(`TL: ${tl} — Onboarded Tide`, rows.filter((r) => r["TL"] === tl && (Number(r["Tide (All applied cases)"]) || 0) > 0).sort((a, b) => (Number(b["Tide (All applied cases)"]) || 0) - (Number(a["Tide (All applied cases)"]) || 0)), ["Tide (All applied cases)", onboardCol]);
-                }}
-              >
-                <CartesianGrid stroke={ct.grid} strokeDasharray="3 3" />
-                <XAxis dataKey="tl" stroke={ct.text} tick={{ fontSize: 11 }} interval={0} angle={-20} textAnchor="end" height={50} />
-                <YAxis yAxisId="left" stroke={ct.text} />
-                <YAxis yAxisId="right" orientation="right" stroke="#ef4444" tickFormatter={(v) => v} label={{ value: "Gap", angle: 90, position: "insideRight", fill: "#ef4444", fontSize: 11 }} />
-                <Tooltip
-                  contentStyle={tooltipStyle}
-                  formatter={(val, name) => [val, name]}
-                />
-                <Legend />
-                <Bar yAxisId="left" dataKey="allApplied" name="All Applied Cases" fill="#7c3aed" radius={[4, 4, 0, 0]} style={{ cursor: "pointer" }} />
-                <Bar yAxisId="left" dataKey="obWithPP" name={onboardCol} fill="#10b981" radius={[4, 4, 0, 0]} style={{ cursor: "pointer" }} />
-                <Line yAxisId="right" type="monotone" dataKey="gap" name="Gap (not onboarded)" stroke="#ef4444" strokeWidth={2} dot={{ r: 4, fill: "#ef4444" }} strokeDasharray="5 3" />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </Box>
-        </ChartCard>
-        )}
-
-        {/* CHART 3 — UPI vs PPI Transaction Breakdown by Employee */}
-        {upiVsPpiData.length > 0 && (
-        <ChartCard
-          title="UPI vs PPI Transactions by Employee"
-          subtitle="Side-by-side comparison — UPI (BC011+QRPPVV01) and PPI are independent payment methods"
-        >
-          <Box sx={{ position: "relative" }}>
-            <MuiTooltip title="View full table sorted by chart order">
-              <IconButton
-                size="small"
-                onClick={() => openDrill("UPI vs PPI — by Employee", upiVsPpiTableRows, ["Tide OB (UPI - BC011+QRPPVV01)", "Tide - PPI"])}
-                sx={{ position: "absolute", top: -8, right: 0, zIndex: 1, opacity: 0.7, "&:hover": { opacity: 1 } }}
-              >
-                <TableChartIcon fontSize="small" />
-              </IconButton>
-            </MuiTooltip>
-            <ResponsiveContainer width="100%" height={320}>
-              <BarChart
-                data={upiVsPpiData}
-                barCategoryGap="20%"
-                barGap={3}
-                onClick={(e) => {
-                  if (!e?.activePayload) return;
-                  const name = e.activePayload[0]?.payload?.name;
-                  openDrill(`Employee: ${name} — UPI vs PPI`, rows.filter((r) => r["Name"] === name), ["Tide OB (UPI - BC011+QRPPVV01)", "Tide - PPI"]);
-                }}
-              >
-                <CartesianGrid stroke={ct.grid} strokeDasharray="3 3" />
-                <XAxis dataKey="name" stroke={ct.text} tick={{ fontSize: 10 }} interval={0} angle={-30} textAnchor="end" height={60} />
-                <YAxis stroke={ct.text} allowDecimals={false} />
-                <Tooltip
-                  contentStyle={tooltipStyle}
-                  formatter={(val, name) => [val, name]}
-                />
-                <Legend />
-                <Bar dataKey="upi" name="Tide OB (UPI)" fill="#3b82f6" radius={[4, 4, 0, 0]} style={{ cursor: "pointer" }} />
-                <Bar dataKey="ppi" name="Tide - PPI" fill="#f59e0b" radius={[4, 4, 0, 0]} style={{ cursor: "pointer" }} />
-              </BarChart>
-            </ResponsiveContainer>
-          </Box>
-        </ChartCard>
-        )}
-
-        {/* CHART 4 — Tide Product Mix (enhanced donut) */}
-        {productBreakdown.length > 0 && (
-        <ChartCard
-          title="Tide Product Mix"
-          subtitle="All Tide transaction types — click a slice to drill into employees"
-        >
-          <Box sx={{ position: "relative" }}>
-            {/* Total count — top-left corner */}
-            <Box sx={{ position: "absolute", top: 4, left: 4, zIndex: 2, lineHeight: 1.2 }}>
-              <Typography variant="caption" sx={{ color: ct.text, opacity: 0.55, display: "block", fontSize: 11 }}>Total</Typography>
-              <Typography variant="h6" sx={{ color: ct.text, fontWeight: 700, fontSize: 22, lineHeight: 1 }}>
-                {productBreakdown.reduce((s, d) => s + d.value, 0)}
-              </Typography>
-            </Box>
-            <MuiTooltip title="View full table for all Tide columns">
-              <IconButton
-                size="small"
-                onClick={() => openDrill("Tide Product Mix — All Employees", rows.filter((r) => productBreakdown.some((d) => (Number(r[d.col]) || 0) > 0)), tideColumns)}
-                sx={{ position: "absolute", top: -8, right: 0, zIndex: 1, opacity: 0.7, "&:hover": { opacity: 1 } }}
-              >
-                <TableChartIcon fontSize="small" />
-              </IconButton>
-            </MuiTooltip>
-            <ResponsiveContainer width="100%" height={360}>
-              <PieChart>
-                <Pie
-                  data={productBreakdown}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={70}
-                  outerRadius={130}
-                  paddingAngle={3}
-                  onClick={(entry) => {
-                    if (entry?.col) openDrill(`${entry.name} — Employee Breakdown`, rows.filter((r) => (Number(r[entry.col]) || 0) > 0), [entry.col]);
-                  }}
-                  style={{ cursor: "pointer" }}
-                >
-                  {productBreakdown.map((d, i) => (
-                    <Cell key={i} fill={d.color || COLORS[i % COLORS.length]} stroke={ct.card} strokeWidth={2} />
-                  ))}
-                </Pie>
-                <Tooltip
-                  contentStyle={tooltipStyle}
-                  formatter={(val, name) => [val, name]}
-                />
-                <Legend
-                  layout="vertical"
-                  align="right"
-                  verticalAlign="middle"
-                  formatter={(value, entry) => (
-                    <span style={{ color: ct.text, fontSize: 12 }}>
-                      {value} <strong style={{ color: entry.color }}>{entry.payload.value}</strong>
-                    </span>
-                  )}
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          </Box>
-        </ChartCard>
-        )}
-
-        {/* CHART 5 — Correct vs Incorrect Referral Code by TL */}
-        {refCodeData.length > 0 && (
-        <ChartCard
-          title="Referral Code Quality by Team Leader"
-          subtitle="Correct vs incorrect referral codes per TL — line shows correct code success rate %"
-        >
-          <Box sx={{ position: "relative" }}>
-            <MuiTooltip title="View full table sorted by chart order">
-              <IconButton
-                size="small"
-                onClick={() => openDrill("Referral Code Quality — by TL", refCodeTableRows, ["Tide OB(with correct ref. code)", "Tide - incorrect referral code"])}
-                sx={{ position: "absolute", top: -8, right: 0, zIndex: 1, opacity: 0.7, "&:hover": { opacity: 1 } }}
-              >
-                <TableChartIcon fontSize="small" />
-              </IconButton>
-            </MuiTooltip>
-            <ResponsiveContainer width="100%" height={320}>
-              <ComposedChart
-                data={refCodeData}
-                barCategoryGap="25%"
-                barGap={4}
-                onClick={(e) => {
-                  if (!e?.activePayload) return;
-                  const tl = e.activePayload[0]?.payload?.tl;
-                  openDrill(`TL: ${tl} — Referral Code Quality`, refCodeTableRows.filter((r) => r["TL"] === tl), ["Tide OB(with correct ref. code)", "Tide - incorrect referral code"]);
-                }}
-              >
-                <CartesianGrid stroke={ct.grid} strokeDasharray="3 3" />
-                <XAxis dataKey="tl" stroke={ct.text} tick={{ fontSize: 11 }} interval={0} angle={-20} textAnchor="end" height={50} />
-                <YAxis yAxisId="left" stroke={ct.text} allowDecimals={false} label={{ value: "Count", angle: -90, position: "insideLeft", fill: ct.text, fontSize: 11 }} />
-                <YAxis yAxisId="right" orientation="right" stroke="#10b981" unit="%" domain={[0, 100]} tickFormatter={(v) => `${v}%`} label={{ value: "Success %", angle: 90, position: "insideRight", fill: "#10b981", fontSize: 11 }} />
-                <Tooltip
-                  contentStyle={tooltipStyle}
-                  formatter={(val, name) => name === "Correct Code %" ? [`${val}%`, name] : [val, name]}
-                />
-                <Legend />
-                <Bar yAxisId="left" dataKey="correct" name="Correct Referral Code" fill="#10b981" radius={[4, 4, 0, 0]} style={{ cursor: "pointer" }} />
-                <Bar yAxisId="left" dataKey="incorrect" name="Incorrect Referral Code" fill="#ef4444" radius={[4, 4, 0, 0]} style={{ cursor: "pointer" }} />
-                <Line yAxisId="right" type="monotone" dataKey="correctPct" name="Correct Code %" stroke="#10b981" strokeWidth={2.5} dot={{ r: 5, fill: "#10b981", strokeWidth: 2, stroke: "#fff" }} strokeDasharray="5 3" />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </Box>
-        </ChartCard>
-        )}
-
-        {/* CHART 6 — Correct vs Incorrect Referral Code by Employee */}
-        {refCodeByEmpData.length > 0 && (
-        <ChartCard
-          title="Referral Code Quality by Employee"
-          subtitle="Top 20 employees — correct vs incorrect referral codes. Line = correct code success rate %"
-        >
-          <Box sx={{ position: "relative" }}>
-            <MuiTooltip title="View full table sorted by chart order">
-              <IconButton
-                size="small"
-                onClick={() => openDrill("Referral Code Quality — by Employee", refCodeByEmpTableRows, ["Tide OB(with correct ref. code)", "Tide - incorrect referral code"])}
-                sx={{ position: "absolute", top: -8, right: 0, zIndex: 1, opacity: 0.7, "&:hover": { opacity: 1 } }}
-              >
-                <TableChartIcon fontSize="small" />
-              </IconButton>
-            </MuiTooltip>
-            <ResponsiveContainer width="100%" height={320}>
-              <ComposedChart
-                data={refCodeByEmpData}
-                barCategoryGap="25%"
-                barGap={4}
-                onClick={(e) => {
-                  if (!e?.activePayload) return;
-                  const name = e.activePayload[0]?.payload?.name;
-                  openDrill(`Employee: ${name} — Referral Code Quality`, rows.filter((r) => r["Name"] === name), ["Tide OB(with correct ref. code)", "Tide - incorrect referral code"]);
-                }}
-              >
-                <CartesianGrid stroke={ct.grid} strokeDasharray="3 3" />
-                <XAxis dataKey="name" stroke={ct.text} tick={{ fontSize: 10 }} interval={0} angle={-30} textAnchor="end" height={60} />
-                <YAxis yAxisId="left" stroke={ct.text} allowDecimals={false} label={{ value: "Count", angle: -90, position: "insideLeft", fill: ct.text, fontSize: 11 }} />
-                <YAxis yAxisId="right" orientation="right" stroke="#10b981" unit="%" domain={[0, 100]} tickFormatter={(v) => `${v}%`} label={{ value: "Success %", angle: 90, position: "insideRight", fill: "#10b981", fontSize: 11 }} />
-                <Tooltip
-                  contentStyle={tooltipStyle}
-                  formatter={(val, name) => name === "Correct Code %" ? [`${val}%`, name] : [val, name]}
-                />
-                <Legend />
-                <Bar yAxisId="left" dataKey="correct" name="Correct Referral Code" fill="#10b981" radius={[4, 4, 0, 0]} style={{ cursor: "pointer" }} />
-                <Bar yAxisId="left" dataKey="incorrect" name="Incorrect Referral Code" fill="#ef4444" radius={[4, 4, 0, 0]} style={{ cursor: "pointer" }} />
-                <Line yAxisId="right" type="monotone" dataKey="correctPct" name="Correct Code %" stroke="#10b981" strokeWidth={2.5} dot={{ r: 5, fill: "#10b981", strokeWidth: 2, stroke: "#fff" }} strokeDasharray="5 3" />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </Box>
-        </ChartCard>
-        )}
-
-        {/* CHART 7 — Tide MSME by Employee */}
-        {msmData.length > 0 && (
-        <ChartCard
-          title="Tide MSME — Top 15 Employees"
-          subtitle="Employees with highest Tide MSME count — horizontal bars for easy name reading"
-        >
-          <Box sx={{ position: "relative" }}>
-            <MuiTooltip title="View full table">
-              <IconButton
-                size="small"
-                onClick={() => openDrill("Tide MSME — All Employees", rows.filter((r) => (Number(r["Tide MSME"]) || 0) > 0).sort((a, b) => (Number(b["Tide MSME"]) || 0) - (Number(a["Tide MSME"]) || 0)), ["Tide MSME"])}
-                sx={{ position: "absolute", top: -8, right: 0, zIndex: 1, opacity: 0.7, "&:hover": { opacity: 1 } }}
-              >
-                <TableChartIcon fontSize="small" />
-              </IconButton>
-            </MuiTooltip>
-            <ResponsiveContainer width="100%" height={360}>
-              <BarChart
-                data={msmData}
-                layout="vertical"
-                margin={{ left: 10, right: 30 }}
-                onClick={(e) => {
-                  if (!e?.activePayload) return;
-                  const name = e.activePayload[0]?.payload?.name;
-                  openDrill(`Employee: ${name} — Tide MSME`, rows.filter((r) => r["Name"] === name), ["Tide MSME"]);
-                }}
-              >
-                <CartesianGrid stroke={ct.grid} strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" stroke={ct.text} allowDecimals={false} />
-                <YAxis dataKey="name" type="category" stroke={ct.text} width={120} tick={{ fontSize: 11 }} />
-                <Tooltip
-                  contentStyle={tooltipStyle}
-                  formatter={(val, _, props) => [`${val} (TL: ${props.payload.tl})`, "Tide MSME"]}
-                />
-                <Bar dataKey="msme" name="Tide MSME" radius={[0, 6, 6, 0]} style={{ cursor: "pointer" }}>
-                  {msmData.map((_, i) => (
-                    <Cell key={i} fill={`hsl(${200 + i * 8}, 70%, ${55 - i * 1.5}%)`} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </Box>
-        </ChartCard>
-        )}
-
-        {/* CHART 8 (new) — Tide Insurance by Employee */}
-        {insData.length > 0 && (
-        <ChartCard
-          title="Tide Insurance — Top 15 Employees"
-          subtitle="Employees with highest Tide Insurance count — click a bar to drill down"
-        >
-          <Box sx={{ position: "relative" }}>
-            <MuiTooltip title="View full table">
-              <IconButton
-                size="small"
-                onClick={() => openDrill("Tide Insurance — All Employees", rows.filter((r) => (Number(r["Tide Insurance"]) || 0) > 0).sort((a, b) => (Number(b["Tide Insurance"]) || 0) - (Number(a["Tide Insurance"]) || 0)), ["Tide Insurance"])}
-                sx={{ position: "absolute", top: -8, right: 0, zIndex: 1, opacity: 0.7, "&:hover": { opacity: 1 } }}
-              >
-                <TableChartIcon fontSize="small" />
-              </IconButton>
-            </MuiTooltip>
-            <ResponsiveContainer width="100%" height={360}>
-              <BarChart
-                data={insData}
-                layout="vertical"
-                margin={{ left: 10, right: 30 }}
-                onClick={(e) => {
-                  if (!e?.activePayload) return;
-                  const name = e.activePayload[0]?.payload?.name;
-                  openDrill(`Employee: ${name} — Tide Insurance`, rows.filter((r) => r["Name"] === name), ["Tide Insurance"]);
-                }}
-              >
-                <CartesianGrid stroke={ct.grid} strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" stroke={ct.text} allowDecimals={false} />
-                <YAxis dataKey="name" type="category" stroke={ct.text} width={120} tick={{ fontSize: 11 }} />
-                <Tooltip
-                  contentStyle={tooltipStyle}
-                  formatter={(val, _, props) => [`${val} (TL: ${props.payload.tl})`, "Tide Insurance"]}
-                />
-                <Bar dataKey="ins" name="Tide Insurance" radius={[0, 6, 6, 0]} style={{ cursor: "pointer" }}>
-                  {insData.map((_, i) => (
-                    <Cell key={i} fill={`hsl(${150 + i * 6}, 65%, ${50 - i * 1.5}%)`} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </Box>
-        </ChartCard>
-        )}
-
-        {/* CHART 8b — OB with PP + 5K QR Load + 4 Txns by Employee */}
-        {qrData.length > 0 && (
-        <ChartCard
-          title="Tide OB with PP + 5K QR Load + 4 Txns — Top 15"
-          subtitle="Employees with highest count for this combined condition — click a bar to drill down"
-        >
-          <Box sx={{ position: "relative" }}>
-            <MuiTooltip title="View full table">
-              <IconButton
-                size="small"
-                onClick={() => openDrill(
-                  "OB with PP + 5K QR Load + 4 Txns — All Employees",
-                  rows.filter((r) => (Number(r["Tide OB with PP + 5K QR Load + 4 Txns"]) || 0) > 0)
-                      .sort((a, b) => (Number(b["Tide OB with PP + 5K QR Load + 4 Txns"]) || 0) - (Number(a["Tide OB with PP + 5K QR Load + 4 Txns"]) || 0)),
-                  ["Tide OB with PP + 5K QR Load + 4 Txns"]
-                )}
-                sx={{ position: "absolute", top: -8, right: 0, zIndex: 1, opacity: 0.7, "&:hover": { opacity: 1 } }}
-              >
-                <TableChartIcon fontSize="small" />
-              </IconButton>
-            </MuiTooltip>
-            <ResponsiveContainer width="100%" height={360}>
-              <BarChart
-                data={qrData}
-                layout="vertical"
-                margin={{ left: 10, right: 40 }}
-                onClick={(e) => {
-                  if (!e?.activePayload) return;
-                  const name = e.activePayload[0]?.payload?.name;
-                  openDrill(`Employee: ${name} — QR Load`, rows.filter((r) => r["Name"] === name), ["Tide OB with PP + 5K QR Load + 4 Txns"]);
-                }}
-              >
-                <CartesianGrid stroke={ct.grid} strokeDasharray="3 3" horizontal={false} />
-                <XAxis type="number" stroke={ct.text} allowDecimals={false} />
-                <YAxis dataKey="name" type="category" stroke={ct.text} width={120} tick={{ fontSize: 11 }} />
-                <Tooltip
-                  contentStyle={tooltipStyle}
-                  formatter={(val, _, props) => [`${val} (TL: ${props.payload.tl})`, "OB+PP+5K QR+4Txns"]}
-                />
-                <Bar dataKey="qr" name="OB+PP+5K QR+4Txns" radius={[0, 6, 6, 0]} style={{ cursor: "pointer" }}>
-                  {qrData.map((_, i) => (
-                    <Cell key={i} fill={`hsl(${88 + i * 6}, 65%, ${50 - i * 1.5}%)`} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </Box>
-        </ChartCard>
-        )}
-
-        {/* CHART 9 — All Tide Products Breakdown with % */}
-        {allProductsData.length > 0 && (
-        <ChartCard
-          title="All Tide Products — Volume & Share"
-          subtitle="Every Tide product column: total count + % share of all applied cases. Click a bar to drill down."
-        >
-          <Box sx={{ position: "relative" }}>
-            <MuiTooltip title="View full table for all Tide products">
-              <IconButton
-                size="small"
-                onClick={() => openDrill("All Tide Products — All Employees", rows.filter((r) => allProductsData.some((d) => (Number(r[d.col]) || 0) > 0)), allProductsData.map((d) => d.col))}
-                sx={{ position: "absolute", top: -8, right: 0, zIndex: 1, opacity: 0.7, "&:hover": { opacity: 1 } }}
-              >
-                <TableChartIcon fontSize="small" />
-              </IconButton>
-            </MuiTooltip>
-            <ResponsiveContainer width="100%" height={380}>
-              <ComposedChart
-                data={allProductsData}
-                margin={{ top: 20, right: 50, left: 10, bottom: 80 }}
-                onClick={(e) => {
-                  if (!e?.activePayload) return;
-                  const d = e.activePayload[0]?.payload;
-                  if (!d) return;
-                  openDrill(`${d.product} — Employee Breakdown`, rows.filter((r) => (Number(r[d.col]) || 0) > 0).sort((a, b) => (Number(b[d.col]) || 0) - (Number(a[d.col]) || 0)), [d.col]);
-                }}
-              >
-                <CartesianGrid stroke={ct.grid} strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="product"
-                  stroke={ct.text}
-                  tick={{ fontSize: 10 }}
-                  interval={0}
-                  angle={-35}
-                  textAnchor="end"
-                  height={90}
-                />
-                <YAxis yAxisId="left" stroke={ct.text} allowDecimals={false} label={{ value: "Count", angle: -90, position: "insideLeft", fill: ct.text, fontSize: 11 }} />
-                <YAxis yAxisId="right" orientation="right" stroke="#a78bfa" unit="%" domain={[0, 100]} tickFormatter={(v) => `${v}%`} label={{ value: "% of Applied", angle: 90, position: "insideRight", fill: "#a78bfa", fontSize: 11 }} />
-                <Tooltip
-                  contentStyle={tooltipStyle}
-                  formatter={(val, name) => name === "% of Applied" ? [`${val}%`, name] : [val, name]}
-                  labelFormatter={(label) => `Product: ${label}`}
-                />
-                <Legend verticalAlign="top" />
-                <Bar yAxisId="left" dataKey="sales" name="Total Count" radius={[6, 6, 0, 0]} style={{ cursor: "pointer" }} label={{ position: "top", fontSize: 11, fill: ct.text, formatter: (v) => v > 0 ? v : "" }}>
-                  {allProductsData.map((d, i) => (
-                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                  ))}
-                </Bar>
-                <Line yAxisId="right" type="monotone" dataKey="pct" name="% of Applied" stroke="#a78bfa" strokeWidth={2.5} dot={{ r: 5, fill: "#a78bfa", strokeWidth: 2, stroke: "#fff" }} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </Box>
-        </ChartCard>
-        )}
-
-        {/* CHART 10 — Tide Onboarding Conversion Rate by Month */}
-        {conversionByMonthData.length > 0 && (
-        <ChartCard
-          title="Tide Onboarding Conversion Rate by Month"
-          subtitle="All Applied Cases vs Onboarded (column varies by month) — conversion rate % across Jan, Feb, Mar."
-        >
-          <Box sx={{ position: "relative" }}>
-            <MuiTooltip title="View full table for all months">
-              <IconButton
-                size="small"
-                onClick={() => openDrill(
-                  "Tide Conversion — All Months",
-                  (Array.isArray(raw) ? raw : []).filter((r) => (Number(r["Tide (All applied cases)"]) || 0) > 0),
-                  ["Tide (All applied cases)", "Tide OB with PP", "Tide OB with PP + 5K QR Load + 4 Txns"]
-                )}
-                sx={{ position: "absolute", top: -8, right: 0, zIndex: 1, opacity: 0.7, "&:hover": { opacity: 1 } }}
-              >
-                <TableChartIcon fontSize="small" />
-              </IconButton>
-            </MuiTooltip>
-            <ResponsiveContainer width="100%" height={340}>
-              <ComposedChart data={conversionByMonthData} margin={{ top: 20, right: 50, left: 10, bottom: 10 }}>
-                <CartesianGrid stroke={ct.grid} strokeDasharray="3 3" />
-                <XAxis dataKey="month" stroke={ct.text} tick={{ fontSize: 12, fontWeight: 600 }} />
-                <YAxis yAxisId="left" stroke={ct.text} allowDecimals={false}
-                  label={{ value: "Count", angle: -90, position: "insideLeft", fill: ct.text, fontSize: 11 }} />
-                <YAxis yAxisId="right" orientation="right" stroke="#10b981" unit="%" domain={[0, 100]}
-                  tickFormatter={(v) => `${v}%`}
-                  label={{ value: "Conv. Rate %", angle: 90, position: "insideRight", fill: "#10b981", fontSize: 11 }} />
-                <Tooltip
-                  contentStyle={tooltipStyle}
-                  formatter={(val, name, props) => {
-                    if (name === "Conversion Rate %") return [`${val}%`, name];
-                    if (name === "Onboarded") return [val, `Onboarded (${props.payload.onboardCol})`];
-                    return [val, name];
-                  }}
-                  labelFormatter={(label) => `Month: ${label}`}
-                />
-                <Legend verticalAlign="top" />
-                <Bar yAxisId="left" dataKey="applied" name="All Applied Cases" fill="#7c3aed" radius={[4, 4, 0, 0]}
-                  label={{ position: "top", fontSize: 11, fill: ct.text, formatter: (v) => v > 0 ? v : "" }} />
-                <Bar yAxisId="left" dataKey="obWithPP" name="Onboarded" fill="#10b981" radius={[4, 4, 0, 0]}
-                  label={{ position: "top", fontSize: 11, fill: ct.text, formatter: (v) => v > 0 ? v : "" }} />
-                <Bar yAxisId="left" dataKey="pending" name="Pending (Not Onboarded)" fill="#ef444466" radius={[4, 4, 0, 0]} />
-                <Line yAxisId="right" type="monotone" dataKey="rate" name="Conversion Rate %"
-                  stroke="#10b981" strokeWidth={3}
-                  dot={{ r: 7, fill: "#10b981", stroke: "#fff", strokeWidth: 2 }}
-                  label={{ position: "top", fontSize: 13, fontWeight: 700, fill: "#10b981", formatter: (v) => `${v}%` }} />
-              </ComposedChart>
-            </ResponsiveContainer>
-          </Box>
-        </ChartCard>
-        )}
-
-        {/* ── Points Analysis Charts ──────────────────────────────────────── */}
-        {pointsBreakdownData.length > 0 && <>
-        <ChartCard
-            title="Points Contribution by Product"
-            subtitle="Which product drives the most points — based on the exact points formula"
-          >
-            <Box sx={{ position: "relative" }}>
-              {/* Total pts — top-left corner */}
-              <Box sx={{ position: "absolute", top: 4, left: 4, zIndex: 2, lineHeight: 1.2 }}>
-                <Typography variant="caption" sx={{ color: ct.text, opacity: 0.55, display: "block", fontSize: 11 }}>Total Pts</Typography>
-                <Typography variant="h6" sx={{ color: ct.text, fontWeight: 700, fontSize: 22, lineHeight: 1 }}>
-                  {pointsBreakdownData.reduce((s, d) => s + d.points, 0)}
-                </Typography>
-              </Box>
-              <MuiTooltip title="View breakdown table">
-                <IconButton size="small"
-                  onClick={() => openDrill("Points Breakdown — All Employees",
-                    rows.filter((r) => POINTS_FORMULA.some(({ col }) => (Number(r[col]) || 0) > 0))
-                        .sort((a, b) => (Number(b["Total_Points"]) || 0) - (Number(a["Total_Points"]) || 0)),
-                    POINTS_FORMULA.map(({ col }) => col).filter((c) => rows.some((r) => (Number(r[c]) || 0) > 0))
-                  )}
-                  sx={{ position: "absolute", top: -8, right: 0, zIndex: 1, opacity: 0.7, "&:hover": { opacity: 1 } }}>
-                  <TableChartIcon fontSize="small" />
-                </IconButton>
-              </MuiTooltip>
-              <ResponsiveContainer width="100%" height={420}>
-                <PieChart margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
-                  <Pie
-                    data={pointsBreakdownData}
-                    dataKey="points"
-                    nameKey="label"
-                    cx="50%"
-                    cy="45%"
-                    innerRadius={80}
-                    outerRadius={145}
-                    paddingAngle={3}
-                    label={({ pct }) => `${pct}%`}
-                    labelLine={{ stroke: ct.text, strokeWidth: 1 }}
-                    onClick={(entry) => {
-                      if (entry?.col) openDrill(`${entry.label} — Employee Breakdown`,
-                        rows.filter((r) => (Number(r[entry.col]) || 0) > 0)
-                            .sort((a, b) => (Number(b[entry.col]) || 0) - (Number(a[entry.col]) || 0)),
-                        POINTS_FORMULA.map(({ col }) => col).filter((c) => rows.some((r) => (Number(r[c]) || 0) > 0))
-                      );
-                    }}
-                    style={{ cursor: "pointer" }}
-                  >
-                    {pointsBreakdownData.map((d, i) => (
-                      <Cell key={i} fill={d.color} stroke={ct.card} strokeWidth={2} />
-                    ))}
-                  </Pie>
-                  <Tooltip
-                    contentStyle={tooltipStyle}
-                    formatter={(val, name, props) => [
-                      `${val} pts (${props.payload.pct}%) · ${props.payload.units} units × ${props.payload.weight}`,
-                      name
-                    ]}
-                  />
-                  <Legend
-                    layout="horizontal"
-                    align="center"
-                    verticalAlign="bottom"
-                    formatter={(value, entry) => (
-                      <span style={{ color: ct.text, fontSize: 11 }}>
-                        {value}
-                        <strong style={{ color: entry.color, marginLeft: 5 }}>{entry.payload.points}pts</strong>
-                        <span style={{ opacity: 0.5, fontSize: 10, marginLeft: 3 }}>({entry.payload.pct}%)</span>
-                      </span>
-                    )}
-                  />
-                </PieChart>
-              </ResponsiveContainer>
-            </Box>
-          </ChartCard>
-
-        <ChartCard
-            title="Top Employees by Total Points"
-            subtitle="Ranked by Total_Points score for the selected month — click a bar to drill down"
-          >
-            <Box sx={{ position: "relative" }}>
-              <MuiTooltip title="View full table">
-                <IconButton size="small"
-                  onClick={() => openDrill("Top Employees — Points Breakdown",
-                    rows.filter((r) => (Number(r["Total_Points"]) || 0) > 0)
-                        .sort((a, b) => (Number(b["Total_Points"]) || 0) - (Number(a["Total_Points"]) || 0)),
-                    POINTS_FORMULA.map(({ col }) => col).filter((c) => rows.some((r) => (Number(r[c]) || 0) > 0))
-                  )}
-                  sx={{ position: "absolute", top: -8, right: 0, zIndex: 1, opacity: 0.7, "&:hover": { opacity: 1 } }}>
-                  <TableChartIcon fontSize="small" />
-                </IconButton>
-              </MuiTooltip>
-              <ResponsiveContainer width="100%" height={420}>
-                <BarChart
-                  layout="vertical"
-                  data={[...rows]
-                    .filter((r) => (Number(r["Total_Points"]) || 0) > 0)
-                    .sort((a, b) => (Number(b["Total_Points"]) || 0) - (Number(a["Total_Points"]) || 0))
-                    .slice(0, 15)
-                    .map((r) => ({ name: r["Name"] || "Unknown", tl: r["TL"] || "", pts: Math.round((Number(r["Total_Points"]) || 0) * 10) / 10 }))}
-                  margin={{ left: 10, right: 40, top: 10, bottom: 10 }}
-                  onClick={(e) => {
-                    if (!e?.activePayload) return;
-                    const name = e.activePayload[0]?.payload?.name;
-                    openDrill(`${name} — Points Breakdown`,
-                      rows.filter((r) => r["Name"] === name),
-                      POINTS_FORMULA.map(({ col }) => col).filter((c) => rows.some((r) => r["Name"] === name && (Number(r[c]) || 0) > 0))
-                    );
-                  }}
-                >
-                  <CartesianGrid stroke={ct.grid} strokeDasharray="3 3" horizontal={false} />
-                  <XAxis type="number" stroke={ct.text} allowDecimals={false} />
-                  <YAxis dataKey="name" type="category" stroke={ct.text} width={130} tick={{ fontSize: 11 }} />
-                  <Tooltip
-                    contentStyle={tooltipStyle}
-                    formatter={(val, _, props) => [`${val} pts (TL: ${props.payload.tl})`, "Total Points"]}
-                  />
-                  <Bar dataKey="pts" name="Total Points" radius={[0, 6, 6, 0]} style={{ cursor: "pointer" }}>
-                    {[...Array(15)].map((_, i) => (
-                      <Cell key={i} fill={`hsl(${260 - i * 8}, 70%, ${58 - i * 1.5}%)`} />
-                    ))}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
-            </Box>
-          </ChartCard>
-        </>}
-
-      </Box>
-
-      {/* Meeting Trend — same as Overview page, filtered by current month/filters */}
-      <Box sx={{ mt: 3 }}>
-        <MeetingTrend data={rows} theme={ct} />
-      </Box>
 
       <TideDrillTable
         open={drill.open}
@@ -2012,64 +1789,53 @@ export default function ProductDashboard() {
         dynamicCols={tideColumns}
       />
 
-      {/* Employee Profile Dialog — opens on bar click in custom chart */}
-      {empProfile && (
-        <Dialog open={!!empProfile} onClose={() => setEmpProfile(null)} maxWidth="sm" fullWidth
+      {/* MongoDB Custom Chart Drill-down Dialog */}
+      {mongoDrill && (
+        <Dialog open={!!mongoDrill} onClose={closeMongoDrill} maxWidth="md" fullWidth
           PaperProps={{ sx: { borderRadius: 3, overflow: "hidden" } }}>
-          {/* Header */}
-          <Box sx={{ background: "linear-gradient(135deg,#7c3aedcc,#7c3aed66)", px: 3, py: 2.5 }}>
-            <Box sx={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-              <Box>
-                <Typography variant="h6" sx={{ color: "#fff", fontWeight: 700 }}>{empProfile.name}</Typography>
-                <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.75)", fontSize: 12 }}>{empProfile.email}</Typography>
-              </Box>
-              <IconButton size="small" onClick={() => setEmpProfile(null)} sx={{ color: "#fff", bgcolor: "rgba(255,255,255,0.15)" }}>
-                <FullscreenExitIcon fontSize="small" />
-              </IconButton>
+          <Box sx={{ background: "linear-gradient(135deg,#7c3aedcc,#7c3aed66)", px: 3, py: 2, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <Box>
+              <Typography variant="h6" sx={{ color: "#fff", fontWeight: 700 }}>{mongoDrill.title}</Typography>
+              <Typography variant="body2" sx={{ color: "rgba(255,255,255,0.75)", fontSize: 12 }}>
+                {mongoDrill.data.length} {mongoDrill.data.length === 1 ? "record" : "records"}
+              </Typography>
             </Box>
-            {/* Meta chips */}
-            <Box sx={{ display: "flex", gap: 1, mt: 1.5, flexWrap: "wrap" }}>
-              {empProfile.tl && (
-                <Box sx={{ bgcolor: "rgba(255,255,255,0.2)", color: "#fff", borderRadius: 5, px: 1.5, py: 0.3, fontSize: 11, fontWeight: 600 }}>
-                  TL: {empProfile.tl}
-                </Box>
-              )}
-              {empProfile.status && (
-                <Box sx={{ bgcolor: "rgba(255,255,255,0.2)", color: "#fff", borderRadius: 5, px: 1.5, py: 0.3, fontSize: 11 }}>
-                  {empProfile.status}
-                </Box>
-              )}
-              {empProfile.employment && (
-                <Box sx={{ bgcolor: "rgba(255,255,255,0.2)", color: "#fff", borderRadius: 5, px: 1.5, py: 0.3, fontSize: 11 }}>
-                  {empProfile.employment}
-                </Box>
-              )}
-              <Box sx={{ bgcolor: "#10b981", color: "#fff", borderRadius: 5, px: 1.5, py: 0.3, fontSize: 11, fontWeight: 700 }}>
-                {empProfile.totalPoints} pts
-              </Box>
-            </Box>
+            <IconButton size="small" onClick={closeMongoDrill} sx={{ color: "#fff", bgcolor: "rgba(255,255,255,0.15)" }}>
+              <CloseIcon fontSize="small" />
+            </IconButton>
           </Box>
-
-          <DialogContent sx={{ p: 3 }}>
-            {empProfile.kpis.length === 0 ? (
-              <Typography color="text.secondary" sx={{ textAlign: "center", py: 3 }}>No product data for this employee.</Typography>
-            ) : (
-              <Box sx={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 1.5 }}>
-                {empProfile.kpis.map((k) => (
-                  <Card key={k.label} variant="outlined" sx={{ borderRadius: 2 }}>
-                    <CardContent sx={{ py: 1.5, px: 2, "&:last-child": { pb: 1.5 } }}>
-                      <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10, lineHeight: 1.3, display: "block" }}>
-                        {k.label}
-                      </Typography>
-                      <Typography variant="h6" sx={{ color: k.color, fontWeight: 800, fontSize: "1.4rem", mt: 0.3 }}>
-                        {k.value}
-                      </Typography>
-                    </CardContent>
-                  </Card>
-                ))}
-              </Box>
-            )}
+          <DialogContent sx={{ p: 0 }}>
+            <TableContainer sx={{ maxHeight: 500 }}>
+              <Table size="small" stickyHeader>
+                <TableHead>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 700, bgcolor: "#7c3aed", color: "#fff", width: 40 }}>#</TableCell>
+                    <TableCell sx={{ fontWeight: 700, bgcolor: "#7c3aed", color: "#fff" }}>Name</TableCell>
+                    <TableCell sx={{ fontWeight: 700, bgcolor: "#7c3aed", color: "#fff" }}>TL</TableCell>
+                    {mongoDrill.cols.map(c => (
+                      <TableCell key={c} sx={{ fontWeight: 700, bgcolor: "#7c3aed", color: "#fff", whiteSpace: "nowrap" }}>{c}</TableCell>
+                    ))}
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {mongoDrill.data.map((row, i) => (
+                    <TableRow key={i} hover>
+                      <TableCell sx={{ color: "text.secondary", fontWeight: 600 }}>{i + 1}</TableCell>
+                      <TableCell sx={{ fontSize: 12 }}>{row.name}</TableCell>
+                      <TableCell sx={{ fontSize: 12 }}>{row.tl || "—"}</TableCell>
+                      {mongoDrill.cols.map(c => (
+                        <TableCell key={c} sx={{ fontSize: 12, fontWeight: 700 }}>{row[c] || 0}</TableCell>
+                      ))}
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
           </DialogContent>
+          <DialogActions sx={{ px: 3, py: 1.5 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>{mongoDrill.data.length} records</Typography>
+            <Button onClick={closeMongoDrill} variant="contained" sx={{ bgcolor: "#7c3aed", fontWeight: 700 }}>Close</Button>
+          </DialogActions>
         </Dialog>
       )}
     </Box>
