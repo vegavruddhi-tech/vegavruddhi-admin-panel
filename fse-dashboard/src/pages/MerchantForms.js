@@ -513,8 +513,12 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditP
           </Box>
         </Box>
 
-        <Box sx={{ display: 'flex', gap: 1 }}>
-          <Chip label={`⭐ ${totalPoints}`} />
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+          <Chip
+            label={`⭐ ${totalPoints}`}
+            onClick={e => { e.stopPropagation(); onEditPoints(empName, empPointsData, autoPoints); }}
+            sx={{ cursor: 'pointer', fontWeight: 700 }}
+          />
 
           {dupCount > 0 && (
             <Chip label={`${dupCount} dup`} color="error" />
@@ -641,9 +645,26 @@ export default function MerchantForms() {
     }
   }, []);
 
-  const handleEditPoints = useCallback((empName, empData, autoPoints) => {
-    setEditPtsEmp({ empName, empData, autoPoints });
-    setEditPtsValue(empData?.pointsAdjustment !== undefined ? String(empData.pointsAdjustment) : '0');
+  const handleEditPoints = useCallback(async (empName, empData, autoPoints) => {
+    // If no points record exists yet, create one first
+    let data = empData;
+    if (!data?._id) {
+      try {
+        const res = await fetch(`${EMP_API}/forms/admin/init-employee-points`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ newJoinerName: empName })
+        });
+        if (res.ok) {
+          data = await res.json();
+          // Refresh empPoints list
+          const ptsRes = await fetch(`${EMP_API}/forms/admin/employee-points`);
+          if (ptsRes.ok) setEmpPoints(await ptsRes.json());
+        }
+      } catch {}
+    }
+    setEditPtsEmp({ empName, empData: data, autoPoints });
+    setEditPtsValue(data?.pointsAdjustment !== undefined ? String(data.pointsAdjustment) : '0');
     setEditPtsOpen(true);
   }, []);
 

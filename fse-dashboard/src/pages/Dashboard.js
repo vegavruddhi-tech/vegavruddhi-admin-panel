@@ -1,7 +1,11 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  Box, Typography, useTheme, Card, CardContent, Button, TextField, MenuItem
+  Box, Typography, useTheme, Card, CardContent, Button, TextField, MenuItem,
+  Dialog, DialogTitle, DialogContent, DialogActions, IconButton,
+  Table, TableHead, TableRow, TableCell, TableBody, TableContainer, Paper,
+  Autocomplete
 } from "@mui/material";
+import CloseIcon from "@mui/icons-material/Close";
 import { BRAND } from "../theme";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
@@ -120,6 +124,8 @@ function Dashboard() {
   const [globalVerifyMap,    setGlobalVerifyMap]    = useState({});
   const [chartMetric,        setChartMetric]        = useState('forms');
   const [verifyDrillStatus,  setVerifyDrillStatus]  = useState(null);
+  const [kpiDrillOpen,       setKpiDrillOpen]       = useState(null); // 'totalForms'|'totalEmployees'|'activeEmployees'|'totalTLs'
+  const [chartDrill,         setChartDrill]         = useState(null); // { type, key, title, rows }
 
   const muiTheme = useTheme();
   const chartTheme = useMemo(() => {
@@ -171,7 +177,7 @@ const loadData = async () => {
     }
     if (filterTL) {
       const emp = employees.find(e => e.newJoinerName === f.employeeName);
-      if (!emp || emp.reportingManager !== filterTL) return false;
+      if (!emp || (emp.reportingManager || '').toLowerCase().trim() !== filterTL.toLowerCase().trim()) return false;
     }
     if (filterFSE    && f.employeeName !== filterFSE)    return false;
     if (filterStatus && f.status       !== filterStatus) return false;
@@ -209,10 +215,9 @@ const monthOptions = useMemo(() => {
 const tlOptions   = useMemo(() => [...new Set(tls.map(t => t.name).filter(Boolean))].sort(), [tls]);
 const fseOptions  = useMemo(() => {
   if (filterTL) {
-    // Only show FSEs under the selected TL
     return [...new Set(
       employees
-        .filter(e => e.reportingManager === filterTL)
+        .filter(e => (e.reportingManager || '').toLowerCase().trim() === filterTL.toLowerCase().trim())
         .map(e => e.newJoinerName)
         .filter(Boolean)
     )].sort();
@@ -227,14 +232,14 @@ const kpiData = useMemo(() => {
 
   // Employee/TL counts scoped to current filter
   const filteredEmployees = filterTL
-    ? employees.filter(e => e.reportingManager === filterTL)
+    ? employees.filter(e => (e.reportingManager || '').toLowerCase().trim() === filterTL.toLowerCase().trim())
     : filterFSE
     ? employees.filter(e => e.newJoinerName === filterFSE)
     : employees;
 
   const totalEmployees  = filteredEmployees.length;
   const totalTLs        = filterTL ? 1 : tls.length;
-  const activeEmployees = filteredEmployees.filter(e => e.status === 'Active').length;
+  const activeEmployees = new Set(filteredForms.map(f => f.employeeName).filter(Boolean)).size;
 
   const productMap = {};
   filteredForms.forEach(f => {
@@ -281,6 +286,7 @@ const kpiData = useMemo(() => {
   const tooltipStyle = { backgroundColor: chartTheme.tooltipBg, color: chartTheme.text, border: "none" };
 
   return (
+    <>
     <Box sx={{ p: { xs: 2, md: 3 }, bgcolor: 'background.default', minHeight: '100vh' }}>
       <Typography variant="h4" sx={{ mb: 3, fontWeight: 800, color: BRAND.primary }}>FSE Overview</Typography>
       <Box sx={{ display: 'flex', gap: 1, mb: 3, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -308,29 +314,36 @@ const kpiData = useMemo(() => {
     )}
   </Box>
 <Box sx={{ display: 'flex', gap: 1.5, mb: 2, flexWrap: 'wrap', alignItems: 'center' }}>
-  <TextField select size="small" label="Month" value={filterMonth}
-    onChange={e => setFilterMonth(e.target.value)} sx={{ minWidth: 150 }}>
-    <MenuItem value="">All Months</MenuItem>
-    {monthOptions.map(m => <MenuItem key={m} value={m}>{m}</MenuItem>)}
-  </TextField>
+  <Autocomplete
+    size="small" options={monthOptions} value={filterMonth || null}
+    onChange={(_, v) => setFilterMonth(v || '')}
+    renderInput={(params) => <TextField {...params} label="Month" />}
+    sx={{ minWidth: 150 }} freeSolo={false} />
 
-  <TextField select size="small" label="Team Leader" value={filterTL}
-    onChange={e => { setFilterTL(e.target.value); setFilterFSE(''); }} sx={{ minWidth: 160 }}>
-    <MenuItem value="">All TLs</MenuItem>
-    {tlOptions.map(t => <MenuItem key={t} value={t}>{t}</MenuItem>)}
-  </TextField>
+  <Autocomplete
+    size="small" options={tlOptions} value={filterTL || null}
+    onChange={(_, v) => { setFilterTL(v || ''); setFilterFSE(''); }}
+    renderInput={(params) => <TextField {...params} label="Team Leader" />}
+    sx={{ minWidth: 180 }} freeSolo={false} />
 
-  <TextField select size="small" label="Employee" value={filterFSE}
-    onChange={e => setFilterFSE(e.target.value)} sx={{ minWidth: 160 }}>
-    <MenuItem value="">All Employees</MenuItem>
-    {fseOptions.map(f => <MenuItem key={f} value={f}>{f}</MenuItem>)}
-  </TextField>
+  <Autocomplete
+    size="small" options={fseOptions} value={filterFSE || null}
+    onChange={(_, v) => {
+      setFilterFSE(v || '');
+      // Auto-detect TL when FSE is selected
+      if (v) {
+        const emp = employees.find(e => e.newJoinerName === v);
+        if (emp?.reportingManager) setFilterTL(emp.reportingManager);
+      }
+    }}
+    renderInput={(params) => <TextField {...params} label="Employee" />}
+    sx={{ minWidth: 180 }} freeSolo={false} />
 
-  <TextField select size="small" label="Status" value={filterStatus}
-    onChange={e => setFilterStatus(e.target.value)} sx={{ minWidth: 200 }}>
-    <MenuItem value="">All Statuses</MenuItem>
-    {statusOptions.map(s => <MenuItem key={s} value={s}>{s}</MenuItem>)}
-  </TextField>
+  <Autocomplete
+    size="small" options={statusOptions} value={filterStatus || null}
+    onChange={(_, v) => setFilterStatus(v || '')}
+    renderInput={(params) => <TextField {...params} label="Status" />}
+    sx={{ minWidth: 220 }} freeSolo={false} />
 
   <Button variant="outlined" size="small" onClick={() => {
     setFilterTL(''); setFilterFSE(''); setFilterStatus(''); setFilterMonth('');
@@ -341,17 +354,19 @@ const kpiData = useMemo(() => {
     {/* KPI Cards */}
     <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 2, mb: 3 }}>
       {[
-        { label: 'Total Forms',       value: kpiData.totalForms,      color: '#7c3aed' },
-        { label: 'Total Employees',   value: kpiData.totalEmployees,  color: '#3b82f6' },
-        { label: 'Active Employees',  value: kpiData.activeEmployees, color: '#10b981' },
-        { label: 'Total TLs',         value: kpiData.totalTLs,        color: '#f59e0b' },
-        { label: 'Ready to Onboard',  value: kpiData.onboarding,      color: '#14b8a6' },
+        { label: 'Total Forms',       value: kpiData.totalForms,      color: '#7c3aed', key: 'totalForms' },
+        { label: 'Total Employees',   value: kpiData.totalEmployees,  color: '#3b82f6', key: 'totalEmployees' },
+        { label: 'Active Employees',  value: kpiData.activeEmployees, color: '#10b981', key: 'activeEmployees' },
+        { label: 'Total TLs',         value: kpiData.totalTLs,        color: '#f59e0b', key: 'totalTLs' },
+        { label: 'Ready to Onboard',  value: kpiData.onboarding,      color: '#14b8a6', key: 'onboarding' },
       ].map(k => (
-        <Card key={k.label} variant="outlined" sx={{ borderRadius: 3 }}>
+        <Card key={k.label} variant="outlined" sx={{ borderRadius: 3, cursor: 'pointer', transition: 'all 0.2s', '&:hover': { transform: 'translateY(-2px)', boxShadow: `0 4px 16px ${k.color}30` } }}
+          onClick={() => setKpiDrillOpen(k.key)}>
           <Box sx={{ height: 5, bgcolor: k.color, borderRadius: '3px 3px 0 0' }} />
           <CardContent>
             <Typography variant="body2" color="text.secondary">{k.label}</Typography>
             <Typography variant="h5" fontWeight={800} sx={{ color: k.color }}>{k.value}</Typography>
+            <Typography variant="caption" sx={{ color: k.color, opacity: 0.7 }}>click to explore ↗</Typography>
           </CardContent>
         </Card>
       ))}
@@ -430,14 +445,38 @@ const kpiData = useMemo(() => {
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="name" angle={-30} textAnchor="end" tick={{ fontSize: 10 }} height={70} />
               <YAxis allowDecimals={false} />
-              <Tooltip />
-              <Bar dataKey="count" radius={[6, 6, 0, 0]}>
+              <Tooltip cursor={{ fill: 'rgba(124,58,237,0.08)' }} />
+              <Bar dataKey="count" radius={[6, 6, 0, 0]} style={{ cursor: 'pointer' }}
+                onClick={(data) => {
+                  if (!data?.name) return;
+                  const product = data.name;
+                  const rows = filteredForms
+                    .filter(f => {
+                      const p = f.formFillingFor || f.tideProduct || f.brand || 'Other';
+                      const normalized = p.toLowerCase() === 'msme' ? 'Tide MSME' : p;
+                      return normalized === product;
+                    })
+                    .map(f => {
+                      const emp = employees.find(e => e.newJoinerName === f.employeeName);
+                      return {
+                        merchant: f.customerName || '–',
+                        phone: f.customerNumber || '–',
+                        fse: f.employeeName || '–',
+                        fseEmail: emp?.email || emp?.newJoinerEmailId || '–',
+                        tl: emp?.reportingManager || '–',
+                        status: f.status || '–',
+                        date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+                      };
+                    });
+                  setChartDrill({ title: `📦 ${product}`, subtitle: `${rows.length} forms`, color: '#7c3aed', cols: ['Merchant', 'Phone', 'FSE', 'FSE Email', 'TL', 'Status', 'Date'], rows });
+                }}>
                 {Object.keys(kpiData.productMap).map((_, i) => (
                   <Cell key={i} fill={COLORS[i % COLORS.length]} />
                 ))}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block', textAlign: 'center' }}>Click any bar to explore</Typography>
         </CardContent>
       </Card>
 
@@ -450,11 +489,31 @@ const kpiData = useMemo(() => {
               <CartesianGrid strokeDasharray="3 3" vertical={false} />
               <XAxis dataKey="date" angle={-30} textAnchor="end" tick={{ fontSize: 9 }} height={60} />
               <YAxis allowDecimals={false} />
-              <Tooltip />
-              <Bar dataKey="count" name="Forms" fill={BRAND.primary} radius={[4, 4, 0, 0]} />
+              <Tooltip cursor={{ fill: 'rgba(26,71,49,0.08)' }} />
+              <Bar dataKey="count" name="Forms" fill={BRAND.primary} radius={[4, 4, 0, 0]} style={{ cursor: 'pointer' }}
+                onClick={(data) => {
+                  if (!data?.date) return;
+                  const date = data.date;
+                  const rows = filteredForms
+                    .filter(f => new Date(f.createdAt).toISOString().slice(0, 10) === date)
+                    .map(f => {
+                      const emp = employees.find(e => e.newJoinerName === f.employeeName);
+                      return {
+                        merchant: f.customerName || '–',
+                        phone: f.customerNumber || '–',
+                        fse: f.employeeName || '–',
+                        fseEmail: emp?.email || emp?.newJoinerEmailId || '–',
+                        tl: emp?.reportingManager || '–',
+                        product: f.formFillingFor || f.brand || '–',
+                        status: f.status || '–',
+                      };
+                    });
+                  setChartDrill({ title: `📅 ${date}`, subtitle: `${rows.length} submissions`, color: BRAND.primary, cols: ['Merchant', 'Phone', 'FSE', 'FSE Email', 'TL', 'Product', 'Status'], rows });
+                }} />
               <Line type="monotone" dataKey="count" stroke="#f59e0b" strokeWidth={2} dot={false} />
             </ComposedChart>
           </ResponsiveContainer>
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block', textAlign: 'center' }}>Click any bar to explore</Typography>
         </CardContent>
       </Card>
 
@@ -511,19 +570,217 @@ const kpiData = useMemo(() => {
             <CartesianGrid strokeDasharray="3 3" horizontal={false} />
             <XAxis type="number" allowDecimals={false} />
             <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={120} />
-            <Tooltip formatter={(v) => [v, { forms: 'Forms', onboarding: 'Onboarding', verified: 'Verified', points: 'Points' }[chartMetric]]} />
-            <Bar dataKey="count" radius={[0, 6, 6, 0]}
-              fill={{ forms: BRAND.primary, onboarding: '#2e7d32', verified: '#10b981', points: '#f59e0b' }[chartMetric]}>
+            <Tooltip formatter={(v) => [v, { forms: 'Forms', onboarding: 'Onboarding', verified: 'Verified', points: 'Points' }[chartMetric]]} cursor={{ fill: 'rgba(16,185,129,0.08)' }} />
+            <Bar dataKey="count" radius={[0, 6, 6, 0]} style={{ cursor: 'pointer' }}
+              fill={{ forms: BRAND.primary, onboarding: '#2e7d32', verified: '#10b981', points: '#f59e0b' }[chartMetric]}
+              onClick={(data) => {
+                if (!data?.name) return;
+                const fseName = data.name;
+                const emp = employees.find(e => e.newJoinerName === fseName);
+                const fseForms = filteredForms.filter(f => f.employeeName === fseName);
+                const getKey = (f) => { const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim(); return p ? `${f.customerNumber}__${p}` : f.customerNumber; };
+                const POINTS_MAP_LOCAL = { 'tide': 2, 'tide msme': 0.3, 'tide insurance': 1, 'tide credit card': 1, 'tide bt': 1 };
+
+                let rows, cols, subtitle, metricLabel;
+
+                if (chartMetric === 'forms') {
+                  // All forms
+                  metricLabel = 'All Forms';
+                  cols = ['Merchant', 'Phone', 'Product', 'Status', 'Verification', 'Date'];
+                  rows = fseForms.map(f => ({
+                    merchant: f.customerName || '–', phone: f.customerNumber || '–',
+                    product: f.formFillingFor || f.brand || '–', status: f.status || '–',
+                    verification: globalVerifyMap[getKey(f)]?.status || 'Not Found',
+                    date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+                  }));
+
+                } else if (chartMetric === 'onboarding') {
+                  // Only Ready for Onboarding
+                  metricLabel = 'Ready for Onboarding';
+                  cols = ['Merchant', 'Phone', 'Product', 'Verification', 'Date'];
+                  rows = fseForms
+                    .filter(f => f.status === 'Ready for Onboarding')
+                    .map(f => ({
+                      merchant: f.customerName || '–', phone: f.customerNumber || '–',
+                      product: f.formFillingFor || f.brand || '–',
+                      verification: globalVerifyMap[getKey(f)]?.status || 'Not Found',
+                      date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+                    }));
+
+                } else if (chartMetric === 'verified') {
+                  // Only Fully Verified
+                  metricLabel = 'Fully Verified';
+                  cols = ['Merchant', 'Phone', 'Product', 'Status', 'Date'];
+                  rows = fseForms
+                    .filter(f => globalVerifyMap[getKey(f)]?.status === 'Fully Verified')
+                    .map(f => ({
+                      merchant: f.customerName || '–', phone: f.customerNumber || '–',
+                      product: f.formFillingFor || f.brand || '–', status: f.status || '–',
+                      date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+                    }));
+
+                } else if (chartMetric === 'points') {
+                  // Only Fully Verified forms that earn points
+                  metricLabel = 'Points';
+                  cols = ['Merchant', 'Phone', 'Product', 'Points', 'Date'];
+                  rows = fseForms
+                    .filter(f => globalVerifyMap[getKey(f)]?.status === 'Fully Verified')
+                    .map(f => {
+                      const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+                      const pts = POINTS_MAP_LOCAL[p] || 0;
+                      return {
+                        merchant: f.customerName || '–', phone: f.customerNumber || '–',
+                        product: f.formFillingFor || f.brand || '–', points: pts,
+                        date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+                      };
+                    })
+                    .filter(r => r.points > 0);
+                }
+
+                subtitle = `${rows.length} ${metricLabel} · TL: ${emp?.reportingManager || '–'} · Email: ${emp?.email || emp?.newJoinerEmailId || '–'}`;
+                setChartDrill({
+                  title: `👤 ${fseName} — ${metricLabel}`,
+                  subtitle,
+                  color: { forms: BRAND.primary, onboarding: '#2e7d32', verified: '#10b981', points: '#f59e0b' }[chartMetric],
+                  cols,
+                  rows,
+                  profile: { name: fseName, email: emp?.email || emp?.newJoinerEmailId || '–', phone: emp?.newJoinerPhone || '–', tl: emp?.reportingManager || '–', status: emp?.status || '–' }
+                });
+              }}>
               {kpiData.topFSEs.map((_, i) => (
                 <Cell key={i} fill={{ forms: BRAND.primary, onboarding: '#2e7d32', verified: '#10b981', points: '#f59e0b' }[chartMetric]} />
               ))}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
+        <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block', textAlign: 'center' }}>Click any bar to explore FSE details</Typography>
       </CardContent>
     </Card>
 
   </Box>
+
+  {/* Chart Drill-down Modal */}
+  {chartDrill && (
+    <Dialog open onClose={() => setChartDrill(null)} maxWidth="lg" fullWidth>
+      <DialogTitle sx={{ pb: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+          <Box>
+            <Typography variant="h6" fontWeight={800} sx={{ color: chartDrill.color }}>{chartDrill.title}</Typography>
+            <Typography variant="body2" color="text.secondary">{chartDrill.subtitle}</Typography>
+          </Box>
+          <IconButton onClick={() => setChartDrill(null)} size="small"><CloseIcon /></IconButton>
+        </Box>
+      </DialogTitle>
+      <DialogContent dividers sx={{ p: 0 }}>
+        {/* FSE Profile Card (only for Top FSEs drill-down) */}
+        {chartDrill.profile && (
+          <Box sx={{ p: 2, bgcolor: `${chartDrill.color}10`, borderBottom: `1px solid ${chartDrill.color}20`, display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+            {[
+              { label: 'Name',   value: chartDrill.profile.name },
+              { label: 'Email',  value: chartDrill.profile.email },
+              { label: 'Phone',  value: chartDrill.profile.phone },
+              { label: 'TL',     value: chartDrill.profile.tl },
+              { label: 'Status', value: chartDrill.profile.status },
+            ].map(item => (
+              <Box key={item.label}>
+                <Typography variant="caption" color="text.secondary" fontWeight={700}>{item.label}</Typography>
+                <Typography variant="body2" fontWeight={600}>{item.value}</Typography>
+              </Box>
+            ))}
+          </Box>
+        )}
+        <TableContainer sx={{ maxHeight: 500 }}>
+          <Table size="small" stickyHeader>
+            <TableHead>
+              <TableRow>
+                <TableCell sx={{ fontWeight: 700, bgcolor: chartDrill.color, color: '#fff', width: 40 }}>#</TableCell>
+                {chartDrill.cols.map(c => (
+                  <TableCell key={c} sx={{ fontWeight: 700, bgcolor: chartDrill.color, color: '#fff' }}>{c}</TableCell>
+                ))}
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {chartDrill.rows.map((row, i) => {
+                const colKeyMap = { 'Merchant': 'merchant', 'Phone': 'phone', 'FSE': 'fse', 'FSE Email': 'fseEmail', 'TL': 'tl', 'Product': 'product', 'Status': 'status', 'Date': 'date', 'Verification': 'verification', 'Points': 'points', 'Name': 'name', 'Email': 'email', 'Location': 'location', 'Forms': 'forms' };
+                return (
+                  <TableRow key={i} hover sx={{ '&:nth-of-type(even)': { bgcolor: `${chartDrill.color}05` } }}>
+                    <TableCell sx={{ color: 'text.secondary', fontWeight: 600 }}>{i + 1}</TableCell>
+                    {chartDrill.cols.map(c => {
+                      const val = row[colKeyMap[c]] ?? '–';
+                      // Color-code verification and status
+                      if (c === 'Verification') {
+                        const vColor = val === 'Fully Verified' ? '#2e7d32' : val === 'Partially Done' ? '#f57f17' : '#888';
+                        const vBg = val === 'Fully Verified' ? '#e6f4ea' : val === 'Partially Done' ? '#fff8e1' : '#f5f5f5';
+                        return <TableCell key={c}><Box component="span" sx={{ px: 1, py: 0.3, borderRadius: 10, fontSize: 11, fontWeight: 700, bgcolor: vBg, color: vColor }}>{val}</Box></TableCell>;
+                      }
+                      if (c === 'Status') {
+                        const sColor = val === 'Ready for Onboarding' ? '#2e7d32' : val === 'Not Interested' ? '#c62828' : val === 'Try but not done due to error' ? '#e65100' : '#1565c0';
+                        const sBg = val === 'Ready for Onboarding' ? '#e6f4ea' : val === 'Not Interested' ? '#fdecea' : val === 'Try but not done due to error' ? '#fff3e0' : '#e3f2fd';
+                        const sShort = val === 'Ready for Onboarding' ? 'Onboarding' : val === 'Not Interested' ? 'Not Int.' : val === 'Try but not done due to error' ? 'Try/Err' : 'Revisit';
+                        return <TableCell key={c}><Box component="span" sx={{ px: 1, py: 0.3, borderRadius: 10, fontSize: 11, fontWeight: 700, bgcolor: sBg, color: sColor }}>{sShort}</Box></TableCell>;
+                      }
+                      return <TableCell key={c} sx={{ fontSize: 12 }}>{val}</TableCell>;
+                    })}
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      </DialogContent>
+      <DialogActions sx={{ px: 3, py: 1.5 }}>
+        <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>{chartDrill.rows.length} records</Typography>
+        <Button onClick={() => setChartDrill(null)} variant="contained" sx={{ bgcolor: chartDrill.color, fontWeight: 700 }}>Close</Button>
+      </DialogActions>
+    </Dialog>
+  )}
+
+  {/* KPI Drill-down Modal */}
+  {kpiDrillOpen && (() => {
+    const configs = {
+      totalForms:      { title: 'Total Forms',       color: '#7c3aed', rows: filteredForms.map(f => ({ name: f.customerName, phone: f.customerNumber, email: f.customerEmail || '–', employee: f.employeeName, status: f.status, date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) })), cols: ['Customer', 'Phone', 'Employee', 'Status', 'Date'] },
+      totalEmployees:  { title: `Total Employees${filterTL ? ` — ${filterTL}` : ''}`, color: '#3b82f6', rows: (filterTL ? employees.filter(e => (e.reportingManager||'').toLowerCase().trim() === filterTL.toLowerCase().trim()) : filterFSE ? employees.filter(e => e.newJoinerName === filterFSE) : employees).map(e => ({ name: e.newJoinerName, email: e.email || e.newJoinerEmailId || '–', phone: e.newJoinerPhone, tl: e.reportingManager, status: e.status })), cols: ['Name', 'Email', 'Phone', 'TL', 'Status'] },
+      activeEmployees: { title: 'Active Employees (submitted forms)', color: '#10b981', rows: [...new Set(filteredForms.map(f => f.employeeName).filter(Boolean))].map(name => { const emp = employees.find(e => e.newJoinerName === name); return { name, email: emp?.email || emp?.newJoinerEmailId || '–', phone: emp?.newJoinerPhone || '–', tl: emp?.reportingManager || '–', forms: filteredForms.filter(f => f.employeeName === name).length }; }), cols: ['Name', 'Email', 'Phone', 'TL', 'Forms'] },
+      totalTLs:        { title: 'Total TLs',         color: '#f59e0b', rows: tls.map(t => ({ name: t.name, email: t.email, location: t.location, status: t.status })), cols: ['Name', 'Email', 'Location', 'Status'] },
+      onboarding:      { title: 'Ready to Onboard',  color: '#14b8a6', rows: filteredForms.filter(f => f.status === 'Ready for Onboarding').map(f => ({ name: f.customerName, phone: f.customerNumber, employee: f.employeeName, product: f.formFillingFor || f.brand || '–', date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) })), cols: ['Customer', 'Phone', 'Employee', 'Product', 'Date'] },
+    };
+    const cfg = configs[kpiDrillOpen];
+    if (!cfg) return null;
+    const colKeys = { 'Customer': 'name', 'Phone': 'phone', 'Email': 'email', 'Employee': 'employee', 'Status': 'status', 'Date': 'date', 'Name': 'name', 'TL': 'tl', 'Location': 'location', 'Forms': 'forms', 'Product': 'product' };
+    return (
+      <Dialog open onClose={() => setKpiDrillOpen(null)} maxWidth="md" fullWidth>
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: cfg.color, fontWeight: 800 }}>
+          {cfg.title} ({cfg.rows.length})
+          <IconButton onClick={() => setKpiDrillOpen(null)} size="small"><CloseIcon /></IconButton>
+        </DialogTitle>
+        <DialogContent dividers sx={{ p: 0 }}>
+          <TableContainer component={Paper} sx={{ maxHeight: 500 }}>
+            <Table size="small" stickyHeader>
+              <TableHead>
+                <TableRow>
+                  <TableCell sx={{ fontWeight: 700, bgcolor: cfg.color, color: '#fff' }}>#</TableCell>
+                  {cfg.cols.map(c => <TableCell key={c} sx={{ fontWeight: 700, bgcolor: cfg.color, color: '#fff' }}>{c}</TableCell>)}
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {cfg.rows.map((row, i) => (
+                  <TableRow key={i} hover>
+                    <TableCell>{i + 1}</TableCell>
+                    {cfg.cols.map(c => <TableCell key={c}>{row[colKeys[c]] ?? '–'}</TableCell>)}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </TableContainer>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setKpiDrillOpen(null)} sx={{ color: cfg.color, fontWeight: 700 }}>Close</Button>
+        </DialogActions>
+      </Dialog>
+    );
+  })()}
+
+  </>
 );
 
 }

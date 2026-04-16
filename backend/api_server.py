@@ -9,6 +9,9 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import subprocess
 import threading
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 from connect_sheet import load_sheet
 from clean_duplicates import clean_duplicate_columns
@@ -38,7 +41,6 @@ app.add_middleware(
 DATA_SOURCE = "google_sheet"
 
 # MongoDB connection for April+ data
-import os
 from pymongo import MongoClient
 import certifi
 
@@ -92,14 +94,17 @@ def load_from_mongodb_for_month(month_label: str) -> pd.DataFrame:
             row = {
                 "Name":             f.get("customerName", ""),
                 "TL":               tl,
-                "Email ID":         f.get("newJoinerEmailId", ""),
-                "Employee status":  f.get("status", "Active"),
+                "Email ID":         f.get("employeeName", f.get("customerName", "")),
+                "Employee status":  "Active",
+                "Employment type":  "FSE",
                 "_month":           month,
                 "_source":          "mongodb",
+                "Total_Meetings_Calc":  1,
+                "Total_Product_Sales":  1 if status == "Ready for Onboarding" else 0,
                 # Product columns — 1 if this form was for that product
-                "Tide":             1 if "tide" in product.lower() and "insurance" not in product.lower() else 0,
+                "Tide":             1 if "tide" in product.lower() and "insurance" not in product.lower() and "msme" not in product.lower() else 0,
                 "Tide Insurance":   1 if product == "Tide Insurance" else 0,
-                "Tide MSME":        1 if product == "MSME" else 0,
+                "Tide MSME":        1 if "msme" in product.lower() else 0,
                 "Airtel Payments Bank": 1 if product == "Airtel Payments Bank" else 0,
                 "Kotak 811":        1 if product == "Kotak 811" else 0,
                 "Insurance":        1 if product == "Insurance" else 0,
