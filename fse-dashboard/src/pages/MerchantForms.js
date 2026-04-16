@@ -22,14 +22,27 @@ import * as XLSX          from 'xlsx';
 import { BRAND }          from '../theme';
 
 // ── Flatten a form record into a flat row for export ─────────
-function flattenForm(f) {
+function flattenForm(f, empMap = {}, tlMap = {}, verifyMap = {}) {
+  const emp = empMap[f.employeeName] || {};
+  const tl  = tlMap[(emp.reportingManager || '').toLowerCase().trim()] || {};
+  const product = f.formFillingFor || f.tideProduct || f.brand || (f.attemptedProducts || []).join(', ');
+  const vKey = (f.formFillingFor || f.tideProduct || f.brand || '')
+    ? `${f.customerNumber}__${(f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim()}`
+    : f.customerNumber;
+  const verification = verifyMap[vKey]?.status || 'Not Found';
   return {
-    'Employee Name':     f.employeeName   || '',
+    'Employee Name':   f.employeeName   || '',
+    'Employee Email':  emp.newJoinerEmailId || '',
+    'Employee Phone':  emp.newJoinerPhone   || '',
+    'Team Leader':     emp.reportingManager  || '',
+    'TL Phone':        tl.phone || '',
+    'TL Email':        tl.email || '',
     'Customer Name':     f.customerName   || '',
     'Customer Phone':    f.customerNumber || '',
     'Location':          f.location       || '',
     'Visit Status':      f.status         || '',
-    'Product': f.brand || f.tideProduct || f.formFillingFor || (f.attemptedProducts || []).join(', '),
+    'Product':           product,
+    'Verification Status': verification,
     'Tide QR Posted':    f.tide_qrPosted    || '',
     'Tide UPI Txn Done': f.tide_upiTxnDone  || '',
     // 'Kotak Txn Done':    f.kotak_txnDone    || '',
@@ -47,8 +60,33 @@ function flattenForm(f) {
 }
 
 // ── Export to Excel ───────────────────────────────────────────
-function exportToExcel(forms) {
-  const rows = forms.map(flattenForm);
+  async function exportToExcel(forms) { 
+  // Fetch employee details
+  const [empRes, tlRes] = await Promise.all([
+    fetch(`${EMP_API}/auth/all-employees`),
+    fetch(`${EMP_API}/tl/approved-list`)
+  ]);
+  const empList = empRes.ok ? await empRes.json() : [];
+  const tlList  = tlRes.ok  ? await tlRes.json()  : [];
+
+  // Build lookup maps
+  const empMap = {};
+  empList.forEach(e => { empMap[e.newJoinerName] = e; });
+  const tlMap = {};
+  tlList.forEach(t => { tlMap[t.name.toLowerCase().trim()] = t; });
+
+  // Fetch verification statuses
+  const phones   = forms.map(f => f.customerNumber).join(',');
+  const names    = forms.map(f => encodeURIComponent(f.customerName || '')).join(',');
+  const products = forms.map(f => encodeURIComponent((f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim())).join(',');
+  const months   = forms.map(f => encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))).join(',');
+  let verifyMap = {};
+  try {
+    const vRes = await fetch(`${EMP_API}/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`);
+    if (vRes.ok) verifyMap = await vRes.json();
+  } catch { /* ignore */ }
+
+  const rows = forms.map(f => flattenForm(f, empMap, tlMap, verifyMap));
   const ws   = XLSX.utils.json_to_sheet(rows);
 
   // Auto column widths
@@ -376,151 +414,156 @@ function VerifyChip({ status }) {
 
 // ── Employee Group Row ────────────────────────────────────────
 function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditPoints }) {
-  const [expanded,   setExpanded]   = useState(false);
-  const [verifyMap,  setVerifyMap]  = useState({});
-  const [verifying,  setVerifying]  = useState(false);
+
+  // ✅ FIXED: consistent + safe product
+  const getProduct = (f) =>
+    (f?.tideProduct || f?.formFillingFor || f?.brand || '').toLowerCase().trim();
+
+  // ✅ FIXED: unique key
+  const getKey = (f) => {
+    const p = getProduct(f);
+    return p ? `${f.customerNumber}__${p}` : f.customerNumber;
+  };
+
+  const [expanded, setExpanded] = useState(false);
+  const [verifyMap, setVerifyMap] = useState({});
+  const [verifying, setVerifying] = useState(false);
+
   const dupCount = forms.filter(f => duplicatePhones.has(f.customerNumber)).length;
 
-  // Fetch verification status when expanded
+  // ✅ FIXED: consistent product usage
   const fetchVerification = useCallback(async () => {
     if (verifying || Object.keys(verifyMap).length > 0) return;
+
     setVerifying(true);
     try {
       const phones   = forms.map(f => f.customerNumber).join(',');
       const names    = forms.map(f => encodeURIComponent(f.customerName)).join(',');
-      const products = forms.map(f => encodeURIComponent(f.tideProduct || f.formFillingFor || '')).join(',');
-      const months   = forms.map(f => encodeURIComponent(
-        new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' })
-      )).join(',');
+      const products = forms.map(f => encodeURIComponent(getProduct(f))).join(',');
+      const months   = forms.map(f =>
+        encodeURIComponent(
+          new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' })
+        )
+      ).join(',');
+
       const res = await fetch(
         `${EMP_API}/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`
       );
 
+      if (res.ok) {
+        const data = await res.json();
+        setVerifyMap(data);
+      }
 
-      if (res.ok) setVerifyMap(await res.json());
-    } catch { /* ignore */ } finally { setVerifying(false); }
+    } catch (err) {
+      console.error("Verification error:", err);
+    } finally {
+      setVerifying(false);
+    }
   }, [forms, verifyMap, verifying]);
 
-  // Admin can't know verification status — show only adjustment + note
-  const products = forms.map(f => encodeURIComponent(f.brand || f.tideProduct || f.formFillingFor || '')).join(',');
-  const adjustment  = empPointsData?.pointsAdjustment || 0;
-  const autoPoints  = Object.keys(verifyMap).reduce((sum, phone) => {
-    if (verifyMap[phone]?.status === 'Fully Verified') {
-      const form = forms.find(f => f.customerNumber === phone);
-      const product = form?.tideProduct || form?.formFillingFor || '';
-      sum += POINTS_MAP[product] || 0;
+  // Auto-fetch verification on mount so points show without needing to expand
+  // useEffect(() => { fetchVerification(); }, []); // eslint-disable-line
+
+  // ✅ FIXED: safe points calculation
+  const autoPoints = Object.keys(verifyMap).reduce((sum, key) => {
+    if (verifyMap[key]?.status === 'Fully Verified') {
+      const form = forms.find(f => getKey(f) === key);
+      if (!form) return sum;
+
+      const product = getProduct(form); // lowercase
+      // Case-insensitive lookup in POINTS_MAP
+      const pointsKey = Object.keys(POINTS_MAP).find(k => k.toLowerCase().trim() === product);
+      sum += pointsKey ? POINTS_MAP[pointsKey] : 0;
     }
     return sum;
   }, 0);
+
+  const adjustment  = empPointsData?.pointsAdjustment || 0;
   const verified    = autoPoints || empPointsData?.verifiedPoints || 0;
   const totalPoints = Math.round((verified + adjustment) * 10) / 10;
 
-
   return (
     <Card sx={{ mb: 2, border: `1.5px solid ${BRAND.primaryLight || '#c8e6c9'}`, borderRadius: 2 }}>
+
+      {/* HEADER */}
       <Box
         onClick={() => {
           const next = !expanded;
           setExpanded(next);
           if (next) fetchVerification();
         }}
-        sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          px: 2.5, py: 1.5, cursor: 'pointer',
-          '&:hover': { bgcolor: 'action.hover' }, borderRadius: 2 }}
+        sx={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          px: 2.5,
+          py: 1.5,
+          cursor: 'pointer',
+          '&:hover': { bgcolor: 'action.hover' },
+          borderRadius: 2
+        }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-          <Avatar sx={{ bgcolor: BRAND.primary, width: 34, height: 34, fontSize: 13, fontWeight: 700 }}>
-            {initials(empName)}
-          </Avatar>
+          <Avatar sx={{ bgcolor: BRAND.primary }}>{initials(empName)}</Avatar>
+
           <Box>
-            <Typography fontWeight={700} sx={{ color: 'text.primary' }}>{empName}</Typography>
-            <Typography variant="caption" color="text.secondary">{forms.length} merchant{forms.length !== 1 ? 's' : ''}</Typography>
+            <Typography fontWeight={700}>{empName}</Typography>
+            <Typography variant="caption">{forms.length} merchants</Typography>
           </Box>
         </Box>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          {/* Points badge */}
-          <Tooltip title={`Verified: ${verified} pts + Adjustment: ${adjustment >= 0 ? '+' : ''}${adjustment} = ${totalPoints} pts`}>
-            <Chip
-              label={`⭐ ${totalPoints} pts`}
-              size="small"
-              onClick={e => { e.stopPropagation(); onEditPoints(empName, empPointsData, verified); }}
-              sx={{ bgcolor: '#e6f4ea', color: '#2e7d32', fontWeight: 800, fontSize: 11,
-  border: '1.5px solid #2e7d32', cursor: 'pointer',
-  '&:hover': { bgcolor: '#c8e6c9' } }}
 
+        <Box sx={{ display: 'flex', gap: 1 }}>
+          <Chip label={`⭐ ${totalPoints}`} />
 
-
-            />
-          </Tooltip>
           {dupCount > 0 && (
-            <Tooltip title={`${dupCount} merchant(s) also submitted by other employees`}>
-              <Chip icon={<WarningAmberIcon sx={{ fontSize: '14px !important' }} />}
-                label={`${dupCount} dup`} size="small"
-                sx={{ bgcolor: '#fdecea', color: '#c62828', fontWeight: 700, fontSize: 11 }} />
-            </Tooltip>
+            <Chip label={`${dupCount} dup`} color="error" />
           )}
-          {expanded ? <ExpandLessIcon sx={{ color: 'text.secondary' }} /> : <ExpandMoreIcon sx={{ color: 'text.secondary' }} />}
+
+          {expanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
         </Box>
       </Box>
 
+      {/* TABLE */}
       <Collapse in={expanded}>
-        <TableContainer>
-          <Table size="small">
-            <TableHead>
-              <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider', py: 1.5 } }}>
-                <TableCell>Customer</TableCell>
-                <TableCell>Phone</TableCell>
-                <TableCell>Location</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell>Product</TableCell>
-                <TableCell>Verification</TableCell>
-                <TableCell>Date</TableCell>
-                <TableCell align="center">Dup?</TableCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {forms.map(f => {
-                const isDup = duplicatePhones.has(f.customerNumber);
-                return (
-                  <TableRow key={f._id} hover
-                    sx={{ bgcolor: isDup ? '#fff8f8' : 'transparent', '&:last-child td': { border: 0 } }}>
-                    <TableCell>
-                      <Typography variant="body2" fontWeight={600} sx={{ color: 'text.primary' }}>{f.customerName}</Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2" sx={{ fontFamily: 'monospace', color: 'text.primary' }}>{f.customerNumber}</Typography>
-                    </TableCell>
-                    <TableCell><Typography variant="body2" color="text.secondary">{f.location}</Typography></TableCell>
-                    <TableCell><StatusChip status={f.status} /></TableCell>
-                    <TableCell>
-                      <ProductChip product={f.tideProduct || f.brand || f.formFillingFor || (f.attemptedProducts || []).join(', ') || '–'} />
+        <Table size="small">
+          <TableBody>
+            {forms.map(f => {
+              const isDup = duplicatePhones.has(f.customerNumber);
+              const date  = f.createdAt ? new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '–';
 
-                    </TableCell>
-                    <TableCell>
-                      {verifying
-                        ? <CircularProgress size={12} sx={{ color: BRAND.primary }} />
-                        : <VerifyChip status={verifyMap[f.customerNumber]?.status} />
-                      }
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="caption" color="text.secondary">
-                        {new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                      </Typography>
-                    </TableCell>
-                    <TableCell align="center">
-                      {isDup && (
-                        <Tooltip title="This merchant was also submitted by another employee">
-                          <WarningAmberIcon sx={{ color: '#c62828', fontSize: 18 }} />
-                        </Tooltip>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </TableContainer>
+              return (
+                <TableRow key={f._id}>
+
+                  <TableCell>{f.customerName}</TableCell>
+                  <TableCell>{f.customerNumber}</TableCell>
+
+                  <TableCell>
+                    <ProductChip product={getProduct(f)} />
+                  </TableCell>
+
+                  <TableCell>
+                    {verifying
+                      ? <CircularProgress size={12} />
+                      : <VerifyChip status={verifyMap[getKey(f)]?.status} />
+                    }
+                  </TableCell>
+
+                  <TableCell>
+                    <Typography variant="caption" color="text.secondary">{date}</Typography>
+                  </TableCell>
+
+                  <TableCell>
+                    {isDup && <WarningAmberIcon color="error" />}
+                  </TableCell>
+
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
       </Collapse>
+
     </Card>
   );
 }
@@ -548,6 +591,9 @@ export default function MerchantForms() {
   const [dateFilter, setDateFilter] = useState('all');
   const [toDate, setToDate]         = useState('');
   const [fromDate, setFromDate]     = useState('');
+  const [globalVerifyMap,  setGlobalVerifyMap]  = useState({});
+  const [verifyKpiOpen,    setVerifyKpiOpen]    = useState(null); // 'Fully Verified' | 'Partially Done' | 'Not Found'
+  const [drillProduct,     setDrillProduct]     = useState(null); // { product, status }
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -737,6 +783,67 @@ export default function MerchantForms() {
     return m;
   }, [empPoints]);
 
+  // Fetch global verification for all filtered forms
+  const getFormProduct = (f) => (f?.tideProduct || f?.formFillingFor || f?.brand || '').toLowerCase().trim();
+  const getFormKey     = (f) => { const p = getFormProduct(f); return p ? `${f.customerNumber}__${p}` : f.customerNumber; };
+
+  useEffect(() => {
+  const filteredForms = grouped.flatMap(([, empForms]) => empForms);
+  if (!filteredForms.length) { setGlobalVerifyMap({}); return; }
+
+  const BATCH = 50;
+  const batches = [];
+  for (let i = 0; i < filteredForms.length; i += BATCH) {
+    batches.push(filteredForms.slice(i, i + BATCH));
+  }
+
+  Promise.all(batches.map(batch => {
+    const phones   = batch.map(f => f.customerNumber).join(',');
+    const names    = batch.map(f => encodeURIComponent(f.customerName || '')).join(',');
+    const products = batch.map(f => encodeURIComponent(getFormProduct(f))).join(',');
+    const months   = batch.map(f => encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))).join(',');
+    return fetch(`${EMP_API}/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`)
+      .then(r => r.ok ? r.json() : {})
+      .catch(() => ({}));
+  })).then(results => {
+    const merged = Object.assign({}, ...results);
+    setGlobalVerifyMap(merged);
+  });
+}, [grouped]); // eslint-disable-line
+ // eslint-disable-line
+
+  // Compute verification KPI counts from global map
+  const verifyKpiCounts = useMemo(() => {
+    const filteredForms = grouped.flatMap(([, empForms]) => empForms);
+    const counts = { 'Fully Verified': 0, 'Partially Done': 0, 'Not Found': 0 };
+    filteredForms.forEach(f => {
+      const status = globalVerifyMap[getFormKey(f)]?.status || 'Not Found';
+      if (status === 'Fully Verified') counts['Fully Verified']++;
+      else if (status === 'Partially Done') counts['Partially Done']++;
+      else counts['Not Found']++;
+    });
+    return counts;
+  }, [grouped, globalVerifyMap]); // eslint-disable-line
+
+  // Breakdown by product for the clicked KPI
+  const verifyBreakdown = useMemo(() => {
+    if (!verifyKpiOpen) return [];
+    const filteredForms = grouped.flatMap(([, empForms]) => empForms);
+    const productMap = {};
+    filteredForms.forEach(f => {
+      const status  = globalVerifyMap[getFormKey(f)]?.status || 'Not Found';
+      const rawProduct = f.formFillingFor || f.tideProduct || f.brand || '–';
+      const product = rawProduct.toLowerCase() === 'msme' ? 'Tide MSME' : rawProduct;
+
+      if (!productMap[product]) productMap[product] = { total: 0, matched: 0 };
+      productMap[product].total++;
+      if (status === verifyKpiOpen) productMap[product].matched++;
+    });
+    return Object.entries(productMap)
+      .filter(([, v]) => v.matched > 0)
+      .sort((a, b) => b[1].matched - a[1].matched);
+  }, [verifyKpiOpen, grouped, globalVerifyMap]); // eslint-disable-line
+
 
 
   return (
@@ -810,12 +917,17 @@ export default function MerchantForms() {
       </Box>
 
       {/* Summary KPIs */}
+      {(() => {
+        const filteredForms = grouped.flatMap(([, empForms]) => empForms);
+        const filteredTotal = filteredForms.length;
+        const filteredEmps  = grouped.length;
+        return (
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 2, mb: 3 }}>
         {[
-          { label: 'Total Submissions', value: forms.length,   color: BRAND.primary, bg: '#e6f4ea', key: 'total' },
-          { label: 'Employees',         value: grouped.length, color: '#1565c0',     bg: '#e3f2fd', key: 'emp' },
-          { label: 'Cross Duplicates',  value: activeCount,    color: '#c62828',     bg: '#fdecea', key: 'dup' },
-          { label: 'Settled Duplicates',value: settledCount,   color: '#2e7d32',     bg: '#e6f4ea', key: 'settled' },
+          { label: 'Total Submissions', value: filteredTotal, color: BRAND.primary, bg: '#e6f4ea', key: 'total' },
+          { label: 'Employees',         value: filteredEmps,  color: '#1565c0',     bg: '#e3f2fd', key: 'emp' },
+          { label: 'Cross Duplicates',  value: activeCount,   color: '#c62828',     bg: '#fdecea', key: 'dup' },
+          { label: 'Settled Duplicates',value: settledCount,  color: '#2e7d32',     bg: '#e6f4ea', key: 'settled' },
         ].map(k => (
           <Card key={k.label}
             onClick={
@@ -845,6 +957,8 @@ export default function MerchantForms() {
           </Card>
         ))}
       </Box>
+        );
+      })()}
 
       {/* Duplicate warning banner */}
       {activeCount > 0 && (
@@ -853,6 +967,142 @@ export default function MerchantForms() {
           <strong>{activeCount} cross-employee duplicate merchant(s) detected.</strong> Same merchant submitted by multiple employees.
         </Alert>
       )}
+
+      {/* Verification KPI cards */}
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 2, mb: 3 }}>
+        {[
+          { label: 'Fully Verified',  key: 'Fully Verified',  color: '#2e7d32', bg: '#e6f4ea', icon: '✓' },
+          { label: 'Partially Done',  key: 'Partially Done',  color: '#f57f17', bg: '#fff8e1', icon: '◑' },
+          { label: 'Not Found',       key: 'Not Found',       color: '#888',    bg: '#f5f5f5', icon: '–' },
+        ].map(k => (
+          <Card key={k.key} onClick={() => setVerifyKpiOpen(k.key)}
+            sx={{ borderRadius: 3, border: `1.5px solid ${k.color}30`, cursor: 'pointer',
+              transition: 'box-shadow 0.2s, transform 0.15s',
+              '&:hover': { boxShadow: `0 4px 20px ${k.color}30`, transform: 'translateY(-2px)' } }}>
+            <CardContent sx={{ py: 2 }}>
+              <Typography variant="h4" fontWeight={800} sx={{ color: k.color }}>
+                {k.icon} {verifyKpiCounts[k.key] || 0}
+              </Typography>
+              <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                {k.label}
+                <Typography component="span" variant="caption" sx={{ ml: 1, color: k.color, fontWeight: 700 }}>
+                  (click for breakdown)
+                </Typography>
+              </Typography>
+            </CardContent>
+          </Card>
+        ))}
+      </Box>
+
+      {/* Verification KPI Breakdown Dialog */}
+      <Dialog open={!!verifyKpiOpen} onClose={() => setVerifyKpiOpen(null)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Typography variant="h6" fontWeight={800}>
+            {verifyKpiOpen} — Product Breakdown
+          </Typography>
+          <IconButton onClick={() => setVerifyKpiOpen(null)} size="small"><CloseIcon /></IconButton>
+        </DialogTitle>
+        <DialogContent dividers>
+          {verifyBreakdown.length === 0 ? (
+            <Typography color="text.secondary" sx={{ py: 2, textAlign: 'center' }}>No data yet.</Typography>
+          ) : (
+            <Table size="small">
+              <TableHead>
+                <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', color: 'text.secondary' } }}>
+                  <TableCell>Product</TableCell>
+                  <TableCell align="right">{verifyKpiOpen}</TableCell>
+                  <TableCell align="right">Total Submitted</TableCell>
+                  <TableCell align="right">% Rate</TableCell>
+                  <TableCell align="right">Details</TableCell>
+                </TableRow>
+              </TableHead>
+              <TableBody>
+                {verifyBreakdown.map(([product, v]) => (
+                  <TableRow key={product} hover sx={{ cursor: 'pointer' }}
+                    onClick={() => setDrillProduct({ product, status: verifyKpiOpen })}>
+                    <TableCell><ProductChip product={product} /></TableCell>
+                    <TableCell align="right" sx={{ fontWeight: 700, color: '#2e7d32' }}>{v.matched}</TableCell>
+                    <TableCell align="right">{v.total}</TableCell>
+                    <TableCell align="right">
+                      <Chip label={`${Math.round((v.matched / v.total) * 100)}%`} size="small"
+                        sx={{ fontWeight: 700, bgcolor: '#e6f4ea', color: '#2e7d32' }} />
+                    </TableCell>
+                    <TableCell align="right">
+                      <Typography variant="caption" color="primary" sx={{ fontWeight: 700 }}>View ›</Typography>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setVerifyKpiOpen(null)} sx={{ color: BRAND.primary, fontWeight: 700 }}>Close</Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Drill-down: Merchant + FSE list for selected product */}
+      {drillProduct && (() => {
+        const filteredForms = grouped.flatMap(([, empForms]) => empForms);
+        const drillForms = filteredForms.filter(f => {
+          const rawProduct = f.formFillingFor || f.tideProduct || f.brand || '–';
+          const product = rawProduct.toLowerCase() === 'msme' ? 'Tide MSME' : rawProduct;
+          const status  = globalVerifyMap[getFormKey(f)]?.status || 'Not Found';
+          return product === drillProduct.product && status === drillProduct.status;
+        });
+        return (
+          <Dialog open={!!drillProduct} onClose={() => setDrillProduct(null)} maxWidth="md" fullWidth>
+            <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Box>
+                <Typography variant="h6" fontWeight={800}>
+                  <ProductChip product={drillProduct.product} /> &nbsp; {drillProduct.status}
+                </Typography>
+                <Typography variant="caption" color="text.secondary">{drillForms.length} merchant{drillForms.length !== 1 ? 's' : ''}</Typography>
+              </Box>
+              <IconButton onClick={() => setDrillProduct(null)} size="small"><CloseIcon /></IconButton>
+            </DialogTitle>
+            <DialogContent dividers sx={{ p: 0 }}>
+              {drillForms.length === 0 ? (
+                <Typography color="text.secondary" sx={{ py: 4, textAlign: 'center' }}>No merchants found.</Typography>
+              ) : (
+                <Table size="small" stickyHeader>
+                  <TableHead>
+                    <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', color: 'text.secondary', bgcolor: '#f9f9f9' } }}>
+                      <TableCell>#</TableCell>
+                      <TableCell>Merchant</TableCell>
+                      <TableCell>Phone</TableCell>
+                      <TableCell>Location</TableCell>
+                      <TableCell>FSE</TableCell>
+                      <TableCell>Date</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {drillForms.map((f, i) => (
+                      <TableRow key={f._id} hover>
+                        <TableCell sx={{ color: 'text.secondary', fontSize: 11 }}>{i + 1}</TableCell>
+                        <TableCell sx={{ fontWeight: 700 }}>{f.customerName}</TableCell>
+                        <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>{f.customerNumber}</TableCell>
+                        <TableCell sx={{ color: 'text.secondary', fontSize: 12 }}>{f.location}</TableCell>
+                        <TableCell>
+                          <Chip label={f.employeeName || '–'} size="small"
+                            avatar={<Avatar sx={{ bgcolor: BRAND.primary, fontSize: 10 }}>{initials(f.employeeName)}</Avatar>}
+                            sx={{ fontWeight: 600, fontSize: 11 }} />
+                        </TableCell>
+                        <TableCell sx={{ color: 'text.secondary', fontSize: 11 }}>
+                          {f.createdAt ? new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '–'}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </DialogContent>
+            <DialogActions>
+              <Button onClick={() => setDrillProduct(null)} sx={{ color: BRAND.primary, fontWeight: 700 }}>Close</Button>
+            </DialogActions>
+          </Dialog>
+        );
+      })()}
       {/* Date Filter */}
 <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', mb: 2 }}>
   {['all', 'today', 'week', 'month'].map(f => (
@@ -873,6 +1123,13 @@ export default function MerchantForms() {
   <TextField size="small" type="date" label="To" value={toDate}
     onChange={e => { setToDate(e.target.value); setDateFilter('custom'); }}
     InputLabelProps={{ shrink: true }} sx={{ minWidth: 150 }} />
+  {(dateFilter !== 'all' || fromDate || toDate || search) && (
+    <Button size="small" variant="outlined" color="error"
+      onClick={() => { setDateFilter('all'); setFromDate(''); setToDate(''); setSearch(''); }}
+      sx={{ fontWeight: 700 }}>
+      Reset
+    </Button>
+  )}
 </Box>
 
 
