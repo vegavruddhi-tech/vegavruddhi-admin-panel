@@ -36,15 +36,18 @@ function App() {
   useEffect(() => {
     const fetchPending = async () => {
       try {
-        const [empRes, posRes] = await Promise.all([
+        const [empRes, posRes, tlRes] = await Promise.all([
           fetch(`${EMP_BASE}/auth/pending`),
-          fetch(`${EMP_BASE}/auth/position-requests`)
+          fetch(`${EMP_BASE}/auth/position-requests`),
+          fetch(`${EMP_BASE}/tl/pending`),
         ]);
         const empData = await empRes.json();
         const posData = await posRes.json();
+        const tlData  = tlRes.ok ? await tlRes.json() : [];
         const empCount = Array.isArray(empData) ? empData.length : 0;
         const posCount = Array.isArray(posData) ? posData.filter(r => r.status === 'pending').length : 0;
-        setPendingCount(empCount + posCount);
+        const tlCount  = Array.isArray(tlData)  ? tlData.length : 0;
+        setPendingCount(empCount + posCount + tlCount);
       } catch { /* server might be off */ }
     };
     fetchPending();

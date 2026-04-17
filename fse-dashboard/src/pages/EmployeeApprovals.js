@@ -132,12 +132,37 @@ export default function EmployeeApprovals() {
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const res  = await fetch(`${EMP_API}/all-employees`);
-      if (!res.ok) throw new Error('Failed to load — is the employee server running on port 3000?');
+      const res  = await fetch(`${EMP_API}/all-employees-admin`);
+      if (!res.ok) {
+        // fallback: fetch pending + approved + rejected separately
+        const [pendingRes, approvedRes, rejectedRes] = await Promise.all([
+          fetch(`${EMP_API}/pending`),
+          fetch(`${EMP_API}/approved`),
+          fetch(`${EMP_API}/rejected`).catch(() => ({ ok: false })),
+        ]);
+        const pendingData  = pendingRes.ok  ? await pendingRes.json()  : [];
+        const approvedData = approvedRes.ok ? await approvedRes.json() : [];
+        const rejectedData = rejectedRes.ok ? await rejectedRes.json() : [];
+        const combined = [
+          ...pendingData.map(e => ({ ...e, approvalStatus: 'pending' })),
+          ...approvedData.map(e => ({ ...e, approvalStatus: e.approvalStatus || 'approved' })),
+          ...rejectedData.map(e => ({ ...e, approvalStatus: 'rejected' })),
+        ];
+        setEmployees(combined);
+        return;
+      }
       const data = await res.json();
       setEmployees(data);
     } catch (err) {
-      setError(err.message);
+      // Final fallback — just load pending so at least those show
+      try {
+        const res  = await fetch(`${EMP_API}/pending`);
+        if (!res.ok) throw new Error('Failed to load — is the employee server running?');
+        const data = await res.json();
+        setEmployees(data.map(e => ({ ...e, approvalStatus: 'pending' })));
+      } catch (err2) {
+        setError(err2.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -148,10 +173,6 @@ export default function EmployeeApprovals() {
     loadPosRequests();
     loadChangeRequests();
     loadTlPending();
-
-    // Poll every 10 seconds for near real-time updates
-    const interval = setInterval(() => { load(); loadPosRequests(); loadChangeRequests(); }, 10000);
-    return () => clearInterval(interval);
   }, [load]);
 
   const loadChangeRequests = async () => {
@@ -349,11 +370,12 @@ const rejectTL = async (id) => {
             Employee Approvals
           </Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
-            Review and approve new employee registrations. Auto-refreshes every 30 seconds.
+            Review and approve new employee registrations. Click Refresh to reload data.
           </Typography>
         </Box>
         <Tooltip title="Refresh now">
-          <Button startIcon={<RefreshIcon />} variant="outlined" onClick={load}
+          <Button startIcon={<RefreshIcon />} variant="outlined"
+            onClick={() => { load(); loadPosRequests(); loadChangeRequests(); loadTlPending(); }}
             sx={{ borderColor: BRAND.primary, color: BRAND.primary, fontWeight: 700 }}>
             Refresh
           </Button>
