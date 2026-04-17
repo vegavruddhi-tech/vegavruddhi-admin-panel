@@ -558,6 +558,7 @@ export default function ProductDashboard() {
   const [onboardVerifying,   setOnboardVerifying]   = useState(false);
   const [onboardVerifyMap,   setOnboardVerifyMap]   = useState({});
   const [verifyDrillStatus,  setVerifyDrillStatus]  = useState(null);
+  const [globalVerifyMap,    setGlobalVerifyMap]    = useState({});
 
   // drill-down state
   const [drill, setDrill] = useState({ open: false, title: "", rows: [], editableCols: undefined });
@@ -636,9 +637,32 @@ export default function ProductDashboard() {
     try {
       const res = await fetch(`${EMP_API}/forms/admin/overview`);
       const data = res.ok ? await res.json() : { forms: [], employees: [], tls: [] };
-      setMongoForms(data.forms || []);
+      const forms = data.forms || [];
+      setMongoForms(forms);
       setMongoEmployees(data.employees || []);
       setMongoTls(data.tls || []);
+
+      // ── Auto-fetch verification for all forms in background ──────────
+      if (forms.length > 0) {
+        const getP = (f) => (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+        const BATCH = 50;
+        const batches = [];
+        for (let i = 0; i < forms.length; i += BATCH) batches.push(forms.slice(i, i + BATCH));
+        try {
+          const results = await Promise.all(batches.map(batch => {
+            const phones   = batch.map(f => f.customerNumber).join(',');
+            const names    = batch.map(f => encodeURIComponent(f.customerName || '')).join(',');
+            const products = batch.map(f => encodeURIComponent(getP(f))).join(',');
+            const months   = batch.map(f => encodeURIComponent(
+              new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' })
+            )).join(',');
+            return fetch(
+              `${EMP_API}/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`
+            ).then(r => r.ok ? r.json() : {}).catch(() => ({}));
+          }));
+          setGlobalVerifyMap(Object.assign({}, ...results));
+        } catch { /* ignore verify errors */ }
+      }
     } catch (err) {
       console.error('Product page MongoDB load error:', err);
     }
@@ -728,6 +752,59 @@ export default function ProductDashboard() {
     tryErr:     topFilteredForms.filter(f => f.status === 'Try but not done due to error').length,
     revisit:    topFilteredForms.filter(f => f.status === 'Need to visit again').length,
   }), [topFilteredForms]);
+
+  // ── Per-product daily trend data (Ready / Fully Verified / Partially Done) ─
+  const getVerifyKey = (f) => {
+    const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+    return p ? `${f.customerNumber}__${p}` : f.customerNumber;
+  };
+
+  const productDailyData = useMemo(() => {
+    // Get all unique products from filtered forms
+    const productSet = new Set();
+    topFilteredForms.forEach(f => {
+      const raw = f.formFillingFor || f.tideProduct || f.brand || '';
+      if (raw) {
+        const normalized = raw.toLowerCase() === 'msme' ? 'Tide MSME' : raw;
+        productSet.add(normalized);
+      }
+    });
+
+    const result = {};
+
+    productSet.forEach(product => {
+      // Get forms for this product
+      const productForms = topFilteredForms.filter(f => {
+        const raw = f.formFillingFor || f.tideProduct || f.brand || '';
+        const normalized = raw.toLowerCase() === 'msme' ? 'Tide MSME' : raw;
+        return normalized === product;
+      });
+
+      // Build day-by-day map
+      const dayMap = {};
+      productForms.forEach(f => {
+        const day = new Date(f.createdAt).toISOString().slice(0, 10);
+        if (!dayMap[day]) dayMap[day] = { date: day, onboarding: 0, fullyVerified: 0, partiallyDone: 0 };
+
+        if (f.status === 'Ready for Onboarding') {
+          dayMap[day].onboarding++;
+          const vStatus = globalVerifyMap[getVerifyKey(f)]?.status;
+          if (vStatus === 'Fully Verified')  dayMap[day].fullyVerified++;
+          if (vStatus === 'Partially Done')  dayMap[day].partiallyDone++;
+        }
+      });
+
+      // Sort by date
+      const chartData = Object.values(dayMap).sort((a, b) => a.date.localeCompare(b.date));
+
+      // Only include product if it has at least one onboarding form
+      if (chartData.some(d => d.onboarding > 0)) {
+        result[product] = chartData;
+      }
+    });
+
+    return result;
+  }, [topFilteredForms, globalVerifyMap]);
 
   // ── MongoDB: dynamic product columns and groups for Custom Chart ──────
   const mongoProductMeta = useMemo(() => {
@@ -1378,7 +1455,8 @@ export default function ProductDashboard() {
       )}
 
       {/* ── CHARTS SECTION: Google Sheets data ──────────── */}
-      {/* Custom Column Chart */}
+
+      {/* Custom Chart */}
       <Card variant="outlined" sx={{ mb: 3 }}>
         <CardContent sx={{ pb: "16px !important" }}>
 
@@ -1779,6 +1857,70 @@ export default function ProductDashboard() {
         </DialogContent>
       </Dialog>
 
+      {/* ── Per-Product Daily Trend Charts ─────────────────────────────── */}
+      {Object.keys(productDailyData).length > 0 && (
+        <Box sx={{ mb: 4, mt: 3 }}>
+          <Typography variant="h5" fontWeight={800} sx={{ mb: 0.5, color: BRAND.primary }}>
+            Daily Onboarding Trends by Product
+          </Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+            Day-wise breakdown of Ready for Onboarding, Fully Verified and Partially Done — per product. Responds to all filters above.
+          </Typography>
+
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 3 }}>
+            {Object.entries(productDailyData).map(([product, chartData], pi) => {
+              const PROD_COLORS = ["#7c3aed","#10b981","#3b82f6","#f59e0b","#14b8a6","#ec4899","#0ea5e9","#ef4444"];
+              const prodColor = PROD_COLORS[pi % PROD_COLORS.length];
+              const totalOnboarding = chartData.reduce((s, d) => s + d.onboarding, 0);
+              const totalVerified   = chartData.reduce((s, d) => s + d.fullyVerified, 0);
+              const totalPartial    = chartData.reduce((s, d) => s + d.partiallyDone, 0);
+
+              return (
+                <Card key={product} variant="outlined" sx={{
+                  borderRadius: 3,
+                  transition: 'box-shadow 0.2s',
+                  '&:hover': { boxShadow: `0 4px 20px ${prodColor}22` }
+                }}>
+                  <Box sx={{ height: 4, bgcolor: prodColor, borderRadius: '3px 3px 0 0' }} />
+                  <CardContent>
+                    <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 1 }}>
+                      <Box>
+                        <Typography variant="h6" fontWeight={800} sx={{ color: prodColor }}>{product}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {chartData.length} day{chartData.length !== 1 ? 's' : ''} of data
+                        </Typography>
+                      </Box>
+                      <Box sx={{ display: 'flex', gap: 0.8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        <Box sx={{ bgcolor: '#e6f4ea', color: '#2e7d32', borderRadius: 5, px: 1.2, py: 0.3, fontSize: 11, fontWeight: 700 }}>
+                          🟢 {totalOnboarding} Onboarding
+                        </Box>
+                        <Box sx={{ bgcolor: '#e8f5e9', color: '#1b5e20', borderRadius: 5, px: 1.2, py: 0.3, fontSize: 11, fontWeight: 700 }}>
+                          ✓ {totalVerified} Verified
+                        </Box>
+                        <Box sx={{ bgcolor: '#fff8e1', color: '#f57f17', borderRadius: 5, px: 1.2, py: 0.3, fontSize: 11, fontWeight: 700 }}>
+                          ◑ {totalPartial} Partial
+                        </Box>
+                      </Box>
+                    </Box>
+                    <ResponsiveContainer width="100%" height={220}>
+                      <ComposedChart data={chartData} margin={{ top: 8, right: 16, bottom: 40, left: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={ct.grid} />
+                        <XAxis dataKey="date" tick={{ fontSize: 9, fill: ct.text }} angle={-30} textAnchor="end" height={55} stroke={ct.text} />
+                        <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: ct.text }} stroke={ct.text} width={28} />
+                        <Tooltip contentStyle={{ backgroundColor: ct.tooltipBg, color: ct.text, border: 'none', borderRadius: 8 }} labelFormatter={(label) => `Date: ${label}`} />
+                        <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11, paddingBottom: 4 }} />
+                        <Bar dataKey="onboarding" name="Ready for Onboarding" fill="#2e7d32" radius={[4, 4, 0, 0]} opacity={0.85} />
+                        <Line type="monotone" dataKey="fullyVerified" name="Fully Verified" stroke="#10b981" strokeWidth={2.5} dot={{ r: 4, fill: '#10b981', strokeWidth: 2, stroke: '#fff' }} />
+                        <Line type="monotone" dataKey="partiallyDone" name="Partially Done" stroke="#f57f17" strokeWidth={2.5} strokeDasharray="5 3" dot={{ r: 4, fill: '#f57f17', strokeWidth: 2, stroke: '#fff' }} />
+                      </ComposedChart>
+                    </ResponsiveContainer>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </Box>
+        </Box>
+      )}
 
       <TideDrillTable
         open={drill.open}

@@ -404,13 +404,12 @@ const rejectTL = async (id) => {
                 <Box sx={{ pr: 2 }}>Change Requests</Box>
               </Badge>
             } />
-          </Tabs>
-          <Tab value="tlpending" label={
+            <Tab value="tlpending" label={
               <Badge badgeContent={tlPending.length} color="error" max={99} sx={{ '& .MuiBadge-badge': { right: -8, top: -2 } }}>
                 <Box sx={{ pr: 2 }}>TL Approvals</Box>
               </Badge>
-            }
-             />
+            } />
+          </Tabs>
 
         </Box>
 
