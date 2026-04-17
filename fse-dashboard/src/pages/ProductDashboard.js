@@ -40,17 +40,20 @@ function toChartTheme(muiTheme) {
 }
 
 // ── Onboarding Verification Sub-section (same as Overview) ─────────────────
-function OnboardVerifySection({ filteredForms, onboardVerifyMap, onboardVerifying, verifyDrillStatus, setVerifyDrillStatus }) {
+function OnboardVerifySection({ filteredForms, onboardVerifyMap, onboardVerifying, verifyDrillStatus, setVerifyDrillStatus, employees }) {
+  const [drillModal, setDrillModal] = useState(null); // { product, status, color, bg, rows, total, matched }
+
   const onboardForms = filteredForms.filter(f => f.status === 'Ready for Onboarding');
   const getKey = (f) => {
     const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
     return p ? `${f.customerNumber}__${p}` : f.customerNumber;
   };
+
   const fullyVerified = onboardForms.filter(f => onboardVerifyMap[getKey(f)]?.status === 'Fully Verified').length;
   const partiallyDone = onboardForms.filter(f => onboardVerifyMap[getKey(f)]?.status === 'Partially Done').length;
   const notFound      = onboardForms.filter(f => !onboardVerifyMap[getKey(f)] || onboardVerifyMap[getKey(f)]?.status === 'Not Found').length;
 
-  const statusColor = { 'Fully Verified': '#2e7d32', 'Partially Done': '#f57f17', 'Not Found': '#888' };
+  const statusColor = { 'Fully Verified': '#2e7d32', 'Partially Done': '#f57f17', 'Not Found': '#757575' };
   const statusBg    = { 'Fully Verified': '#e6f4ea', 'Partially Done': '#fff8e1', 'Not Found': '#f5f5f5' };
 
   const buildBreakdown = (status) => {
@@ -66,8 +69,33 @@ function OnboardVerifySection({ filteredForms, onboardVerifyMap, onboardVerifyin
     return Object.entries(productMap).filter(([, v]) => v.matched > 0).sort((a, b) => b[1].matched - a[1].matched);
   };
 
+  const buildProductRows = (status, product) => {
+    return onboardForms
+      .filter(f => {
+        const rawProduct = f.formFillingFor || f.tideProduct || f.brand || '–';
+        const normalized = rawProduct.toLowerCase() === 'msme' ? 'Tide MSME' : rawProduct;
+        const s = onboardVerifyMap[getKey(f)]?.status || 'Not Found';
+        return normalized === product && s === status;
+      })
+      .map(f => {
+        const emp = (employees || []).find(e => e.newJoinerName === f.employeeName);
+        return {
+          customerName:  f.customerName   || '–',
+          customerPhone: f.customerNumber || '–',
+          fse:           f.employeeName   || '–',
+          tl:            emp?.reportingManager || '–',
+          fseEmail:      emp?.email || emp?.newJoinerEmailId || '–',
+          date:          new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+        };
+      })
+      .sort((a, b) => a.fse.localeCompare(b.fse));
+  };
+
+  const statusIcon = { 'Fully Verified': '✓', 'Partially Done': '◑', 'Not Found': '–' };
+
   return (
     <Box sx={{ mb: 3 }}>
+      {/* 3 verification KPI cards */}
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 2, mb: verifyDrillStatus ? 1 : 3 }}>
         {onboardVerifying ? (
           <Card sx={{ gridColumn: '1 / -1', borderRadius: 3, bgcolor: '#f9f9f9', border: '1.5px solid #e0e0e0' }}>
@@ -78,9 +106,10 @@ function OnboardVerifySection({ filteredForms, onboardVerifyMap, onboardVerifyin
         ) : [
           { label: '✓ Fully Verified', value: fullyVerified, color: '#2e7d32', bg: '#e6f4ea', status: 'Fully Verified' },
           { label: '◑ Partially Done', value: partiallyDone, color: '#f57f17', bg: '#fff8e1', status: 'Partially Done' },
-          { label: '– Not Found',      value: notFound,      color: '#888',    bg: '#f5f5f5', status: 'Not Found'      },
+          { label: '– Not Found',      value: notFound,      color: '#757575', bg: '#f5f5f5', status: 'Not Found'      },
         ].map(k => (
-          <Card key={k.label} onClick={() => setVerifyDrillStatus(verifyDrillStatus === k.status ? null : k.status)}
+          <Card key={k.label}
+            onClick={() => setVerifyDrillStatus(verifyDrillStatus === k.status ? null : k.status)}
             sx={{ borderRadius: 3, bgcolor: k.bg, border: `1.5px solid ${k.color}30`, cursor: 'pointer',
               outline: verifyDrillStatus === k.status ? `2px solid ${k.color}` : 'none',
               transition: 'all 0.2s', '&:hover': { transform: 'translateY(-2px)', boxShadow: `0 4px 16px ${k.color}30` } }}>
@@ -96,6 +125,7 @@ function OnboardVerifySection({ filteredForms, onboardVerifyMap, onboardVerifyin
         ))}
       </Box>
 
+      {/* Inline product breakdown — click a product card to open the table modal */}
       {verifyDrillStatus && (() => {
         const color     = statusColor[verifyDrillStatus];
         const bg        = statusBg[verifyDrillStatus];
@@ -104,18 +134,32 @@ function OnboardVerifySection({ filteredForms, onboardVerifyMap, onboardVerifyin
           <Box sx={{ mb: 3, p: 2, borderRadius: 3, bgcolor: bg, border: `1.5px solid ${color}30` }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
               <Typography variant="subtitle1" fontWeight={800} sx={{ color }}>
-                {verifyDrillStatus} — Product Breakdown
+                {statusIcon[verifyDrillStatus]} {verifyDrillStatus} — Product Breakdown
               </Typography>
-              <Button size="small" onClick={() => setVerifyDrillStatus(null)} sx={{ color, fontWeight: 700, minWidth: 0 }}>✕ Close</Button>
+              <Button size="small" onClick={() => setVerifyDrillStatus(null)}
+                sx={{ color, fontWeight: 700, minWidth: 0 }}>✕ Close</Button>
             </Box>
             <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(180px, 1fr))', gap: 1.5 }}>
               {breakdown.map(([product, v]) => (
-                <Card key={product} sx={{ borderRadius: 2, border: `1px solid ${color}30` }}>
+                <Card key={product}
+                  onClick={() => setDrillModal({
+                    product, status: verifyDrillStatus, color, bg,
+                    rows: buildProductRows(verifyDrillStatus, product),
+                    total: v.total, matched: v.matched
+                  })}
+                  sx={{
+                    borderRadius: 2, border: `1px solid ${color}30`, cursor: 'pointer',
+                    transition: 'all 0.2s',
+                    '&:hover': { transform: 'translateY(-2px)', boxShadow: `0 4px 16px ${color}30`, borderColor: color }
+                  }}>
                   <CardContent sx={{ py: 1, px: 1.5 }}>
                     <Typography variant="caption" fontWeight={700} sx={{ color, display: 'block' }}>{product}</Typography>
                     <Typography variant="h6" fontWeight={800} sx={{ color }}>{v.matched}</Typography>
                     <Typography variant="caption" color="text.secondary">
                       of {v.total} · {Math.round((v.matched / v.total) * 100)}%
+                    </Typography>
+                    <Typography variant="caption" sx={{ display: 'block', color, opacity: 0.6, fontSize: 10 }}>
+                      click to see records ↗
                     </Typography>
                   </CardContent>
                 </Card>
@@ -129,6 +173,84 @@ function OnboardVerifySection({ filteredForms, onboardVerifyMap, onboardVerifyin
           </Box>
         );
       })()}
+
+      {/* Product-level drill-down modal */}
+      {drillModal && (
+        <Dialog open={!!drillModal} onClose={() => setDrillModal(null)} maxWidth="lg" fullWidth
+          PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}>
+          <Box sx={{ background: `linear-gradient(135deg, ${drillModal.color}dd, ${drillModal.color}88)`, px: 3, py: 2.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+              <Box>
+                <Typography variant="overline" sx={{ color: 'rgba(255,255,255,0.8)', fontSize: 10, letterSpacing: 1.5 }}>
+                  {drillModal.status} · PRODUCT DRILL-DOWN
+                </Typography>
+                <Typography variant="h6" sx={{ color: '#fff', fontWeight: 800, mt: 0.3 }}>
+                  {drillModal.product}
+                </Typography>
+                <Box sx={{ display: 'flex', gap: 2, mt: 0.5 }}>
+                  <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.85)' }}>
+                    <strong>{drillModal.matched}</strong> {drillModal.status.toLowerCase()}
+                  </Typography>
+                  <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.65)' }}>
+                    of {drillModal.total} total · {Math.round((drillModal.matched / drillModal.total) * 100)}% rate
+                  </Typography>
+                </Box>
+              </Box>
+              <IconButton onClick={() => setDrillModal(null)}
+                sx={{ color: '#fff', bgcolor: 'rgba(255,255,255,0.15)', '&:hover': { bgcolor: 'rgba(255,255,255,0.25)' } }}>
+                <CloseIcon fontSize="small" />
+              </IconButton>
+            </Box>
+          </Box>
+
+          <DialogContent sx={{ p: 0 }}>
+            {drillModal.rows.length === 0 ? (
+              <Box sx={{ textAlign: 'center', py: 6 }}>
+                <Typography variant="body1" color="text.secondary">No records found.</Typography>
+              </Box>
+            ) : (
+              <TableContainer sx={{ maxHeight: 480 }}>
+                <Table size="small" stickyHeader>
+                  <TableHead>
+                    <TableRow>
+                      {['#', 'Customer Name', 'Phone', 'FSE', 'TL', 'FSE Email', 'Date'].map(h => (
+                        <TableCell key={h} sx={{
+                          fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8,
+                          bgcolor: drillModal.bg, color: drillModal.color,
+                          borderBottom: `2px solid ${drillModal.color}40`, whiteSpace: 'nowrap'
+                        }}>{h}</TableCell>
+                      ))}
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {drillModal.rows.map((row, i) => (
+                      <TableRow key={i} hover sx={{ '&:nth-of-type(even)': { bgcolor: `${drillModal.color}06` } }}>
+                        <TableCell sx={{ color: 'text.secondary', fontWeight: 600, fontSize: 11 }}>{i + 1}</TableCell>
+                        <TableCell><Typography variant="body2" fontWeight={700}>{row.customerName}</Typography></TableCell>
+                        <TableCell><Typography variant="body2" sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>{row.customerPhone}</Typography></TableCell>
+                        <TableCell><Typography variant="body2" fontWeight={600}>{row.fse}</Typography></TableCell>
+                        <TableCell><Typography variant="body2" color="text.secondary">{row.tl}</Typography></TableCell>
+                        <TableCell><Typography variant="caption" color="text.secondary">{row.fseEmail}</Typography></TableCell>
+                        <TableCell><Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>{row.date}</Typography></TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </TableContainer>
+            )}
+          </DialogContent>
+
+          <DialogActions sx={{ px: 3, py: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
+            <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
+              {drillModal.rows.length} record{drillModal.rows.length !== 1 ? 's' : ''} for {drillModal.product}
+            </Typography>
+            <Button onClick={() => setDrillModal(null)} variant="contained"
+              sx={{ bgcolor: drillModal.color, fontWeight: 700, borderRadius: 2, '&:hover': { opacity: 0.9 } }}>
+              Close
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
     </Box>
   );
 }
@@ -1451,6 +1573,7 @@ export default function ProductDashboard() {
           onboardVerifying={onboardVerifying}
           verifyDrillStatus={verifyDrillStatus}
           setVerifyDrillStatus={setVerifyDrillStatus}
+          employees={mongoEmployees}
         />
       )}
 
