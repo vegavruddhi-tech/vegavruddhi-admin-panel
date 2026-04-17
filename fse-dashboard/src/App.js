@@ -27,7 +27,7 @@ import "./App.css";
 
 function App() {
   const [mode, setMode] = useState("light");
-  const [page, setPage] = useState("overview");
+  const [page, setPage] = useState(() => localStorage.getItem("vv_page") || "overview");
   const [pendingCount, setPendingCount] = useState(0);
 
   const EMP_BASE = process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api';
@@ -200,7 +200,7 @@ function App() {
         <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
           <Tabs
             value={page}
-            onChange={(_, v) => setPage(v)}
+            onChange={(_, v) => { setPage(v); localStorage.setItem("vv_page", v); }}
             textColor="inherit"
           >
             <Tab value="overview"      label="Overview" />
