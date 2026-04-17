@@ -141,6 +141,8 @@ function RuleCard({ rule, token, onSaved }) {
   const [snack,      setSnack]      = useState({ open: false, msg: "", sev: "success" });
   const [collectionColumns, setCollectionColumns] = useState([]);
   const [productTypes, setProductTypes] = useState(rule.productTypes || []);
+  const [collectionName, setCollectionName] = useState(rule.collectionName || "");
+  const [monthLabel,     setMonthLabel]     = useState(rule.monthLabel || "");
 
   // Load real column names from the collection when editing starts
   const loadColumns = async () => {
@@ -187,7 +189,7 @@ function RuleCard({ rule, token, onSaved }) {
           "Content-Type": "application/json",
           "Authorization": `Bearer ${token}`,
         },
-        body: JSON.stringify({ conditions: resolved, active, productTypes }),
+        body: JSON.stringify({ conditions: resolved, active, productTypes, collectionName, monthLabel }),
       });
 
       if (!res.ok) throw new Error(await res.text());
@@ -204,6 +206,8 @@ function RuleCard({ rule, token, onSaved }) {
   const handleCancel = () => {
     setConditions(rule.conditions || []);
     setActive(rule.active);
+    setCollectionName(rule.collectionName || "");
+    setMonthLabel(rule.monthLabel || "");
     setEditing(false);
   };
 
@@ -212,13 +216,37 @@ function RuleCard({ rule, token, onSaved }) {
       <CardContent>
         {/* Header */}
         <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 2, flexWrap: "wrap", gap: 1 }}>
-          <Box>
-            <Typography variant="h6" sx={{ fontWeight: 800, color: BRAND.primary }}>
-              {rule.monthLabel}
-            </Typography>
-            <Typography variant="caption" sx={{ color: "text.secondary", fontFamily: "monospace" }}>
-              Collection: {rule.collectionName}
-            </Typography>
+          <Box sx={{ flex: 1, minWidth: 0 }}>
+            {editing ? (
+              <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', mb: 1 }}>
+                <TextField
+                  size="small"
+                  label="Month Label (display)"
+                  value={monthLabel}
+                  onChange={e => setMonthLabel(e.target.value)}
+                  placeholder="e.g. April 2026"
+                  sx={{ minWidth: 180 }}
+                />
+                <TextField
+                  size="small"
+                  label="Collection Name (MongoDB)"
+                  value={collectionName}
+                  onChange={e => setCollectionName(e.target.value)}
+                  placeholder="e.g. tl_connect_april"
+                  sx={{ minWidth: 220 }}
+                  helperText="Must match exact MongoDB collection name (case-sensitive)"
+                />
+              </Box>
+            ) : (
+              <>
+                <Typography variant="h6" sx={{ fontWeight: 800, color: BRAND.primary }}>
+                  {rule.monthLabel}
+                </Typography>
+                <Typography variant="caption" sx={{ color: "text.secondary", fontFamily: "monospace" }}>
+                  Collection: {rule.collectionName}
+                </Typography>
+              </>
+            )}
           </Box>
           <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
   <FormControlLabel

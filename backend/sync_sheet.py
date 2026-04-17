@@ -107,9 +107,8 @@ def process_sheet(sheet_id, label):
 
                 dt = parse_date(cleaned.get(date_col)) if date_col else None
 
-                # Only current month data
-                if date_col and not is_current_month(dt):
-                    continue
+                # Sync ALL rows — no month filter
+                # (previously only synced current month, which caused April data to be missing)
 
                 # Keep latest record per phone
                 if phone not in latest_records:
