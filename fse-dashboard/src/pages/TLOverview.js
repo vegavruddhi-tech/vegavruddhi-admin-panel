@@ -3,7 +3,7 @@ import {
   Box, Typography, Card, CardContent, Chip, CircularProgress,
   Alert, Button, Avatar, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, Collapse, TextField, InputAdornment, Tooltip,
-  Dialog, DialogTitle, DialogContent, DialogActions, IconButton, Autocomplete,
+  Dialog, DialogTitle, DialogContent, DialogActions, IconButton, Autocomplete, Skeleton,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ExpandLessIcon from '@mui/icons-material/ExpandLess';
@@ -64,7 +64,7 @@ function FSEGroup({ fse, forms, verifyMap }) {
             No forms submitted.
           </Typography>
         ) : (
-          <TableContainer>
+          <TableContainer sx={{ overflowX: 'auto' }}>
             <Table size="small">
               <TableHead>
                 <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase',
@@ -313,7 +313,7 @@ export default function TLOverview() {
       </Box>
 
       {/* Summary KPIs */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 2, mb: 3 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 2, mb: 3 }}>
         {[
           { label: 'Total Submissions', value: totalForms,  color: BRAND.primary, key: 'forms' },
           { label: 'Total TLs',         value: data.length, color: '#7c3aed',     key: 'tls' },
@@ -339,7 +339,7 @@ export default function TLOverview() {
       </Box>
 
       {/* Verification KPIs */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 2, mb: 3 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 2, mb: 3 }}>
         {[
           { label: '✓ Fully Verified',  key: 'Fully Verified',  color: '#2e7d32', bg: '#e6f4ea', icon: '✓' },
           { label: '◑ Partially Done',  key: 'Partially Done',  color: '#f57f17', bg: '#fff8e1', icon: '◑' },
@@ -538,7 +538,7 @@ export default function TLOverview() {
                     )}
                     <Chip label={`${fseForms.length} forms`} size="small" sx={{ bgcolor: `${color}20`, color, fontWeight: 700, fontSize: 10, ml: 'auto' }} />
                   </Box>
-                  <TableContainer>
+                  <TableContainer sx={{ overflowX: 'auto' }}>
                     <Table size="small">
                       <TableHead>
                         <TableRow>
@@ -592,8 +592,43 @@ export default function TLOverview() {
       {error && <Alert severity="error" sx={{ mb: 3 }} action={<Button size="small" onClick={load}>Retry</Button>}>{error}</Alert>}
 
       {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-          <CircularProgress sx={{ color: BRAND.primary }} />
+        <Box>
+          {/* KPI cards skeleton */}
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 2, mb: 3 }}>
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Card key={i} sx={{ borderRadius: 3 }}>
+                <CardContent sx={{ py: 2 }}>
+                  <Skeleton variant="text" width="40%" height={48} sx={{ mb: 0.5 }} />
+                  <Skeleton variant="text" width="60%" height={20} />
+                </CardContent>
+              </Card>
+            ))}
+          </Box>
+          {/* Verification KPI skeletons */}
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 2, mb: 3 }}>
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Card key={i} sx={{ borderRadius: 3 }}>
+                <CardContent sx={{ py: 1.5 }}>
+                  <Skeleton variant="text" width="50%" height={18} sx={{ mb: 0.5 }} />
+                  <Skeleton variant="text" width="30%" height={36} />
+                </CardContent>
+              </Card>
+            ))}
+          </Box>
+          {/* TL card skeletons */}
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Card key={i} sx={{ mb: 2, borderRadius: 2 }}>
+              <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                <Skeleton variant="circular" width={36} height={36} />
+                <Box sx={{ flex: 1 }}>
+                  <Skeleton variant="text" width="25%" height={22} />
+                  <Skeleton variant="text" width="40%" height={16} />
+                </Box>
+                <Skeleton variant="rectangular" width={70} height={24} sx={{ borderRadius: 20, mr: 1 }} />
+                <Skeleton variant="rectangular" width={70} height={24} sx={{ borderRadius: 20 }} />
+              </CardContent>
+            </Card>
+          ))}
         </Box>
       ) : filtered.length === 0 ? (
         <Card sx={{ textAlign: 'center', py: 6, border: `1.5px dashed ${BRAND.primaryLight}` }}>

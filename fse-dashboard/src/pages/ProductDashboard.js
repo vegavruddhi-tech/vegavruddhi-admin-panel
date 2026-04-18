@@ -1423,9 +1423,9 @@ export default function ProductDashboard() {
   return (
     <Box sx={{ p: { xs: 2, md: 3 }, bgcolor: "background.default", minHeight: "100vh" }}>
       <Typography variant="h4" sx={{ mb: 1 }}>Tide Product Analytics</Typography>
-      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+      {/* <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
         Click any bar or slice to see the employee drill-down table. Click a number in the table to edit and sync to Google Sheet.
-      </Typography>
+      </Typography> */}
 
       {/* ── TOP SECTION: MongoDB-driven filters + KPIs ─────────────────── */}
       {/* Date quick filters */}

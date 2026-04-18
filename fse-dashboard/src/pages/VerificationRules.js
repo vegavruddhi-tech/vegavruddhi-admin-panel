@@ -4,7 +4,7 @@ import {
   TextField, Select, MenuItem, FormControl, InputLabel,
   Chip, CircularProgress, Alert, Snackbar, Tooltip,
   Dialog, DialogTitle, DialogContent, DialogActions,
-  Divider, Switch, FormControlLabel,
+  Divider, Switch, FormControlLabel, Skeleton,
 } from "@mui/material";
 import AddIcon        from "@mui/icons-material/Add";
 import DeleteIcon     from "@mui/icons-material/Delete";
@@ -455,7 +455,7 @@ export default function VerificationRules({ token: propToken }) {
   useEffect(() => { load(); }, [load]);
 
   return (
-    <Box sx={{ maxWidth: 900, mx: "auto", px: { xs: 2, md: 4 }, py: 4 }}>
+    <Box sx={{ maxWidth: { xs: '100%', md: 900 }, mx: "auto", px: { xs: 2, md: 4 }, py: 4 }}>
 
       {/* Page Header */}
       <Box sx={{ display: "flex", alignItems: "center", justifyContent: "space-between", mb: 3, flexWrap: "wrap", gap: 2 }}>
@@ -527,8 +527,40 @@ export default function VerificationRules({ token: propToken }) {
 
       {/* Status */}
       {loading && (
-        <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
-          <CircularProgress sx={{ color: BRAND.primary }} />
+        <Box>
+          {Array.from({ length: 2 }).map((_, i) => (
+            <Card key={i} sx={{ mb: 3, borderRadius: 3 }}>
+              <CardContent>
+                {/* Header */}
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                  <Box>
+                    <Skeleton variant="text" width={180} height={28} sx={{ mb: 0.5 }} />
+                    <Skeleton variant="text" width={240} height={16} />
+                  </Box>
+                  <Skeleton variant="rectangular" width={90} height={32} sx={{ borderRadius: 2 }} />
+                </Box>
+                <Skeleton variant="rectangular" height={1} sx={{ mb: 2 }} />
+                {/* Product type chips */}
+                <Skeleton variant="text" width={200} height={16} sx={{ mb: 1 }} />
+                <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+                  {Array.from({ length: 4 }).map((_, j) => (
+                    <Skeleton key={j} variant="rectangular" width={80} height={28} sx={{ borderRadius: 20 }} />
+                  ))}
+                </Box>
+                {/* Conditions */}
+                <Skeleton variant="text" width={160} height={16} sx={{ mb: 1.5 }} />
+                {Array.from({ length: 3 }).map((_, j) => (
+                  <Box key={j} sx={{ display: 'flex', gap: 1.5, mb: 1.5, alignItems: 'center' }}>
+                    <Skeleton variant="rectangular" width={36} height={24} sx={{ borderRadius: 20 }} />
+                    <Skeleton variant="rectangular" width={220} height={36} sx={{ borderRadius: 1 }} />
+                    <Skeleton variant="rectangular" width={160} height={36} sx={{ borderRadius: 1 }} />
+                    <Skeleton variant="rectangular" width={120} height={36} sx={{ borderRadius: 1 }} />
+                    <Skeleton variant="rectangular" width={180} height={36} sx={{ borderRadius: 1 }} />
+                  </Box>
+                ))}
+              </CardContent>
+            </Card>
+          ))}
         </Box>
       )}
 

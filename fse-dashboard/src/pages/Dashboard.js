@@ -70,7 +70,7 @@ function OnboardVerifySection({ filteredForms, onboardVerifyMap, onboardVerifyin
   return (
     <Box sx={{ mb: 3 }}>
       {/* 3 verification KPI cards */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 2, mb: verifyDrillStatus ? 1 : 3 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 2, mb: verifyDrillStatus ? 1 : 3 }}>
         {onboardVerifying ? (
           <Card sx={{ gridColumn: '1 / -1', borderRadius: 3, bgcolor: '#f9f9f9', border: '1.5px solid #e0e0e0' }}>
             <CardContent sx={{ py: 1.5, textAlign: 'center' }}>
@@ -477,7 +477,7 @@ const kpiData = useMemo(() => {
 </Box>
 
     {/* KPI Cards */}
-    <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 2, mb: 3 }}>
+    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)', md: 'repeat(5, 1fr)' }, gap: 2, mb: 3 }}>
       {loading ? (
         Array.from({ length: 5 }).map((_, i) => (
           <Card key={i} variant="outlined" sx={{ borderRadius: 3 }}>
@@ -513,7 +513,7 @@ const kpiData = useMemo(() => {
     </Box>
 
     {/* Visit Status KPIs */}
-    <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 2, mb: showOnboardVerify ? 1 : 3 }}>
+    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, gap: 2, mb: showOnboardVerify ? 1 : 3 }}>
       {loading ? (
         Array.from({ length: 4 }).map((_, i) => (
           <Card key={i} sx={{ borderRadius: 3 }}>

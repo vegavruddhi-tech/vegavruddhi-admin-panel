@@ -5,7 +5,7 @@ import {
   Table, TableBody, TableCell, TableContainer, TableHead,
   TableRow, Paper, Avatar, Tabs, Tab, Badge,
   Dialog, DialogTitle, DialogContent, DialogActions,
-  TextField, MenuItem, Select, FormControl, InputLabel
+  TextField, MenuItem, Select, FormControl, InputLabel, Skeleton,
 } from '@mui/material';
 import CheckCircleIcon  from '@mui/icons-material/CheckCircle';
 import CancelIcon       from '@mui/icons-material/Cancel';
@@ -320,7 +320,7 @@ const rejectTL = async (id) => {
           <Typography variant="body2">No records found</Typography>
         </Box>
       ) : (
-        <TableContainer>
+        <TableContainer sx={{ overflowX: 'auto' }}>
           <Table size="small">
             <TableHead>
               <TableRow sx={{
@@ -383,7 +383,7 @@ const rejectTL = async (id) => {
       </Box>
 
       {/* Summary cards */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 2, mb: 3 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 2, mb: 3 }}>
         {[
           { label: 'Pending Approval', count: pending.length,  color: '#e65100', bg: '#fff3e0' },
           { label: 'Approved',         count: approved.length, color: '#2e7d32', bg: '#e6f4ea' },
@@ -437,8 +437,49 @@ const rejectTL = async (id) => {
 
         <CardContent sx={{ p: 0 }}>
           {loading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
-              <CircularProgress sx={{ color: BRAND.primary }} />
+            <Box sx={{ p: 2 }}>
+              {/* Summary cards skeleton */}
+              <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 2, mb: 3 }}>
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Card key={i} sx={{ borderRadius: 3 }}>
+                    <CardContent sx={{ py: 2 }}>
+                      <Skeleton variant="text" width="35%" height={48} sx={{ mb: 0.5 }} />
+                      <Skeleton variant="text" width="55%" height={20} />
+                    </CardContent>
+                  </Card>
+                ))}
+              </Box>
+              {/* Table skeleton */}
+              <Box>
+                {/* Table header */}
+                <Box sx={{ display: 'flex', gap: 2, px: 2, py: 1.5, borderBottom: '2px solid #eee' }}>
+                  {[200, 120, 100, 150, 100, 100, 80, 120].map((w, i) => (
+                    <Skeleton key={i} variant="text" width={w} height={16} />
+                  ))}
+                </Box>
+                {/* Table rows */}
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Box key={i} sx={{ display: 'flex', gap: 2, px: 2, py: 1.5, alignItems: 'center', borderBottom: '1px solid #f0f0f0' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, width: 200 }}>
+                      <Skeleton variant="circular" width={36} height={36} />
+                      <Box>
+                        <Skeleton variant="text" width={100} height={18} />
+                        <Skeleton variant="text" width={120} height={14} />
+                      </Box>
+                    </Box>
+                    <Skeleton variant="text" width={120} height={18} />
+                    <Skeleton variant="text" width={100} height={18} />
+                    <Skeleton variant="text" width={150} height={18} />
+                    <Skeleton variant="text" width={100} height={18} />
+                    <Skeleton variant="text" width={100} height={18} />
+                    <Skeleton variant="rectangular" width={80} height={24} sx={{ borderRadius: 20 }} />
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Skeleton variant="rectangular" width={70} height={28} sx={{ borderRadius: 1 }} />
+                      <Skeleton variant="rectangular" width={70} height={28} sx={{ borderRadius: 1 }} />
+                    </Box>
+                  </Box>
+                ))}
+              </Box>
             </Box>
           ) : (
             <>
@@ -458,7 +499,7 @@ const rejectTL = async (id) => {
                       <Typography variant="body2">No position change requests</Typography>
                     </Box>
                   ) : (
-                    <TableContainer>
+                    <TableContainer sx={{ overflowX: 'auto' }}>
                       <Table size="small">
                         <TableHead>
                           <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider', py: 1.5, bgcolor: 'transparent' } }}>
@@ -485,7 +526,7 @@ const rejectTL = async (id) => {
                               <TableCell><StatusChip status={r.status} /></TableCell>
                               <TableCell>
                                 {r.status === 'pending' && (
-                                  <Box sx={{ display: 'flex', gap: 1 }}>
+                                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                                     <Button size="small" variant="contained" startIcon={<CheckCircleIcon />}
                                       onClick={() => approvePosReq(r._id)}
                                       sx={{ bgcolor: BRAND.primary, fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: BRAND.primaryMid } }}>
@@ -519,7 +560,7 @@ const rejectTL = async (id) => {
                   ) : changeRequests.length === 0 ? (
                     <Box sx={{ textAlign: 'center', py: 5, color: 'text.secondary' }}><Typography variant="body2">No change requests</Typography></Box>
                   ) : (
-                    <TableContainer>
+                    <TableContainer sx={{ overflowX: 'auto' }}>
                       <Table size="small">
                         <TableHead>
                           <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider', py: 1.5, bgcolor: 'transparent' } }}>
@@ -541,7 +582,7 @@ const rejectTL = async (id) => {
                                 <TableCell><StatusChip status={r.status} /></TableCell>
                                 <TableCell>
                                   {r.status === 'pending' ? (
-                                    <Box sx={{ display: 'flex', gap: 1 }}>
+                                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                                       <Button size="small" variant="contained" startIcon={<CheckCircleIcon />} onClick={() => approveChangeReq(r._id)}
                                         sx={{ bgcolor: BRAND.primary, fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: BRAND.primaryMid } }}>Approve</Button>
                                       <Button size="small" variant="outlined" startIcon={<CancelIcon />} onClick={() => rejectChangeReq(r._id)}
@@ -568,7 +609,7 @@ const rejectTL = async (id) => {
     ) : tlPending.length === 0 ? (
       <Box sx={{ textAlign: 'center', py: 5, color: 'text.secondary' }}><Typography variant="body2">No pending TL approvals</Typography></Box>
     ) : (
-      <TableContainer>
+      <TableContainer sx={{ overflowX: 'auto' }}>
         <Table size="small">
           <TableHead>
             <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider', py: 1.5 } }}>
@@ -589,7 +630,7 @@ const rejectTL = async (id) => {
                 <TableCell><Typography variant="body2">{tl.location}</Typography></TableCell>
                 <TableCell><Typography variant="body2">{tl.reportingManager}</Typography></TableCell>
                 <TableCell>
-                  <Box sx={{ display: 'flex', gap: 1 }}>
+                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                     <Button size="small" variant="contained" startIcon={<CheckCircleIcon />}
                       onClick={() => approveTL(tl._id)}
                       sx={{ bgcolor: BRAND.primary, fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: BRAND.primaryMid } }}>
