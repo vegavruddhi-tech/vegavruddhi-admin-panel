@@ -252,21 +252,15 @@ def home():
 @app.get("/cron/sync-sheets")
 def cron_sync():
     try:
-        def run_sync_then_points():
-            subprocess.run(["python", "sync_sheet.py"])
-            # After sync completes, trigger points recalculation
-            try:
-                import requests as req_lib
-                emp_api = os.environ.get("REACT_APP_EMPLOYEE_API_URL", "http://localhost:4000/api")
-                req_lib.post(f"{emp_api}/forms/admin/recalculate-all-points", timeout=120)
-                print("[Cron] Points recalculated after sync")
-            except Exception as pe:
-                print(f"[Cron] Points recalculation error: {pe}")
-
-        threading.Thread(target=run_sync_then_points, daemon=True).start()
-        return {"status": "Sync and points recalculation started"}
+        from sync_sheet import process_sheet
+        sheet_id = os.environ.get("GOOGLE_SHEET_ID", "")
+        if not sheet_id:
+            return {"status": "Error", "error": "GOOGLE_SHEET_ID not set"}
+        process_sheet(sheet_id, "Tide Onboarding")
+        return {"status": "Sync completed successfully"}
     except Exception as e:
         return {"status": "Error", "error": str(e)}
+
 
 # -----------------------------
 # DATA PIPELINE FUNCTION

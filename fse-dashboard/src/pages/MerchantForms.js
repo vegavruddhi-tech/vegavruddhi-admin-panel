@@ -447,30 +447,23 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditP
 
   const dupCount = forms.filter(f => duplicatePhones.has(f.customerNumber)).length;
 
-  // ✅ FIXED: consistent product usage
   const fetchVerification = useCallback(async () => {
     if (verifying || Object.keys(verifyMap).length > 0) return;
-
     setVerifying(true);
     try {
       const phones   = forms.map(f => f.customerNumber).join(',');
       const names    = forms.map(f => encodeURIComponent(f.customerName)).join(',');
       const products = forms.map(f => encodeURIComponent(getProduct(f))).join(',');
       const months   = forms.map(f =>
-        encodeURIComponent(
-          new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' })
-        )
+        encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))
       ).join(',');
-
       const res = await fetch(
         `${EMP_API}/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`
       );
-
       if (res.ok) {
         const data = await res.json();
         setVerifyMap(data);
       }
-
     } catch (err) {
       console.error("Verification error:", err);
     } finally {
@@ -971,6 +964,7 @@ export default function MerchantForms() {
   const [dateFilter, setDateFilter] = useState('all');
   const [toDate, setToDate]         = useState('');
   const [fromDate, setFromDate]     = useState('');
+  const [filterProduct, setFilterProduct] = useState(''); // product filter
   const [globalVerifyMap,  setGlobalVerifyMap]  = useState({});
   const [verifyKpiOpen,    setVerifyKpiOpen]    = useState(null); // 'Fully Verified' | 'Partially Done' | 'Not Found'
   const [drillProduct,     setDrillProduct]     = useState(null); // { product, status }
@@ -1150,12 +1144,19 @@ export default function MerchantForms() {
       }
     }
 
+    // Product filter
+    if (filterProduct) {
+      const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+      if (p !== filterProduct.toLowerCase().trim()) return false;
+    }
+
     return (
       !q ||
       (f.customerName   || '').toLowerCase().includes(q) ||
       (f.customerNumber || '').includes(q) ||
       (f.employeeName   || '').toLowerCase().includes(q) ||
-      (f.location       || '').toLowerCase().includes(q)
+      (f.location       || '').toLowerCase().includes(q) ||
+      (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().includes(q)
     );
   });
   const map = {};
@@ -1165,7 +1166,20 @@ export default function MerchantForms() {
     map[key].push(f);
   });
   return Object.entries(map).sort((a, b) => b[1].length - a[1].length);
-}, [forms, search, dateFilter, fromDate, toDate]);
+}, [forms, search, dateFilter, fromDate, toDate, filterProduct]);
+
+  // Auto-detect all products with counts from all forms
+  const productCounts = useMemo(() => {
+    const map = {};
+    forms.forEach(f => {
+      const p = (f.formFillingFor || f.tideProduct || f.brand || '').trim();
+      if (p) {
+        if (!map[p]) map[p] = 0;
+        map[p]++;
+      }
+    });
+    return Object.entries(map).sort((a, b) => b[1] - a[1]);
+  }, [forms]);
 
 
 
@@ -1207,7 +1221,6 @@ export default function MerchantForms() {
     setGlobalVerifyMap(merged);
   });
 }, [grouped]); // eslint-disable-line
- // eslint-disable-line
 
   // Compute verification KPI counts from global map
   const verifyKpiCounts = useMemo(() => {
@@ -1532,7 +1545,7 @@ export default function MerchantForms() {
 
 
       {/* Search */}
-      <TextField fullWidth size="small" placeholder="Search by merchant name, phone, employee or location…"
+      <TextField fullWidth size="small" placeholder="Search by merchant name, phone, employee, location or product…"
         value={search} onChange={e => setSearch(e.target.value)}
         sx={{ mb: 3 }}
         InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color: 'text.secondary' }} /></InputAdornment> }} />
