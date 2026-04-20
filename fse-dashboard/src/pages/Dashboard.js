@@ -249,6 +249,7 @@ function Dashboard() {
   const [chartView,          setChartView]          = useState('fse'); // 'fse' | 'tl'
   const [verifyDrillStatus,  setVerifyDrillStatus]  = useState(null);
   const [kpiDrillOpen,       setKpiDrillOpen]       = useState(null); // 'totalForms'|'totalEmployees'|'activeEmployees'|'totalTLs'
+  const [kpiSearch,          setKpiSearch]          = useState('');
   const [chartDrill,         setChartDrill]         = useState(null); // { type, key, title, rows }
 
   const muiTheme = useTheme();
@@ -986,7 +987,7 @@ const kpiData = useMemo(() => {
   {kpiDrillOpen && (() => {
     const configs = {
       totalForms:      { title: 'Total Forms',       color: '#7c3aed', rows: filteredForms.map(f => ({ name: f.customerName, phone: f.customerNumber, email: f.customerEmail || '–', employee: f.employeeName, status: f.status, date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) })), cols: ['Customer', 'Phone', 'Employee', 'Status', 'Date'] },
-      totalEmployees:  { title: `Total Employees${filterTL ? ` — ${filterTL}` : ''}`, color: '#3b82f6', rows: (filterTL ? employees.filter(e => (e.reportingManager||'').toLowerCase().trim() === filterTL.toLowerCase().trim()) : filterFSE ? employees.filter(e => e.newJoinerName === filterFSE) : employees).map(e => ({ name: e.newJoinerName, email: e.email || e.newJoinerEmailId || '–', phone: e.newJoinerPhone, tl: e.reportingManager, status: e.status })), cols: ['Name', 'Email', 'Phone', 'TL', 'Status'] },
+      totalEmployees:  { title: `Total Employees${filterTL ? ` — ${filterTL}` : ''}`, color: '#3b82f6', rows: (filterTL ? employees.filter(e => (e.reportingManager||'').toLowerCase().trim() === filterTL.toLowerCase().trim()) : filterFSE ? employees.filter(e => e.newJoinerName === filterFSE) : employees).map(e => ({ name: e.newJoinerName, email: e.email || e.newJoinerEmailId || '–', phone: e.newJoinerPhone, tl: e.reportingManager, status: e.status })).sort((a, b) => (a.name || '').localeCompare(b.name || '')), cols: ['Name', 'Email', 'Phone', 'TL', 'Status'] },
       activeEmployees: { title: 'Active Employees (submitted forms)', color: '#10b981', rows: [...new Set(filteredForms.map(f => f.employeeName).filter(Boolean))].map(name => { const emp = employees.find(e => e.newJoinerName === name); return { name, email: emp?.email || emp?.newJoinerEmailId || '–', phone: emp?.newJoinerPhone || '–', tl: emp?.reportingManager || '–', forms: filteredForms.filter(f => f.employeeName === name).length }; }), cols: ['Name', 'Email', 'Phone', 'TL', 'Forms'] },
       totalTLs:        { title: 'Total TLs',         color: '#f59e0b', rows: tls.map(t => ({ name: t.name, email: t.email, location: t.location, status: t.status })), cols: ['Name', 'Email', 'Location', 'Status'] },
       onboarding:      { title: 'Ready to Onboard',  color: '#14b8a6', rows: filteredForms.filter(f => f.status === 'Ready for Onboarding').map(f => ({ name: f.customerName, phone: f.customerNumber, employee: f.employeeName, product: f.formFillingFor || f.brand || '–', date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) })), cols: ['Customer', 'Phone', 'Employee', 'Product', 'Date'] },
@@ -994,14 +995,29 @@ const kpiData = useMemo(() => {
     const cfg = configs[kpiDrillOpen];
     if (!cfg) return null;
     const colKeys = { 'Customer': 'name', 'Phone': 'phone', 'Email': 'email', 'Employee': 'employee', 'Status': 'status', 'Date': 'date', 'Name': 'name', 'TL': 'tl', 'Location': 'location', 'Forms': 'forms', 'Product': 'product' };
+
+    const q = kpiSearch.toLowerCase();
+    const visibleRows = q ? cfg.rows.filter(row =>
+      Object.values(row).some(v => String(v || '').toLowerCase().includes(q))
+    ) : cfg.rows;
+
     return (
-      <Dialog open onClose={() => setKpiDrillOpen(null)} maxWidth="md" fullWidth>
+      <Dialog open onClose={() => { setKpiDrillOpen(null); setKpiSearch(''); }} maxWidth="md" fullWidth>
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: cfg.color, fontWeight: 800 }}>
-          {cfg.title} ({cfg.rows.length})
-          <IconButton onClick={() => setKpiDrillOpen(null)} size="small"><CloseIcon /></IconButton>
+          {cfg.title} ({visibleRows.length}{q ? ` of ${cfg.rows.length}` : ''})
+          <IconButton onClick={() => { setKpiDrillOpen(null); setKpiSearch(''); }} size="small"><CloseIcon /></IconButton>
         </DialogTitle>
         <DialogContent dividers sx={{ p: 0 }}>
-          <TableContainer component={Paper} sx={{ maxHeight: 500 }}>
+          <Box sx={{ px: 2, py: 1.5, borderBottom: '1px solid #f0f0f0' }}>
+            <TextField
+              size="small" fullWidth
+              placeholder="Search..."
+              value={kpiSearch}
+              onChange={e => setKpiSearch(e.target.value)}
+              InputProps={{ startAdornment: <Box component="span" sx={{ mr: 1, color: 'text.secondary', fontSize: 16 }}>🔍</Box> }}
+            />
+          </Box>
+          <TableContainer component={Paper} sx={{ maxHeight: 460 }}>
             <Table size="small" stickyHeader>
               <TableHead>
                 <TableRow>
@@ -1010,7 +1026,9 @@ const kpiData = useMemo(() => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {cfg.rows.map((row, i) => (
+                {visibleRows.length === 0 ? (
+                  <TableRow><TableCell colSpan={cfg.cols.length + 1} sx={{ textAlign: 'center', py: 3, color: 'text.secondary' }}>No results found</TableCell></TableRow>
+                ) : visibleRows.map((row, i) => (
                   <TableRow key={i} hover>
                     <TableCell>{i + 1}</TableCell>
                     {cfg.cols.map(c => <TableCell key={c}>{row[colKeys[c]] ?? '–'}</TableCell>)}
@@ -1021,7 +1039,7 @@ const kpiData = useMemo(() => {
           </TableContainer>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setKpiDrillOpen(null)} sx={{ color: cfg.color, fontWeight: 700 }}>Close</Button>
+          <Button onClick={() => { setKpiDrillOpen(null); setKpiSearch(''); }} sx={{ color: cfg.color, fontWeight: 700 }}>Close</Button>
         </DialogActions>
       </Dialog>
     );

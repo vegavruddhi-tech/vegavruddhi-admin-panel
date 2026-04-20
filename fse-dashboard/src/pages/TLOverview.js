@@ -216,6 +216,7 @@ export default function TLOverview() {
   const [chartDrillOpen, setChartDrillOpen] = useState(null); // { tlName, type: 'active'|'inactive', fses, forms }
   const [chartFilter, setChartFilter] = useState('both'); // 'both' | 'active' | 'inactive'
   const [fseForms, setFseForms] = useState(null); // { fseName, forms }
+  const [drillSearch, setDrillSearch] = useState('');
   const [fromDate,   setFromDate]   = useState('');
   const [toDate,     setToDate]     = useState('');
   const [dateFilter, setDateFilter] = useState('all');
@@ -913,16 +914,23 @@ export default function TLOverview() {
 
       {/* Drill-down Modal */}
       {drillOpen && (
-        <Dialog open onClose={() => setDrillOpen(null)} maxWidth="lg" fullWidth>
+        <Dialog open onClose={() => { setDrillOpen(null); setDrillSearch(''); }} maxWidth="lg" fullWidth>
           <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <Box>
               <Typography variant="h6" component="span" fontWeight={800} sx={{ color: drillOpen.color }}>{drillOpen.title}</Typography>
-              <Typography variant="body2" color="text.secondary">{drillOpen.rows.length} records</Typography>
+              <Typography variant="body2" color="text.secondary">
+                {drillSearch ? `${drillOpen.rows.filter(row => Object.values(row).some(v => String(v||'').toLowerCase().includes(drillSearch.toLowerCase()))).length} of ` : ''}{drillOpen.rows.length} records
+              </Typography>
             </Box>
-            <IconButton onClick={() => setDrillOpen(null)} size="small"><CloseIcon /></IconButton>
+            <IconButton onClick={() => { setDrillOpen(null); setDrillSearch(''); }} size="small"><CloseIcon /></IconButton>
           </DialogTitle>
           <DialogContent dividers sx={{ p: 0 }}>
-            <TableContainer sx={{ maxHeight: 500 }}>
+            <Box sx={{ px: 2, py: 1.5, borderBottom: '1px solid #f0f0f0' }}>
+              <TextField size="small" fullWidth placeholder="Search..."
+                value={drillSearch} onChange={e => setDrillSearch(e.target.value)}
+                InputProps={{ startAdornment: <Box component="span" sx={{ mr: 1, color: 'text.secondary' }}>🔍</Box> }} />
+            </Box>
+            <TableContainer sx={{ maxHeight: 460 }}>
               <Table size="small" stickyHeader>
                 <TableHead>
                   <TableRow>
@@ -931,7 +939,9 @@ export default function TLOverview() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {drillOpen.rows.map((row, i) => {
+                  {drillOpen.rows
+                    .filter(row => !drillSearch || Object.values(row).some(v => String(v||'').toLowerCase().includes(drillSearch.toLowerCase())))
+                    .map((row, i) => {
                     const colKeyMap = { 'Name': 'name', 'Email': 'email', 'Phone': 'phone', 'TL': 'tl', 'Status': 'status', 'Location': 'location', 'Manager': 'manager', 'Customer': 'customer', 'FSE': 'fse', 'Product': 'product', 'Date': 'date' };
                     return (
                       <TableRow key={i} hover sx={{ '&:nth-of-type(even)': { bgcolor: `${drillOpen.color}05` } }}>
@@ -954,7 +964,7 @@ export default function TLOverview() {
             </TableContainer>
           </DialogContent>
           <DialogActions sx={{ px: 3, py: 1.5 }}>
-            <Button onClick={() => setDrillOpen(null)} variant="contained" sx={{ bgcolor: drillOpen.color, fontWeight: 700 }}>Close</Button>
+            <Button onClick={() => { setDrillOpen(null); setDrillSearch(''); }} variant="contained" sx={{ bgcolor: drillOpen.color, fontWeight: 700 }}>Close</Button>
           </DialogActions>
         </Dialog>
       )}
