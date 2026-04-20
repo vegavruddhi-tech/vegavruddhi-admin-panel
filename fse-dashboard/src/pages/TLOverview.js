@@ -11,6 +11,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 import SearchIcon from '@mui/icons-material/Search';
 import CloseIcon from '@mui/icons-material/Close';
 import { BRAND } from '../theme';
+import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveContainer, CartesianGrid, LabelList } from 'recharts';
 
 const EMP_API = process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api';
 
@@ -113,17 +114,31 @@ function FSEGroup({ fse, forms, verifyMap }) {
 
 function TLCard({ tlData, search, verifyMap }) {
   const [expanded, setExpanded] = useState(false);
+  const [fseFilter, setFseFilter] = useState(null); // null | 'active' | 'inactive'
   const { tl, fses, forms } = tlData;
   const tlName = tl.name || tl.email;
 
+  const activeFSENames = useMemo(() => new Set(forms.map(f => f.employeeName).filter(Boolean)), [forms]);
+  const activeFSECount   = fses.filter(f => activeFSENames.has(f.newJoinerName)).length;
+  const inactiveFSECount = fses.length - activeFSECount;
+
   const filteredFSEs = useMemo(() => {
-    if (!search) return fses;
+    let list = fses;
+    if (fseFilter === 'active')   list = list.filter(f => activeFSENames.has(f.newJoinerName));
+    if (fseFilter === 'inactive') list = list.filter(f => !activeFSENames.has(f.newJoinerName));
+    if (!search) return list;
     const q = search.toLowerCase();
-    return fses.filter(f =>
+    return list.filter(f =>
       (f.newJoinerName || '').toLowerCase().includes(q) ||
       (f.location || '').toLowerCase().includes(q)
     );
-  }, [fses, search]);
+  }, [fses, search, fseFilter, activeFSENames]);
+
+  const handleChipClick = (e, type) => {
+    e.stopPropagation();
+    setFseFilter(prev => prev === type ? null : type);
+    setExpanded(true);
+  };
 
   return (
     <Card sx={{ mb: 2, border: `1.5px solid ${BRAND.primaryLight || '#c8e6c9'}`, borderRadius: 2 }}>
@@ -144,6 +159,20 @@ function TLCard({ tlData, search, verifyMap }) {
           </Box>
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Chip label={`${activeFSECount} active`} size="small"
+            onClick={e => handleChipClick(e, 'active')}
+            sx={{ bgcolor: fseFilter === 'active' ? '#2e7d32' : '#e6f4ea',
+              color: fseFilter === 'active' ? '#fff' : '#2e7d32',
+              fontWeight: 700, fontSize: 11, cursor: 'pointer',
+              '&:hover': { bgcolor: '#2e7d32', color: '#fff' } }} />
+          {inactiveFSECount > 0 && (
+            <Chip label={`${inactiveFSECount} inactive`} size="small"
+              onClick={e => handleChipClick(e, 'inactive')}
+              sx={{ bgcolor: fseFilter === 'inactive' ? '#c62828' : '#fdecea',
+                color: fseFilter === 'inactive' ? '#fff' : '#c62828',
+                fontWeight: 700, fontSize: 11, cursor: 'pointer',
+                '&:hover': { bgcolor: '#c62828', color: '#fff' } }} />
+          )}
           <Chip label={`${fses.length} FSEs`} size="small"
             sx={{ bgcolor: '#e3f2fd', color: '#1565c0', fontWeight: 700, fontSize: 11 }} />
           <Chip label={`${forms.length} forms`} size="small"
@@ -154,6 +183,13 @@ function TLCard({ tlData, search, verifyMap }) {
 
       <Collapse in={expanded}>
         <Box sx={{ px: 2.5, pb: 2 }}>
+          {fseFilter && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+              <Typography variant="caption" color="text.secondary">Showing {fseFilter} FSEs only</Typography>
+              <Chip label="Clear filter" size="small" onClick={() => setFseFilter(null)}
+                sx={{ fontSize: 10, height: 20, cursor: 'pointer' }} />
+            </Box>
+          )}
           {filteredFSEs.length === 0 ? (
             <Typography color="text.secondary" variant="body2" sx={{ py: 2 }}>No FSEs found.</Typography>
           ) : (
@@ -177,9 +213,12 @@ export default function TLOverview() {
   const [globalVerifyMap, setGlobalVerifyMap] = useState({});
   const [productDrillOpen, setProductDrillOpen] = useState(null); // { status, product }
   const [tlDrillOpen, setTlDrillOpen] = useState(null); // { status, product, tlName, tlData }
-  const [dateFilter, setDateFilter] = useState('all');
+  const [chartDrillOpen, setChartDrillOpen] = useState(null); // { tlName, type: 'active'|'inactive', fses, forms }
+  const [chartFilter, setChartFilter] = useState('both'); // 'both' | 'active' | 'inactive'
+  const [fseForms, setFseForms] = useState(null); // { fseName, forms }
   const [fromDate,   setFromDate]   = useState('');
   const [toDate,     setToDate]     = useState('');
+  const [dateFilter, setDateFilter] = useState('all');
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -576,6 +615,239 @@ export default function TLOverview() {
               <Button onClick={() => { setTlDrillOpen(null); setProductDrillOpen(null); }} variant="contained" sx={{ bgcolor: color, fontWeight: 700 }}>Close</Button>
             </DialogActions>
           </Dialog>
+        );
+      })()}
+
+      {/* FSE Active / Inactive Charts */}
+      {!loading && data.length > 0 && (() => {
+        const chartData = data.map(d => {
+          const activeNames = new Set(filteredAllForms.filter(f => d.fses.some(fse => fse.newJoinerName === f.employeeName)).map(f => f.employeeName).filter(Boolean));
+          const activeFSEs   = d.fses.filter(f => activeNames.has(f.newJoinerName));
+          const inactiveFSEs = d.fses.filter(f => !activeNames.has(f.newJoinerName));
+          return {
+            name: (d.tl.name || d.tl.email || '–').split(' ')[0],
+            fullName: d.tl.name || d.tl.email || '–',
+            Active: activeFSEs.length,
+            Inactive: inactiveFSEs.length,
+            activeFSEs,
+            inactiveFSEs,
+            forms: d.forms,
+          };
+        }).filter(d => d.Active + d.Inactive > 0);
+
+        const totalActive   = chartData.reduce((s, d) => s + d.Active, 0);
+        const totalInactive = chartData.reduce((s, d) => s + d.Inactive, 0);
+
+        const handleBarClick = (barData, type) => {
+          if (!barData?.fullName) return;
+          setChartDrillOpen({ tlName: barData.fullName, type,
+            fses: type === 'active' ? barData.activeFSEs : barData.inactiveFSEs,
+            forms: barData.forms,
+          });
+        };
+
+        const CustomTooltip = ({ active, payload, label }) => {
+          if (!active || !payload?.length) return null;
+          const total = (payload[0]?.value || 0) + (payload[1]?.value || 0);
+          return (
+            <Box sx={{ bgcolor: '#fff', border: '1px solid #e8e8e8', borderRadius: 2, px: 2, py: 1.5,
+              boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: 160 }}>
+              <Typography variant="body2" fontWeight={800} sx={{ mb: 1, color: '#1a1a1a' }}>{label}</Typography>
+              {payload.map(p => (
+                <Box key={p.dataKey} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 0.3 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.7 }}>
+                    <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: p.fill }} />
+                    <Typography variant="caption" sx={{ color: '#555' }}>{p.dataKey}</Typography>
+                  </Box>
+                  <Typography variant="caption" fontWeight={800} sx={{ color: p.fill }}>{p.value}</Typography>
+                </Box>
+              ))}
+              <Box sx={{ mt: 1, pt: 0.8, borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between' }}>
+                <Typography variant="caption" color="text.secondary">Total</Typography>
+                <Typography variant="caption" fontWeight={800}>{total}</Typography>
+              </Box>
+            </Box>
+          );
+        };
+
+        return (
+          <Card sx={{ borderRadius: 3, mb: 3, overflow: 'hidden',
+            border: '1.5px solid #e8f5e9',
+            background: 'linear-gradient(135deg, #fafffe 0%, #f0faf4 100%)',
+            boxShadow: '0 2px 12px rgba(46,125,50,0.07)' }}>
+            <Box sx={{ px: 3, pt: 2.5, pb: 2, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1.5 }}>
+              <Box>
+                <Typography variant="h6" fontWeight={800} sx={{ color: '#1a1a1a', letterSpacing: -0.3 }}>FSE Activity Overview</Typography>
+                <Typography variant="caption" color="text.secondary">Active vs Inactive FSEs per Team Leader · click any bar to explore</Typography>
+              </Box>
+              <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+                {[
+                  { label: 'Active', value: totalActive, color: '#2e7d32', bg: '#e6f4ea', type: 'active' },
+                  { label: 'Inactive', value: totalInactive, color: '#c62828', bg: '#fdecea', type: 'inactive' },
+                ].map(s => {
+                  const isOn = chartFilter === 'both' || chartFilter === s.type;
+                  return (
+                    <Box key={s.label} onClick={() => setChartFilter(prev => prev === s.type ? 'both' : s.type)}
+                      sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 0.6, borderRadius: 20,
+                        bgcolor: isOn ? s.color : '#f0f0f0', border: `1px solid ${isOn ? s.color : '#ccc'}`,
+                        cursor: 'pointer', transition: 'all 0.2s', opacity: isOn ? 1 : 0.5, '&:hover': { opacity: 1 } }}>
+                      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: isOn ? '#fff' : s.color }} />
+                      <Typography variant="caption" fontWeight={700} sx={{ color: isOn ? '#fff' : '#888' }}>{s.label}</Typography>
+                      <Typography variant="caption" fontWeight={900} sx={{ color: isOn ? '#fff' : '#888' }}>{s.value}</Typography>
+                    </Box>
+                  );
+                })}
+                {chartFilter !== 'both' && (
+                  <Box onClick={() => setChartFilter('both')}
+                    sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1.2, py: 0.6, borderRadius: 20,
+                      bgcolor: '#f5f5f5', border: '1px solid #ddd', cursor: 'pointer', '&:hover': { bgcolor: '#e0e0e0' } }}>
+                    <Typography variant="caption" fontWeight={700} sx={{ color: '#666' }}>↺ Reset</Typography>
+                  </Box>
+                )}
+              </Box>
+            </Box>
+            <CardContent sx={{ pt: 0, pb: '16px !important' }}>
+              <ResponsiveContainer width="100%" height={360}>
+                <BarChart data={chartData} margin={{ top: 28, right: 24, bottom: 65, left: 0 }} barCategoryGap="35%" barGap={3}>
+                  <defs>
+                    <linearGradient id="activeGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#43a047" /><stop offset="100%" stopColor="#2e7d32" />
+                    </linearGradient>
+                    <linearGradient id="inactiveGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#ef5350" /><stop offset="100%" stopColor="#c62828" />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#e8f5e9" />
+                  <XAxis dataKey="name" angle={-35} textAnchor="end"
+                    tick={{ fontSize: 11, fill: '#444', fontWeight: 600 }} height={68}
+                    axisLine={{ stroke: '#e0e0e0' }} tickLine={false} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#aaa' }}
+                    axisLine={false} tickLine={false} width={30} />
+                  <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(46,125,50,0.05)', radius: 4 }} />
+                  <Bar dataKey="Active" fill="url(#activeGrad)" radius={[8,8,2,2]} maxBarSize={32} cursor="pointer"
+                    hide={chartFilter === 'inactive'} onClick={(barData) => handleBarClick(barData, 'active')}>
+                    <LabelList dataKey="Active" position="top" style={{ fontSize: 13, fontWeight: 800, fill: '#2e7d32' }} />
+                  </Bar>
+                  <Bar dataKey="Inactive" fill="url(#inactiveGrad)" radius={[8,8,2,2]} maxBarSize={32} cursor="pointer"
+                    hide={chartFilter === 'active'} onClick={(barData) => handleBarClick(barData, 'inactive')}>
+                    <LabelList dataKey="Inactive" position="top" style={{ fontSize: 13, fontWeight: 800, fill: '#c62828' }} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </CardContent>
+          </Card>
+        );
+      })()}
+
+      {/* Chart Drill-down Modal */}
+      {chartDrillOpen && (() => {
+        const isActive = chartDrillOpen.type === 'active';
+        const color    = isActive ? '#2e7d32' : '#c62828';
+        const bg       = isActive ? '#e6f4ea' : '#fdecea';
+        const { fses, forms, tlName } = chartDrillOpen;
+        return (
+          <>
+          <Dialog open onClose={() => setChartDrillOpen(null)} maxWidth="md" fullWidth>
+            <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Box>
+                <Typography variant="h6" fontWeight={800} sx={{ color }}>{isActive ? '✓ Active' : '✗ Inactive'} FSEs — {tlName}</Typography>
+                <Typography variant="body2" color="text.secondary">
+                  {fses.length} {chartDrillOpen.type} FSE{fses.length !== 1 ? 's' : ''}
+                  {isActive ? ' · submitted at least one form' : ' · no forms submitted'}
+                </Typography>
+              </Box>
+              <IconButton onClick={() => setChartDrillOpen(null)} size="small"><CloseIcon /></IconButton>
+            </DialogTitle>
+            <DialogContent dividers sx={{ p: 0 }}>
+              {fses.length === 0 ? (
+                <Typography color="text.secondary" sx={{ py: 4, textAlign: 'center' }}>No FSEs found.</Typography>
+              ) : (
+                <Table size="small">
+                  <TableHead>
+                    <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', color: 'text.secondary', borderBottom: `2px solid ${color}30`, bgcolor: bg } }}>
+                      <TableCell>#</TableCell><TableCell>FSE Name</TableCell><TableCell>Phone</TableCell>
+                      <TableCell>Location</TableCell><TableCell>Email</TableCell>
+                      {isActive && <TableCell align="right">Forms</TableCell>}
+                      {isActive && <TableCell align="right">Details</TableCell>}
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {fses.map((fse, i) => {
+                      const fseName  = fse.newJoinerName;
+                      const fseForms_ = forms.filter(f => f.employeeName === fseName);
+                      const location = fse.location || fse.newJoinerLocation || fseForms_[0]?.location || '–';
+                      return (
+                        <TableRow key={fse._id || i} hover sx={{ '&:last-child td': { border: 0 } }}>
+                          <TableCell sx={{ color: 'text.secondary', fontWeight: 600 }}>{i + 1}</TableCell>
+                          <TableCell>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Avatar sx={{ bgcolor: color, width: 28, height: 28, fontSize: 11, fontWeight: 700 }}>{initials(fseName)}</Avatar>
+                              <Typography variant="body2" fontWeight={700}>{fseName || '–'}</Typography>
+                            </Box>
+                          </TableCell>
+                          <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>{fse.newJoinerPhone || '–'}</TableCell>
+                          <TableCell sx={{ color: 'text.secondary', fontSize: 12 }}>{location}</TableCell>
+                          <TableCell sx={{ color: 'text.secondary', fontSize: 12 }}>{fse.email || fse.newJoinerEmailId || '–'}</TableCell>
+                          {isActive && <TableCell align="right"><Box component="span" sx={{ px: 1.5, py: 0.3, borderRadius: 10, fontSize: 12, fontWeight: 700, bgcolor: '#e6f4ea', color: '#2e7d32' }}>{fseForms_.length} forms</Box></TableCell>}
+                          {isActive && <TableCell align="right"><Button size="small" sx={{ fontWeight: 700, color, minWidth: 0, fontSize: 11 }} onClick={() => setFseForms({ fseName, forms: fseForms_ })}>View ›</Button></TableCell>}
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              )}
+            </DialogContent>
+            <DialogActions sx={{ px: 3, py: 1.5 }}>
+              <Button onClick={() => setChartDrillOpen(null)} variant="contained" sx={{ bgcolor: color, fontWeight: 700 }}>Close</Button>
+            </DialogActions>
+          </Dialog>
+          {fseForms && (
+            <Dialog open onClose={() => setFseForms(null)} maxWidth="md" fullWidth>
+              <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Box>
+                  <Typography variant="h6" fontWeight={800} sx={{ color: '#2e7d32' }}>📋 {fseForms.fseName}</Typography>
+                  <Typography variant="body2" color="text.secondary">{fseForms.forms.length} form{fseForms.forms.length !== 1 ? 's' : ''} submitted</Typography>
+                </Box>
+                <IconButton onClick={() => setFseForms(null)} size="small"><CloseIcon /></IconButton>
+              </DialogTitle>
+              <DialogContent dividers sx={{ p: 0 }}>
+                <Table size="small">
+                  <TableHead>
+                    <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', color: 'text.secondary', borderBottom: '2px solid #e6f4ea', bgcolor: '#f9fafb' } }}>
+                      <TableCell>#</TableCell><TableCell>Customer</TableCell><TableCell>Phone</TableCell>
+                      <TableCell>Location</TableCell><TableCell>Product</TableCell><TableCell>Status</TableCell><TableCell>Date</TableCell>
+                    </TableRow>
+                  </TableHead>
+                  <TableBody>
+                    {fseForms.forms.map((f, i) => (
+                      <TableRow key={f._id || i} hover sx={{ '&:last-child td': { border: 0 } }}>
+                        <TableCell sx={{ color: 'text.secondary' }}>{i + 1}</TableCell>
+                        <TableCell sx={{ fontWeight: 600 }}>{f.customerName || '–'}</TableCell>
+                        <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>{f.customerNumber || '–'}</TableCell>
+                        <TableCell sx={{ color: 'text.secondary', fontSize: 12 }}>{f.location || '–'}</TableCell>
+                        <TableCell sx={{ fontSize: 12 }}>{f.formFillingFor || f.tideProduct || f.brand || '–'}</TableCell>
+                        <TableCell>
+                          <Box component="span" sx={{ px: 1, py: 0.3, borderRadius: 10, fontSize: 11, fontWeight: 700,
+                            bgcolor: f.status === 'Ready for Onboarding' ? '#e6f4ea' : f.status === 'Not Interested' ? '#fdecea' : '#fff3e0',
+                            color:   f.status === 'Ready for Onboarding' ? '#2e7d32' : f.status === 'Not Interested' ? '#c62828' : '#e65100' }}>
+                            {f.status || '–'}
+                          </Box>
+                        </TableCell>
+                        <TableCell sx={{ color: 'text.secondary', fontSize: 11 }}>
+                          {new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </DialogContent>
+              <DialogActions sx={{ px: 3, py: 1.5 }}>
+                <Button onClick={() => setFseForms(null)} sx={{ color: '#2e7d32', fontWeight: 700 }}>← Back</Button>
+                <Button onClick={() => { setFseForms(null); setChartDrillOpen(null); }} variant="contained" sx={{ bgcolor: '#2e7d32', fontWeight: 700 }}>Close</Button>
+              </DialogActions>
+            </Dialog>
+          )}
+          </>
         );
       })()}
 
