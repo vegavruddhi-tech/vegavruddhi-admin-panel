@@ -707,8 +707,8 @@ export default function TLOverview() {
               </Box>
             </Box>
             <CardContent sx={{ pt: 0, pb: '16px !important' }}>
-              <ResponsiveContainer width="100%" height={360}>
-                <BarChart data={chartData} margin={{ top: 28, right: 24, bottom: 65, left: 0 }} barCategoryGap="35%" barGap={3}>
+              <ResponsiveContainer width="100%" height={400}>
+                <BarChart data={chartData} margin={{ top: 28, right: 24, bottom: 65, left: 0 }} barCategoryGap="20%" barGap={2}>
                   <defs>
                     <linearGradient id="activeGrad" x1="0" y1="0" x2="0" y2="1">
                       <stop offset="0%" stopColor="#43a047" /><stop offset="100%" stopColor="#2e7d32" />
@@ -724,11 +724,11 @@ export default function TLOverview() {
                   <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#aaa' }}
                     axisLine={false} tickLine={false} width={30} />
                   <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(46,125,50,0.05)', radius: 4 }} />
-                  <Bar dataKey="Active" fill="url(#activeGrad)" radius={[8,8,2,2]} maxBarSize={32} cursor="pointer"
+                  <Bar dataKey="Active" fill="url(#activeGrad)" radius={[8,8,2,2]} maxBarSize={48} cursor="pointer"
                     hide={chartFilter === 'inactive'} onClick={(barData) => handleBarClick(barData, 'active')}>
                     <LabelList dataKey="Active" position="top" style={{ fontSize: 13, fontWeight: 800, fill: '#2e7d32' }} />
                   </Bar>
-                  <Bar dataKey="Inactive" fill="url(#inactiveGrad)" radius={[8,8,2,2]} maxBarSize={32} cursor="pointer"
+                  <Bar dataKey="Inactive" fill="url(#inactiveGrad)" radius={[8,8,2,2]} maxBarSize={48} cursor="pointer"
                     hide={chartFilter === 'active'} onClick={(barData) => handleBarClick(barData, 'inactive')}>
                     <LabelList dataKey="Inactive" position="top" style={{ fontSize: 13, fontWeight: 800, fill: '#c62828' }} />
                   </Bar>
@@ -744,16 +744,15 @@ export default function TLOverview() {
         const isActive = chartDrillOpen.type === 'active';
         const color    = isActive ? '#2e7d32' : '#c62828';
         const bg       = isActive ? '#e6f4ea' : '#fdecea';
-        const { fses, forms, tlName } = chartDrillOpen;
+        const { fses, forms, tlName, label } = chartDrillOpen;
         return (
           <>
           <Dialog open onClose={() => setChartDrillOpen(null)} maxWidth="md" fullWidth>
             <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <Box>
-                <Typography variant="h6" fontWeight={800} sx={{ color }}>{isActive ? '✓ Active' : '✗ Inactive'} FSEs — {tlName}</Typography>
+                <Typography variant="h6" fontWeight={800} sx={{ color }}>{label || (isActive ? '✓ Active' : '✗ Inactive')} FSEs — {tlName}</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  {fses.length} {chartDrillOpen.type} FSE{fses.length !== 1 ? 's' : ''}
-                  {isActive ? ' · submitted at least one form' : ' · no forms submitted'}
+                  {fses.length} FSE{fses.length !== 1 ? 's' : ''} · {forms.length} form{forms.length !== 1 ? 's' : ''}
                 </Typography>
               </Box>
               <IconButton onClick={() => setChartDrillOpen(null)} size="small"><CloseIcon /></IconButton>
