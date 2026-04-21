@@ -112,7 +112,7 @@ function FSEGroup({ fse, forms, verifyMap }) {
   );
 }
 
-function TLCard({ tlData, search, verifyMap }) {
+function TLCard({ tlData, search, verifyMap, onAssignTask }) {
   const [expanded, setExpanded] = useState(false);
   const [fseFilter, setFseFilter] = useState(null); // null | 'active' | 'inactive'
   const { tl, fses, forms } = tlData;
@@ -159,6 +159,23 @@ function TLCard({ tlData, search, verifyMap }) {
           </Box>
         </Box>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Button
+            size="small"
+            variant="contained"
+            onClick={(e) => { e.stopPropagation(); onAssignTask(tl); }}
+            sx={{
+              bgcolor: '#7c3aed',
+              color: '#fff',
+              fontWeight: 700,
+              fontSize: 11,
+              textTransform: 'none',
+              px: 1.5,
+              py: 0.5,
+              minWidth: 'auto',
+              '&:hover': { bgcolor: '#6d28d9' }
+            }}>
+            📋 Assign Task
+          </Button>
           <Chip label={`${activeFSECount} active`} size="small"
             onClick={e => handleChipClick(e, 'active')}
             sx={{ bgcolor: fseFilter === 'active' ? '#2e7d32' : '#e6f4ea',
@@ -219,6 +236,22 @@ export default function TLOverview() {
   const [fromDate,   setFromDate]   = useState('');
   const [toDate,     setToDate]     = useState('');
   const [dateFilter, setDateFilter] = useState('all');
+  
+  // Assign Task Modal
+  const [assignTaskOpen, setAssignTaskOpen] = useState(false);
+  const [selectedTL, setSelectedTL] = useState(null);
+  const [taskForm, setTaskForm] = useState({ title: '', instructions: '', priority: 'normal', deadline: '' });
+  const [submitting, setSubmitting] = useState(false);
+  
+  // Admin Notifications
+  const [adminNotifications, setAdminNotifications] = useState([]);
+  const [notificationOpen, setNotificationOpen] = useState(false);
+  const [notificationCount, setNotificationCount] = useState(0);
+  
+  // All Tasks Section
+  const [allTasks, setAllTasks] = useState([]);
+  const [taskFilter, setTaskFilter] = useState('all'); // 'all', 'pending', 'completed'
+  const [showAllTasks, setShowAllTasks] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -233,7 +266,47 @@ export default function TLOverview() {
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  const loadAdminNotifications = useCallback(async () => {
+    try {
+      const res = await fetch(`${EMP_API}/tasks/admin-notifications`, {
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (res.ok) {
+        const notifications = await res.json();
+        setAdminNotifications(notifications);
+        setNotificationCount(notifications.length);
+      } else {
+        console.error('Failed to load notifications:', await res.text());
+      }
+    } catch (err) {
+      console.error('Failed to load admin notifications:', err);
+    }
+  }, []);
+
+  const loadAllTasks = useCallback(async () => {
+    try {
+      const statusParam = taskFilter !== 'all' ? `?status=${taskFilter}` : '';
+      const res = await fetch(`${EMP_API}/tasks/admin-all-tasks${statusParam}`, {
+        headers: { 'Content-Type': 'application/json' }
+      });
+      if (res.ok) {
+        const tasks = await res.json();
+        setAllTasks(tasks);
+      } else {
+        console.error('Failed to load all tasks:', await res.text());
+      }
+    } catch (err) {
+      console.error('Failed to load all tasks:', err);
+    }
+  }, [taskFilter]);
+
+  useEffect(() => { load(); loadAdminNotifications(); }, [load, loadAdminNotifications]);
+
+  useEffect(() => {
+    if (showAllTasks) {
+      loadAllTasks();
+    }
+  }, [showAllTasks, taskFilter, loadAllTasks]);
 
   const allForms = useMemo(() => {
     const seen = new Set();
@@ -309,6 +382,79 @@ export default function TLOverview() {
   const totalFSEs  = data.reduce((s, d) => s + d.fses.length, 0);
   const totalForms = filteredAllForms.length;
 
+  const handleMarkAsRead = async (taskId) => {
+    try {
+      const res = await fetch(`${EMP_API}/tasks/admin-notifications/${taskId}/read`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      if (res.ok) {
+        // Reload notifications to update the list
+        await loadAdminNotifications();
+        
+        // Close modal if no more notifications
+        if (adminNotifications.length <= 1) {
+          setNotificationOpen(false);
+        }
+      } else {
+        console.error('Failed to mark as read:', await res.text());
+      }
+    } catch (err) {
+      console.error('Failed to mark as read:', err);
+    }
+  };
+
+  const handleAssignTask = (tl) => {
+    setSelectedTL(tl);
+    setTaskForm({ title: '', instructions: '', priority: 'normal', deadline: '' });
+    setAssignTaskOpen(true);
+  };
+
+  const handleSubmitTask = async () => {
+    if (!taskForm.title.trim() || !taskForm.instructions.trim()) {
+      alert('Please fill in all required fields');
+      return;
+    }
+    if (taskForm.priority === 'urgent' && !taskForm.deadline) {
+      alert('Urgent tasks must have a deadline');
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch(`${EMP_API}/tasks/admin-to-tl`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({
+          tlId: selectedTL._id,
+          title: taskForm.title.trim(),
+          instructions: taskForm.instructions.trim(),
+          priority: taskForm.priority,
+          deadline: taskForm.deadline || null
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Failed to assign task');
+      }
+
+      alert(`Task assigned to ${selectedTL.name || selectedTL.email} successfully!`);
+      setAssignTaskOpen(false);
+      setSelectedTL(null);
+      setTaskForm({ title: '', instructions: '', priority: 'normal', deadline: '' });
+    } catch (err) {
+      alert('Error: ' + err.message);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return (
     <Box sx={{ maxWidth: 1100, mx: 'auto', px: { xs: 2, md: 4 }, py: 4 }}>
       {/* Header */}
@@ -319,10 +465,50 @@ export default function TLOverview() {
             All Team Leaders with their FSEs and merchant submissions
           </Typography>
         </Box>
-        <Button startIcon={<RefreshIcon />} variant="outlined" onClick={load}
-          sx={{ borderColor: BRAND.primary, color: BRAND.primary, fontWeight: 700 }}>
-          Refresh
-        </Button>
+        <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+          {/* Notification Bell */}
+          <Tooltip title="TL Task Notifications">
+            <Box sx={{ position: 'relative', cursor: 'pointer' }} onClick={() => setNotificationOpen(true)}>
+              <Box sx={{ 
+                width: 44, 
+                height: 44, 
+                borderRadius: '50%', 
+                bgcolor: notificationCount > 0 ? '#7c3aed' : '#f5f5f5',
+                display: 'flex', 
+                alignItems: 'center', 
+                justifyContent: 'center',
+                transition: 'all 0.2s',
+                '&:hover': { transform: 'scale(1.1)', bgcolor: notificationCount > 0 ? '#6d28d9' : '#e0e0e0' }
+              }}>
+                <Typography sx={{ fontSize: 20 }}>🔔</Typography>
+              </Box>
+              {notificationCount > 0 && (
+                <Box sx={{
+                  position: 'absolute',
+                  top: -4,
+                  right: -4,
+                  bgcolor: '#d32f2f',
+                  color: '#fff',
+                  borderRadius: '50%',
+                  width: 22,
+                  height: 22,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 11,
+                  fontWeight: 800,
+                  border: '2px solid #fff'
+                }}>
+                  {notificationCount > 9 ? '9+' : notificationCount}
+                </Box>
+              )}
+            </Box>
+          </Tooltip>
+          <Button startIcon={<RefreshIcon />} variant="outlined" onClick={() => { load(); loadAdminNotifications(); }}
+            sx={{ borderColor: BRAND.primary, color: BRAND.primary, fontWeight: 700 }}>
+            Refresh
+          </Button>
+        </Box>
       </Box>
 
       {/* Date Filter Bar */}
@@ -861,6 +1047,154 @@ export default function TLOverview() {
         )}
         sx={{ mb: 3 }} />
 
+      {/* All Tasks Section */}
+      <Card sx={{ mb: 3, borderRadius: 3, border: '1.5px solid #7c3aed20' }}>
+        <Box sx={{ px: 3, py: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #f0f0f0' }}>
+          <Box>
+            <Typography variant="h6" fontWeight={800} sx={{ color: '#7c3aed' }}>📋 All Admin Tasks</Typography>
+            <Typography variant="caption" color="text.secondary">View all tasks assigned to Team Leaders</Typography>
+          </Box>
+          <Button 
+            variant={showAllTasks ? 'contained' : 'outlined'}
+            onClick={() => setShowAllTasks(!showAllTasks)}
+            sx={{ 
+              bgcolor: showAllTasks ? '#7c3aed' : 'transparent',
+              borderColor: '#7c3aed',
+              color: showAllTasks ? '#fff' : '#7c3aed',
+              fontWeight: 700,
+              '&:hover': { bgcolor: showAllTasks ? '#6d28d9' : '#7c3aed10' }
+            }}>
+            {showAllTasks ? 'Hide Tasks' : 'Show All Tasks'}
+          </Button>
+        </Box>
+
+        <Collapse in={showAllTasks}>
+          <Box sx={{ p: 3 }}>
+            {/* Filter Tabs */}
+            <Box sx={{ display: 'flex', gap: 1, mb: 3 }}>
+              {[
+                { key: 'all', label: 'All', count: allTasks.length },
+                { key: 'pending', label: 'Pending', count: allTasks.filter(t => t.status === 'pending').length },
+                { key: 'completed', label: 'Completed', count: allTasks.filter(t => t.status === 'completed').length }
+              ].map(tab => (
+                <Button
+                  key={tab.key}
+                  size="small"
+                  variant={taskFilter === tab.key ? 'contained' : 'outlined'}
+                  onClick={() => setTaskFilter(tab.key)}
+                  sx={{
+                    bgcolor: taskFilter === tab.key ? '#7c3aed' : 'transparent',
+                    borderColor: '#7c3aed',
+                    color: taskFilter === tab.key ? '#fff' : '#7c3aed',
+                    fontWeight: 700,
+                    textTransform: 'none',
+                    '&:hover': { bgcolor: taskFilter === tab.key ? '#6d28d9' : '#7c3aed10' }
+                  }}>
+                  {tab.label} ({tab.count})
+                </Button>
+              ))}
+            </Box>
+
+            {/* Tasks List */}
+            {allTasks.length === 0 ? (
+              <Box sx={{ textAlign: 'center', py: 6 }}>
+                <Typography sx={{ fontSize: 48, mb: 2 }}>📭</Typography>
+                <Typography variant="h6" fontWeight={700} color="text.secondary">No tasks found</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  {taskFilter === 'pending' ? 'No pending tasks' : taskFilter === 'completed' ? 'No completed tasks yet' : 'No tasks assigned yet'}
+                </Typography>
+              </Box>
+            ) : (
+              <Box sx={{ display: 'grid', gap: 2 }}>
+                {allTasks.map(task => {
+                  const isPending = task.status === 'pending';
+                  const isUrgent = task.priority === 'urgent' || task.isUrgent;
+                  
+                  return (
+                    <Card key={task._id} sx={{ 
+                      border: isUrgent ? '2px solid #d32f2f' : isPending ? '2px solid #7c3aed' : '2px solid #e0e0e0',
+                      borderRadius: 2,
+                      '&:hover': { boxShadow: '0 4px 12px rgba(124,58,237,0.2)' }
+                    }}>
+                      <CardContent sx={{ p: 2.5 }}>
+                        {/* Header */}
+                        <Box sx={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', mb: 2 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1 }}>
+                            <Avatar sx={{ bgcolor: '#7c3aed', width: 40, height: 40, fontSize: 14, fontWeight: 700 }}>
+                              {initials(task.tlName)}
+                            </Avatar>
+                            <Box>
+                              <Typography variant="body1" fontWeight={700} sx={{ color: '#1a1a1a' }}>
+                                {task.title}
+                              </Typography>
+                              <Typography variant="caption" color="text.secondary">
+                                Assigned to {task.tlName} • {new Date(task.createdAt).toLocaleDateString('en-IN')}
+                              </Typography>
+                            </Box>
+                          </Box>
+                          <Box sx={{ display: 'flex', gap: 1 }}>
+                            {isUrgent && (
+                              <Chip label="🔥 URGENT" size="small"
+                                sx={{ bgcolor: '#fdecea', color: '#d32f2f', fontWeight: 800, fontSize: 10 }} />
+                            )}
+                            <Chip 
+                              label={isPending ? 'PENDING' : '✓ COMPLETED'} 
+                              size="small"
+                              sx={{ 
+                                bgcolor: isPending ? '#7c3aed' : '#e6f4ea',
+                                color: isPending ? '#fff' : '#2e7d32',
+                                fontWeight: 800,
+                                fontSize: 10
+                              }} 
+                            />
+                          </Box>
+                        </Box>
+
+                        {/* Instructions */}
+                        <Box sx={{ bgcolor: '#f9f9f9', p: 1.5, borderRadius: 1.5, mb: 2 }}>
+                          <Typography variant="caption" sx={{ color: '#666', fontWeight: 700, textTransform: 'uppercase', fontSize: 10 }}>
+                            Instructions
+                          </Typography>
+                          <Typography variant="body2" sx={{ color: '#1a1a1a', mt: 0.5, fontSize: 13 }}>
+                            {task.instructions}
+                          </Typography>
+                        </Box>
+
+                        {/* Deadline */}
+                        {task.deadline && (
+                          <Box sx={{ display: 'inline-flex', alignItems: 'center', gap: 0.5, bgcolor: '#fff8e1', px: 1.5, py: 0.5, borderRadius: 10, mb: 2 }}>
+                            <Typography variant="caption" sx={{ color: '#e65100', fontWeight: 700, fontSize: 10 }}>
+                              ⏰ Deadline: {new Date(task.deadline).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            </Typography>
+                          </Box>
+                        )}
+
+                        {/* Completion Notes */}
+                        {task.completionNotes && (
+                          <Box sx={{ bgcolor: '#e6f4ea', p: 1.5, borderRadius: 1.5, border: '1px solid #a8d5b5' }}>
+                            <Typography variant="caption" sx={{ color: '#2e7d32', fontWeight: 700, textTransform: 'uppercase', fontSize: 10 }}>
+                              TL's Completion Notes
+                            </Typography>
+                            <Typography variant="body2" sx={{ color: '#1a1a1a', mt: 0.5, fontStyle: 'italic', fontSize: 13 }}>
+                              "{task.completionNotes}"
+                            </Typography>
+                            {task.completedAt && (
+                              <Typography variant="caption" sx={{ color: '#666', mt: 0.5, display: 'block', fontSize: 10 }}>
+                                Completed on {new Date(task.completedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                              </Typography>
+                            )}
+                          </Box>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
+              </Box>
+            )}
+          </Box>
+        </Collapse>
+      </Card>
+
       {error && <Alert severity="error" sx={{ mb: 3 }} action={<Button size="small" onClick={load}>Retry</Button>}>{error}</Alert>}
 
       {loading ? (
@@ -908,8 +1242,218 @@ export default function TLOverview() {
         </Card>
       ) : (
         filtered.map((tlData, i) => (
-          <TLCard key={tlData.tl._id || i} tlData={tlData} search={search} verifyMap={globalVerifyMap} />
+          <TLCard key={tlData.tl._id || i} tlData={tlData} search={search} verifyMap={globalVerifyMap} onAssignTask={handleAssignTask} />
         ))
+      )}
+
+      {/* Admin Notifications Modal */}
+      {notificationOpen && (
+        <Dialog open onClose={() => setNotificationOpen(false)} maxWidth="md" fullWidth>
+          <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 1 }}>
+            <Box>
+              <Typography variant="h6" fontWeight={800} sx={{ color: '#7c3aed' }}>🔔 TL Task Notifications</Typography>
+              <Typography variant="body2" color="text.secondary">
+                {notificationCount} completed task{notificationCount !== 1 ? 's' : ''} from Team Leaders
+              </Typography>
+            </Box>
+            <IconButton onClick={() => setNotificationOpen(false)} size="small">
+              <CloseIcon />
+            </IconButton>
+          </DialogTitle>
+          <DialogContent dividers sx={{ p: 0, maxHeight: 500 }}>
+            {adminNotifications.length === 0 ? (
+              <Box sx={{ textAlign: 'center', py: 6 }}>
+                <Typography sx={{ fontSize: 48, mb: 2 }}>📭</Typography>
+                <Typography variant="h6" fontWeight={700} color="text.secondary">No new notifications</Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
+                  All tasks are up to date
+                </Typography>
+              </Box>
+            ) : (
+              <Box sx={{ p: 2 }}>
+                {adminNotifications.map((task, index) => (
+                  <Card key={task._id} sx={{ 
+                    mb: 2, 
+                    border: '2px solid #7c3aed20',
+                    borderRadius: 2,
+                    '&:hover': { boxShadow: '0 4px 12px rgba(124,58,237,0.2)' }
+                  }}>
+                    <CardContent sx={{ p: 2.5 }}>
+                      {/* Header */}
+                      <Box sx={{ display: 'flex', alignItems: 'start', justifyContent: 'space-between', mb: 2 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, flex: 1 }}>
+                          <Avatar sx={{ bgcolor: '#7c3aed', width: 40, height: 40, fontSize: 14, fontWeight: 700 }}>
+                            {initials(task.tlName)}
+                          </Avatar>
+                          <Box>
+                            <Typography variant="body1" fontWeight={700} sx={{ color: '#1a1a1a' }}>
+                              {task.title}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              Completed by {task.tlName} • {new Date(task.completedAt).toLocaleString('en-IN')}
+                            </Typography>
+                          </Box>
+                        </Box>
+                        <Chip 
+                          label="✓ COMPLETED" 
+                          size="small"
+                          sx={{ 
+                            bgcolor: '#e6f4ea', 
+                            color: '#2e7d32', 
+                            fontWeight: 800,
+                            fontSize: 10
+                          }} 
+                        />
+                      </Box>
+
+                      {/* Original Instructions */}
+                      <Box sx={{ bgcolor: '#f9f9f9', p: 1.5, borderRadius: 1.5, mb: 2 }}>
+                        <Typography variant="caption" sx={{ color: '#666', fontWeight: 700, textTransform: 'uppercase', fontSize: 10 }}>
+                          Original Task
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: '#1a1a1a', mt: 0.5, fontSize: 13 }}>
+                          {task.instructions}
+                        </Typography>
+                      </Box>
+
+                      {/* Completion Notes */}
+                      {task.completionNotes && (
+                        <Box sx={{ bgcolor: '#e6f4ea', p: 1.5, borderRadius: 1.5, border: '1px solid #a8d5b5', mb: 2 }}>
+                          <Typography variant="caption" sx={{ color: '#2e7d32', fontWeight: 700, textTransform: 'uppercase', fontSize: 10 }}>
+                            TL's Completion Notes
+                          </Typography>
+                          <Typography variant="body2" sx={{ color: '#1a1a1a', mt: 0.5, fontStyle: 'italic', fontSize: 13 }}>
+                            "{task.completionNotes}"
+                          </Typography>
+                        </Box>
+                      )}
+
+                      {/* Priority & Deadline */}
+                      <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+                        {task.priority === 'urgent' && (
+                          <Chip 
+                            label="🔥 URGENT" 
+                            size="small"
+                            sx={{ bgcolor: '#fdecea', color: '#d32f2f', fontWeight: 700, fontSize: 10 }} 
+                          />
+                        )}
+                        {task.deadline && (
+                          <Chip 
+                            label={`⏰ Deadline: ${new Date(task.deadline).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`}
+                            size="small"
+                            sx={{ bgcolor: '#fff8e1', color: '#e65100', fontWeight: 600, fontSize: 10 }} 
+                          />
+                        )}
+                      </Box>
+
+                      {/* Mark as Read Button */}
+                      <Box sx={{ display: 'flex', justifyContent: 'flex-end', pt: 1.5, borderTop: '1px solid #f0f0f0' }}>
+                        <Button 
+                          size="small"
+                          variant="contained"
+                          onClick={() => handleMarkAsRead(task._id)}
+                          sx={{ 
+                            bgcolor: '#7c3aed', 
+                            fontWeight: 700,
+                            fontSize: 12,
+                            textTransform: 'none',
+                            '&:hover': { bgcolor: '#6d28d9' }
+                          }}>
+                          ✓ Mark as Read
+                        </Button>
+                      </Box>
+                    </CardContent>
+                  </Card>
+                ))}
+              </Box>
+            )}
+          </DialogContent>
+          <DialogActions sx={{ px: 3, py: 2 }}>
+            <Button onClick={() => setNotificationOpen(false)} variant="contained" sx={{ bgcolor: '#7c3aed', fontWeight: 700 }}>
+              Close
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
+
+      {/* Assign Task Modal */}
+      {assignTaskOpen && selectedTL && (
+        <Dialog open onClose={() => !submitting && setAssignTaskOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 1 }}>
+            <Box>
+              <Typography variant="h6" fontWeight={800} sx={{ color: '#7c3aed' }}>📋 Assign Task to TL</Typography>
+              <Typography variant="body2" color="text.secondary">
+                Assigning to: {selectedTL.name || selectedTL.email}
+              </Typography>
+            </Box>
+            <IconButton onClick={() => !submitting && setAssignTaskOpen(false)} size="small" disabled={submitting}>
+              <CloseIcon />
+            </IconButton>
+          </DialogTitle>
+          <DialogContent dividers sx={{ py: 3 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
+              <TextField
+                label="Task Title"
+                placeholder="e.g., Review pending verifications"
+                value={taskForm.title}
+                onChange={(e) => setTaskForm(prev => ({ ...prev, title: e.target.value }))}
+                fullWidth
+                required
+                disabled={submitting}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+              />
+              <TextField
+                label="Instructions"
+                placeholder="Detailed instructions for the TL..."
+                value={taskForm.instructions}
+                onChange={(e) => setTaskForm(prev => ({ ...prev, instructions: e.target.value }))}
+                fullWidth
+                required
+                multiline
+                rows={4}
+                disabled={submitting}
+                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+              />
+              <Box sx={{ display: 'flex', gap: 2 }}>
+                <TextField
+                  select
+                  label="Priority"
+                  value={taskForm.priority}
+                  onChange={(e) => setTaskForm(prev => ({ ...prev, priority: e.target.value }))}
+                  fullWidth
+                  disabled={submitting}
+                  SelectProps={{ native: true }}
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}>
+                  <option value="normal">Normal</option>
+                  <option value="urgent">Urgent</option>
+                </TextField>
+                <TextField
+                  type="date"
+                  label="Deadline"
+                  value={taskForm.deadline}
+                  onChange={(e) => setTaskForm(prev => ({ ...prev, deadline: e.target.value }))}
+                  fullWidth
+                  disabled={submitting}
+                  InputLabelProps={{ shrink: true }}
+                  helperText={taskForm.priority === 'urgent' ? 'Required for urgent tasks' : 'Optional'}
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                />
+              </Box>
+            </Box>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, py: 2, gap: 1 }}>
+            <Button onClick={() => setAssignTaskOpen(false)} disabled={submitting} sx={{ fontWeight: 700 }}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSubmitTask}
+              variant="contained"
+              disabled={submitting}
+              sx={{ bgcolor: '#7c3aed', fontWeight: 700, '&:hover': { bgcolor: '#6d28d9' } }}>
+              {submitting ? 'Assigning...' : 'Assign Task'}
+            </Button>
+          </DialogActions>
+        </Dialog>
       )}
 
       {/* Drill-down Modal */}
