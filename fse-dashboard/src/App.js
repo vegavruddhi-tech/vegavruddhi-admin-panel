@@ -168,6 +168,7 @@ function NavbarContent({ page, setPage, pendingCount, mode, setMode, user, handl
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 {user?.picture && (
                   <Box component="img" src={user.picture} alt="avatar"
+                    onError={e => { e.target.style.display = 'none'; }}
                     sx={{ width: 30, height: 30, borderRadius: '50%', border: '2px solid rgba(255,255,255,0.3)' }} />
                 )}
                 <Typography sx={{ color: "rgba(255,255,255,0.6)", fontSize: "0.75rem", mr: 1 }}>
@@ -246,6 +247,7 @@ function NavbarContent({ page, setPage, pendingCount, mode, setMode, user, handl
         <Box sx={{ px: 2.5, py: 1.5, display: "flex", alignItems: "center", gap: 1.5 }}>
           {user?.picture && (
             <Box component="img" src={user.picture} alt="avatar"
+              onError={e => { e.target.style.display = 'none'; }}
               sx={{ width: 32, height: 32, borderRadius: "50%", border: "2px solid rgba(255,255,255,0.3)" }} />
           )}
           <Typography sx={{ color: "rgba(255,255,255,0.7)", fontSize: "0.78rem", wordBreak: "break-all" }}>
@@ -327,6 +329,25 @@ function App() {
   const [mode, setMode] = useState("light");
   const [page, setPage] = useState(() => localStorage.getItem("vv_page") || "overview");
   const [pendingCount, setPendingCount] = useState(0);
+  const [splash, setSplash] = useState(true);
+  const [dataReady, setDataReady] = useState(false);
+
+  // Wait for data, with min 1.5s for animation
+  useEffect(() => {
+    if (!dataReady) return;
+    const timer = setTimeout(() => setSplash(false), 1500);
+    return () => clearTimeout(timer);
+  }, [dataReady]);
+
+  // Fallback: hide splash after 15s max if API never responds
+  useEffect(() => {
+    const fallback = setTimeout(() => setSplash(false), 15000);
+    return () => clearTimeout(fallback);
+  }, []);
+
+  const handleDataReady = () => {
+    setDataReady(true);
+  };
 
   const EMP_BASE = process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api';
 
@@ -355,7 +376,11 @@ function App() {
   const savedAuth = localStorage.getItem("vv_auth");
   const [user, setUser] = useState(savedAuth ? JSON.parse(savedAuth) : null);
 
-  const handleLogin  = (authObj) => setUser(authObj);
+  const handleLogin  = (authObj) => {
+    setUser(authObj);
+    setSplash(true);
+    setDataReady(false);
+  };
   const handleLogout = () => {
     localStorage.removeItem("vv_auth");
     setUser(null);
@@ -426,6 +451,44 @@ function App() {
     <ThemeProvider theme={theme}>
       <CssBaseline />
 
+      {/* ── SPLASH SCREEN ─────────────────────────────────────── */}
+      <style>{`
+        @keyframes splashLogoIn {
+          0%   { opacity: 0; transform: scale(0.7); }
+          60%  { opacity: 1; transform: scale(1.08); }
+          100% { opacity: 1; transform: scale(1); }
+        }
+        @keyframes splashBar {
+          0%   { width: 0%; margin-left: 0%; }
+          50%  { width: 60%; margin-left: 20%; }
+          100% { width: 0%; margin-left: 100%; }
+        }
+      `}</style>
+      {splash && (
+        <Box sx={{
+          position: 'fixed', inset: 0, zIndex: 99999,
+          bgcolor: '#071a0f',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: 3,
+          transition: 'opacity 0.4s ease',
+        }}>
+          <Box sx={{ animation: 'splashLogoIn 0.8s ease forwards', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5 }}>
+            <Box component="img" src="/logo-full.png" alt="Vegavruddhi"
+              sx={{ width: 80, height: 80, objectFit: 'contain', filter: 'brightness(0) invert(1)' }} />
+            <Typography sx={{ color: '#fff', fontFamily: "'Georgia', serif", fontWeight: 700, fontSize: '1.4rem', letterSpacing: 3, textTransform: 'uppercase' }}>
+              Vegavruddhi
+            </Typography>
+            <Typography sx={{ color: BRAND.accent, fontSize: '0.65rem', letterSpacing: 4, textTransform: 'uppercase', fontWeight: 600 }}>
+              FSE Admin Panel
+            </Typography>
+          </Box>
+          {/* Progress bar */}
+          <Box sx={{ width: 180, height: 3, bgcolor: 'rgba(255,255,255,0.1)', borderRadius: 10, overflow: 'hidden', mt: 1 }}>
+            <Box sx={{ height: '100%', bgcolor: BRAND.accent, borderRadius: 10, animation: 'splashBar 1.4s ease-in-out infinite' }} />
+          </Box>
+        </Box>
+      )}
+
       {!user && <Login onLogin={handleLogin} />}
 
       {user && (
@@ -450,7 +513,7 @@ function App() {
               transition: "background-color 0.3s",
             }}
           >
-            {page === "overview"     ? <Dashboard /> :
+            {page === "overview"     ? <Dashboard onReady={handleDataReady} /> :
              page === "products"     ? <ProductDashboard /> :
              page === "merchants"    ? <MerchantForms /> :
              page === "verification" ? <VerificationRules token={user?.token} /> :

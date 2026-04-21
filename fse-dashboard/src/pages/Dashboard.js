@@ -3,7 +3,7 @@ import {
   Box, Typography, useTheme, Card, CardContent, Button, TextField, MenuItem,
   Dialog, DialogTitle, DialogContent, DialogActions, IconButton,
   Table, TableHead, TableRow, TableCell, TableBody, TableContainer, Paper,
-  Autocomplete, Skeleton
+  Autocomplete, Skeleton, CircularProgress
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import { BRAND } from "../theme";
@@ -73,7 +73,8 @@ function OnboardVerifySection({ filteredForms, onboardVerifyMap, onboardVerifyin
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 2, mb: verifyDrillStatus ? 1 : 3 }}>
         {onboardVerifying ? (
           <Card sx={{ gridColumn: '1 / -1', borderRadius: 3, bgcolor: '#f9f9f9', border: '1.5px solid #e0e0e0' }}>
-            <CardContent sx={{ py: 1.5, textAlign: 'center' }}>
+            <CardContent sx={{ py: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1.5 }}>
+              <CircularProgress size={16} thickness={4} sx={{ color: BRAND.primary }} />
               <Typography variant="body2" color="text.secondary">Loading verification data…</Typography>
             </CardContent>
           </Card>
@@ -229,7 +230,7 @@ function OnboardVerifySection({ filteredForms, onboardVerifyMap, onboardVerifyin
   );
 }
 
-function Dashboard() {
+function Dashboard({ onReady }) {
   const [forms,        setForms]        = useState([]);
   const [employees,    setEmployees]    = useState([]);
   const [tls,          setTls]          = useState([]);
@@ -326,7 +327,10 @@ useEffect(() => {
     const months   = batch.map(f => encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))).join(',');
     return fetch(`${EMP_API}/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`)
       .then(r => r.ok ? r.json() : {}).catch(() => ({}));
-  })).then(results => setGlobalVerifyMap(Object.assign({}, ...results)));
+  })).then(results => {
+    setGlobalVerifyMap(Object.assign({}, ...results));
+    if (onReady) onReady();
+  });
 }, [filteredForms]); // eslint-disable-line
 const monthOptions = useMemo(() => {
   const seen = new Set();
@@ -414,6 +418,26 @@ const kpiData = useMemo(() => {
 
   return (
     <>
+    {/* YouTube-style top progress bar */}
+    <style>{`
+      @keyframes topProgressBar {
+        0%   { width: 0%;   margin-left: 0%; }
+        50%  { width: 60%;  margin-left: 20%; }
+        100% { width: 0%;   margin-left: 100%; }
+      }
+    `}</style>
+    {loading && (
+      <div style={{
+        position: 'fixed', top: 0, left: 0, width: '100%', height: '3px',
+        zIndex: 9999, overflow: 'hidden', background: 'transparent'
+      }}>
+        <div style={{
+          height: '100%',
+          background: BRAND.primary,
+          animation: 'topProgressBar 1.8s ease-in-out infinite'
+        }} />
+      </div>
+    )}
     <Box sx={{ p: { xs: 2, md: 3 }, bgcolor: 'background.default', minHeight: '100vh' }}>
       <Typography variant="h4" sx={{ mb: 3, fontWeight: 800, color: BRAND.primary }}>FSE Overview</Typography>
       <Box sx={{ display: 'flex', gap: 1, mb: 3, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -589,22 +613,31 @@ const kpiData = useMemo(() => {
     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 3, mb: 3 }}>
 
       {/* Product Breakdown */}
-      <Card variant="outlined" sx={{ borderRadius: 3 }}>
-        <CardContent>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 1 }}>
-            <Typography variant="h6" fontWeight={700}>Forms by Product</Typography>
-            <Box sx={{ display: 'flex', gap: 2.5 }}>
-              {[{ label: 'Fully Verified', color: '#2e7d32' }, { label: 'Partially Done', color: '#f59e0b' }, { label: 'Not Found', color: '#d1d5db' }].map(l => (
-                <Box key={l.label} sx={{ display: 'flex', alignItems: 'center', gap: 0.6 }}>
-                  <Box sx={{ width: 10, height: 10, borderRadius: 2, bgcolor: l.color }} />
-                  <Typography variant="caption" color="text.secondary">{l.label}</Typography>
+      <Card sx={{ borderRadius: 4, boxShadow: '0 2px 16px rgba(0,0,0,0.07)', border: '1px solid #f0f0f0' }}>
+        <CardContent sx={{ p: 3 }}>
+          {/* Header */}
+          <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 2.5, flexWrap: 'wrap', gap: 1.5 }}>
+            <Box>
+              <Typography variant="h6" fontWeight={800} sx={{ color: '#1a1a1a', letterSpacing: -0.3 }}>Forms by Product</Typography>
+              <Typography variant="caption" color="text.secondary">Verification breakdown per product · click any segment</Typography>
+            </Box>
+            <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+              {[
+                { label: 'Fully Verified', color: '#16a34a', bg: '#dcfce7' },
+                { label: 'Partially Done', color: '#d97706', bg: '#fef3c7' },
+                { label: 'Not Found',      color: '#9ca3af', bg: '#f3f4f6' },
+              ].map(l => (
+                <Box key={l.label} sx={{ display: 'flex', alignItems: 'center', gap: 0.6, px: 1.2, py: 0.4, borderRadius: 20, bgcolor: l.bg }}>
+                  <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: l.color }} />
+                  <Typography variant="caption" fontWeight={600} sx={{ color: l.color, fontSize: 11 }}>{l.label}</Typography>
                 </Box>
               ))}
             </Box>
           </Box>
-          {loading ? <Skeleton variant="rounded" height={280} /> : (
+
+          {loading ? <Skeleton variant="rounded" height={300} sx={{ borderRadius: 3 }} /> : (
             <Box>
-              <ResponsiveContainer width="100%" height={280}>
+              <ResponsiveContainer width="100%" height={300}>
                 <BarChart
                   data={(() => {
                     const getKey = (f) => { const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim(); return p ? `${f.customerNumber}__${p}` : f.customerNumber; };
@@ -621,41 +654,76 @@ const kpiData = useMemo(() => {
                     });
                     return Object.values(map).sort((a, b) => b.Total - a.Total);
                   })()}
-                  margin={{ top: 20, right: 16, bottom: 60, left: 0 }}
-                  barCategoryGap="35%">
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" angle={-30} textAnchor="end" tick={{ fontSize: 10 }} height={70} />
-                  <YAxis allowDecimals={false} />
-                  <Tooltip cursor={{ fill: 'rgba(124,58,237,0.08)' }} />
-                  <Bar dataKey="Fully Verified" stackId="a" fill="#2e7d32" maxBarSize={60} style={{ cursor: 'pointer' }}
+                  margin={{ top: 24, right: 8, bottom: 60, left: 0 }}
+                  barCategoryGap="38%">
+                  <defs>
+                    <linearGradient id="fvGrad2" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#22c55e" /><stop offset="100%" stopColor="#16a34a" />
+                    </linearGradient>
+                    <linearGradient id="pdGrad2" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#fbbf24" /><stop offset="100%" stopColor="#d97706" />
+                    </linearGradient>
+                    <linearGradient id="nfGrad2" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#e5e7eb" /><stop offset="100%" stopColor="#d1d5db" />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#f3f4f6" />
+                  <XAxis dataKey="name" angle={-30} textAnchor="end" tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 500 }} height={70} axisLine={false} tickLine={false} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} width={28} />
+                  <Tooltip
+                    cursor={{ fill: 'rgba(99,102,241,0.06)', radius: 8 }}
+                    content={({ active, payload, label }) => {
+                      if (!active || !payload?.length) return null;
+                      const colors = { 'Fully Verified': '#16a34a', 'Partially Done': '#d97706', 'Not Found': '#9ca3af' };
+                      return (
+                        <div style={{ background: '#fff', borderRadius: 10, padding: '10px 14px', boxShadow: '0 4px 16px rgba(0,0,0,0.12)', border: '1px solid #f1f5f9', minWidth: 160 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', marginBottom: 8 }}>{label}</div>
+                          {payload.map(p => (
+                            <div key={p.dataKey} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24, marginBottom: 4 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <div style={{ width: 7, height: 7, borderRadius: '50%', background: colors[p.dataKey] || '#888' }} />
+                                <span style={{ fontSize: 12, color: '#64748b' }}>{p.dataKey}</span>
+                              </div>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: '#0f172a' }}>{p.value}</span>
+                            </div>
+                          ))}
+                          <div style={{ marginTop: 8, paddingTop: 6, borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between' }}>
+                            <span style={{ fontSize: 11, color: '#94a3b8' }}>Total</span>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}>{payload.reduce((s, p) => s + (p.value || 0), 0)}</span>
+                          </div>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Bar dataKey="Fully Verified" stackId="a" fill="url(#fvGrad2)" maxBarSize={52} style={{ cursor: 'pointer' }}
                     onClick={(data) => {
                       if (!data?.name) return;
                       const product = data.name;
                       const getKey = (f) => { const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim(); return p ? `${f.customerNumber}__${p}` : f.customerNumber; };
                       const rows = filteredForms.filter(f => { const p = f.formFillingFor || f.tideProduct || f.brand || 'Other'; const norm = p.toLowerCase() === 'msme' ? 'Tide MSME' : p; return norm === product && (globalVerifyMap[getKey(f)]?.status || 'Not Found') === 'Fully Verified'; }).map(f => { const emp = employees.find(e => e.newJoinerName === f.employeeName); return { merchant: f.customerName || '–', phone: f.customerNumber || '–', fse: f.employeeName || '–', fseEmail: emp?.email || emp?.newJoinerEmailId || '–', tl: emp?.reportingManager || '–', verification: 'Fully Verified', date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) }; });
-                      setChartDrill({ title: `✓ ${product} — Fully Verified`, subtitle: `${rows.length} forms`, color: '#2e7d32', cols: ['Merchant', 'Phone', 'FSE', 'FSE Email', 'TL', 'Verification', 'Date'], rows });
+                      setChartDrill({ title: `✓ ${product} — Fully Verified`, subtitle: `${rows.length} forms`, color: '#16a34a', cols: ['Merchant', 'Phone', 'FSE', 'FSE Email', 'TL', 'Verification', 'Date'], rows });
                     }} />
-                  <Bar dataKey="Partially Done" stackId="a" fill="#f59e0b" maxBarSize={60} style={{ cursor: 'pointer' }}
+                  <Bar dataKey="Partially Done" stackId="a" fill="url(#pdGrad2)" maxBarSize={52} style={{ cursor: 'pointer' }}
                     onClick={(data) => {
                       if (!data?.name) return;
                       const product = data.name;
                       const getKey = (f) => { const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim(); return p ? `${f.customerNumber}__${p}` : f.customerNumber; };
                       const rows = filteredForms.filter(f => { const p = f.formFillingFor || f.tideProduct || f.brand || 'Other'; const norm = p.toLowerCase() === 'msme' ? 'Tide MSME' : p; return norm === product && (globalVerifyMap[getKey(f)]?.status || 'Not Found') === 'Partially Done'; }).map(f => { const emp = employees.find(e => e.newJoinerName === f.employeeName); return { merchant: f.customerName || '–', phone: f.customerNumber || '–', fse: f.employeeName || '–', fseEmail: emp?.email || emp?.newJoinerEmailId || '–', tl: emp?.reportingManager || '–', verification: 'Partially Done', date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) }; });
-                      setChartDrill({ title: `◑ ${product} — Partially Done`, subtitle: `${rows.length} forms`, color: '#f59e0b', cols: ['Merchant', 'Phone', 'FSE', 'FSE Email', 'TL', 'Verification', 'Date'], rows });
+                      setChartDrill({ title: `◑ ${product} — Partially Done`, subtitle: `${rows.length} forms`, color: '#d97706', cols: ['Merchant', 'Phone', 'FSE', 'FSE Email', 'TL', 'Verification', 'Date'], rows });
                     }} />
-                  <Bar dataKey="Not Found" stackId="a" fill="#d1d5db" radius={[6,6,0,0]} maxBarSize={60} style={{ cursor: 'pointer' }}
+                  <Bar dataKey="Not Found" stackId="a" fill="url(#nfGrad2)" radius={[8,8,0,0]} maxBarSize={52} style={{ cursor: 'pointer' }}
                     onClick={(data) => {
                       if (!data?.name) return;
                       const product = data.name;
                       const getKey = (f) => { const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim(); return p ? `${f.customerNumber}__${p}` : f.customerNumber; };
                       const rows = filteredForms.filter(f => { const p = f.formFillingFor || f.tideProduct || f.brand || 'Other'; const norm = p.toLowerCase() === 'msme' ? 'Tide MSME' : p; return norm === product && (globalVerifyMap[getKey(f)]?.status || 'Not Found') === 'Not Found'; }).map(f => { const emp = employees.find(e => e.newJoinerName === f.employeeName); return { merchant: f.customerName || '–', phone: f.customerNumber || '–', fse: f.employeeName || '–', fseEmail: emp?.email || emp?.newJoinerEmailId || '–', tl: emp?.reportingManager || '–', verification: 'Not Found', date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) }; });
-                      setChartDrill({ title: `– ${product} — Not Found`, subtitle: `${rows.length} forms`, color: '#9e9e9e', cols: ['Merchant', 'Phone', 'FSE', 'FSE Email', 'TL', 'Verification', 'Date'], rows });
+                      setChartDrill({ title: `– ${product} — Not Found`, subtitle: `${rows.length} forms`, color: '#9ca3af', cols: ['Merchant', 'Phone', 'FSE', 'FSE Email', 'TL', 'Verification', 'Date'], rows });
                     }}>
-                    <LabelList dataKey="Total" position="top" style={{ fontSize: 10, fontWeight: 700, fill: '#555' }} />
+                    <LabelList dataKey="Total" position="top" style={{ fontSize: 11, fontWeight: 800, fill: '#374151' }} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
-              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block', textAlign: 'center' }}>Click any bar segment to explore</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block', textAlign: 'center', letterSpacing: 0.3 }}>Click any bar segment to explore</Typography>
             </Box>
           )}
         </CardContent>
