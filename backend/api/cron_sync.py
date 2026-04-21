@@ -4,21 +4,17 @@ import sys
 from datetime import datetime
 
 def handler(request):
+    from sync_sheet import process_sheet
+    import os
+
     print("===== CRON TRIGGERED =====")
-    print("UTC TIME:", datetime.utcnow())
 
-    # Absolute path to sync_sheet.py
-    script_path = os.path.join(os.path.dirname(__file__), "../sync_sheet.py")
-
-    print("Running script:", script_path)
+    sheet_id = os.environ.get("1XD1x9VeyGbGnCKw2w8pAlsf6zoxs59OSKxpRDcgmZ6U")
 
     try:
-        subprocess.run([sys.executable, script_path])
-        print("SYNC SCRIPT FINISHED")
+        process_sheet(sheet_id, "Tide Onboarding")
+        print("SYNC SUCCESS")
+        return {"statusCode": 200, "body": "Sync successful"}
     except Exception as e:
-        print("ERROR RUNNING SCRIPT:", str(e))
-
-    return {
-        "statusCode": 200,
-        "body": "Cron executed"
-    }
+        print("SYNC ERROR:", str(e))
+        return {"statusCode": 500, "body": str(e)}
