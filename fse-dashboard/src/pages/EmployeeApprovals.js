@@ -422,7 +422,7 @@ const rejectTL = async (id) => {
               </Badge>
             } />
             <Tab value="changereq" label={
-              <Badge badgeContent={changeRequests.filter(r => r.status === 'pending').length} color="error" max={99} sx={{ '& .MuiBadge-badge': { right: -8, top: -2 } }}>
+              <Badge badgeContent={changeRequests.filter(r => r.status === 'pending' && (r.type === 'profile_change' || r.type === 'merchant_edit' || r.type === 'merchant_delete')).length} color="error" max={99} sx={{ '& .MuiBadge-badge': { right: -8, top: -2 } }}>
                 <Box sx={{ pr: 2 }}>Change Requests</Box>
               </Badge>
             } />
@@ -553,7 +553,7 @@ const rejectTL = async (id) => {
                 <Box>
                   <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <Typography variant="subtitle1" fontWeight={700} sx={{ color: BRAND.primary }}>🔔 Profile & Merchant Change Requests</Typography>
-                    <Typography variant="caption" color="text.secondary">{changeRequests.length} total</Typography>
+                    <Typography variant="caption" color="text.secondary">{changeRequests.filter(r => r.type === 'profile_change' || r.type === 'merchant_edit' || r.type === 'merchant_delete').length} total</Typography>
                   </Box>
                   {changeReqLoading ? (
                     <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress size={28} sx={{ color: BRAND.primary }} /></Box>
@@ -569,7 +569,7 @@ const rejectTL = async (id) => {
                           </TableRow>
                         </TableHead>
                         <TableBody>
-                          {changeRequests.map(r => {
+                        {changeRequests.filter(r => r.type === 'profile_change' || r.type === 'merchant_edit' || r.type === 'merchant_delete').map(r => {
                             const typeLabel = r.type === 'profile_change' ? '👤 Profile Change' : r.type === 'merchant_edit' ? '✏ Merchant Edit' : '🗑 Merchant Delete';
                             const details   = r.type === 'profile_change' ? Object.entries(r.profileChanges || {}).map(([k,v]) => `${k}: ${v}`).slice(0,3).join(', ') : (r.merchantName || '–');
                             return (

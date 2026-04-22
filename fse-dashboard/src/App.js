@@ -110,7 +110,7 @@ function NavbarContent({ page, setPage, pendingCount, mode, setMode, user, handl
                 fontWeight: 600,
               }}
             >
-              FSE
+              Admin Panel
             </Typography>
           </Box>
         </Box>
@@ -236,7 +236,7 @@ function NavbarContent({ page, setPage, pendingCount, mode, setMode, user, handl
               Vegavruddhi
             </Typography>
             <Typography sx={{ fontSize: "0.55rem", color: BRAND.accent, letterSpacing: 2, textTransform: "uppercase", fontWeight: 600 }}>
-              FSE Admin
+              Admin Panel
             </Typography>
           </Box>
         </Box>
@@ -331,6 +331,8 @@ function App() {
   const [pendingCount, setPendingCount] = useState(0);
   const [splash, setSplash] = useState(true);
   const [dataReady, setDataReady] = useState(false);
+  // Track which pages have already loaded in this session (resets on full page refresh)
+  const [pagesLoaded, setPagesLoaded] = useState({});
 
   // Wait for data, with min 1.5s for animation
   useEffect(() => {
@@ -383,6 +385,11 @@ function App() {
   };
   const handleLogout = () => {
     localStorage.removeItem("vv_auth");
+    sessionStorage.removeItem("mf_loaded");
+    sessionStorage.removeItem("tl_loaded");
+    sessionStorage.removeItem("pd_loaded");
+    sessionStorage.removeItem("ao_loaded");
+    setPagesLoaded({});
     setUser(null);
   };
 
@@ -466,11 +473,11 @@ function App() {
       `}</style>
       {splash && (
         <Box sx={{
-          position: 'fixed', inset: 0, zIndex: 99999,
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99999,
           bgcolor: '#071a0f',
           display: 'flex', flexDirection: 'column',
           alignItems: 'center', justifyContent: 'center', gap: 3,
-          transition: 'opacity 0.4s ease',
+          overflow: 'hidden',
         }}>
           <Box sx={{ animation: 'splashLogoIn 0.8s ease forwards', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5 }}>
             <Box component="img" src="/logo-full.png" alt="Vegavruddhi"
@@ -479,7 +486,7 @@ function App() {
               Vegavruddhi
             </Typography>
             <Typography sx={{ color: BRAND.accent, fontSize: '0.65rem', letterSpacing: 4, textTransform: 'uppercase', fontWeight: 600 }}>
-              FSE Admin Panel
+              Admin Panel
             </Typography>
           </Box>
           {/* Progress bar */}

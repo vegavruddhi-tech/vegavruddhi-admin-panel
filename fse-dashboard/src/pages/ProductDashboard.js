@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import ReactDOM from "react-dom";
 import {
   Box, Card, CardContent, Typography, useTheme, Chip, IconButton, Tooltip as MuiTooltip,
   Collapse, Button, Divider, Dialog, DialogTitle, DialogContent, DialogActions,
@@ -650,7 +651,7 @@ function InlineEditTable({ rows, editableCols, onReload }) {
   );
 }
 
-export default function ProductDashboard() {
+export default function ProductDashboard({ firstLoad = true, onLoaded }) {
   const muiTheme = useTheme();
   const ct = useMemo(() => toChartTheme(muiTheme), [muiTheme]);
 
@@ -771,7 +772,8 @@ export default function ProductDashboard() {
       setMongoTls(data.tls || []);
 
       // ── Auto-fetch verification for all forms in background ──────────
-      if (forms.length > 0) {        const getP = (f) => (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+      if (forms.length > 0) {
+        const getP = (f) => (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
         const BATCH = 50;
         const batches = [];
         for (let i = 0; i < forms.length; i += BATCH) batches.push(forms.slice(i, i + BATCH));
@@ -788,12 +790,14 @@ export default function ProductDashboard() {
             ).then(r => r.ok ? r.json() : {}).catch(() => ({}));
           }));
           setGlobalVerifyMap(Object.assign({}, ...results));
-          setPageLoading(false);
-        } catch { /* ignore verify errors */ setPageLoading(false); }
+        } catch { /* ignore verify errors */ }
       }
     } catch (err) {
       console.error('Product page MongoDB load error:', err);
+    } finally {
+      sessionStorage.setItem('pd_loaded', '1');
       setPageLoading(false);
+      if (onLoaded) onLoaded();
     }
   };
 
@@ -802,7 +806,9 @@ export default function ProductDashboard() {
     loadMongoData();
     const iv = setInterval(load, 120000);
     const iv2 = setInterval(loadMongoData, 120000);
-    return () => { clearInterval(iv); clearInterval(iv2); };
+    // Safety fallback — never stay stuck longer than 10s
+    const fallback = setTimeout(() => setPageLoading(false), 10000);
+    return () => { clearInterval(iv); clearInterval(iv2); clearTimeout(fallback); };
   }, []);
 
   // ── MongoDB: filtered forms for top section ───────────────────────────────
@@ -1430,44 +1436,29 @@ export default function ProductDashboard() {
   return (
     <Box sx={{ p: { xs: 2, md: 3 }, bgcolor: "background.default", minHeight: "100vh" }}>
 
-      {/* Product Page Loader */}
-      {pageLoading && (
-        <>
-          <style>{`
-            @keyframes productPageBar {
-              0%   { width: 0%; margin-left: 0%; }
-              50%  { width: 60%; margin-left: 20%; }
-              100% { width: 0%; margin-left: 100%; }
-            }
-            @keyframes productLogoIn {
-              0%   { opacity: 0; transform: scale(0.75); }
-              60%  { opacity: 1; transform: scale(1.05); }
-              100% { opacity: 1; transform: scale(1); }
-            }
-          `}</style>
-          <Box sx={{
-            position: 'fixed', inset: 0, zIndex: 99999,
-            bgcolor: '#071a0f',
-            display: 'flex', flexDirection: 'column',
-            alignItems: 'center', justifyContent: 'center', gap: 2.5,
-          }}>
-            <Box sx={{ animation: 'productLogoIn 0.8s ease forwards', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5 }}>
-              <Box component="img" src="/logo-full.png" alt="Vegavruddhi"
-                sx={{ width: 72, height: 72, objectFit: 'contain', filter: 'brightness(0) invert(1)' }} />
-              <Typography sx={{ color: '#fff', fontFamily: "'Georgia', serif", fontWeight: 700, fontSize: '1.3rem', letterSpacing: 3, textTransform: 'uppercase' }}>
-                Vegavruddhi
-              </Typography>
-              <Typography sx={{ color: '#c8a84b', fontSize: '0.6rem', letterSpacing: 4, textTransform: 'uppercase', fontWeight: 600 }}>
-                Product Page Loading
-              </Typography>
-            </Box>
-            <Box sx={{ width: 180, height: 3, bgcolor: 'rgba(255,255,255,0.1)', borderRadius: 10, overflow: 'hidden', mt: 1 }}>
-              <Box sx={{ height: '100%', bgcolor: '#c8a84b', borderRadius: 10, animation: 'productPageBar 1.4s ease-in-out infinite' }} />
-            </Box>
-          </Box>
-        </>
+      {/* Product Page Loader — white overlay over content area only, navbar stays visible */}
+      {pageLoading && ReactDOM.createPortal(
+        <div style={{
+          position: 'fixed', inset: 0,
+          zIndex: 1099,
+          background: '#f0f7f3',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: 16,
+        }}>
+          <style>{`@keyframes productSpinner { to { transform: rotate(360deg); } }`}</style>
+          <div style={{
+            width: 56, height: 56, borderRadius: '50%',
+            border: '4px solid rgba(26,71,49,0.15)',
+            borderTop: '4px solid #1a4731',
+            animation: 'productSpinner 0.9s linear infinite',
+          }} />
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#1a4731', letterSpacing: 3, textTransform: 'uppercase' }}>
+            Product Page
+          </div>
+        </div>,
+        document.body
       )}
-      <Typography variant="h4" sx={{ mb: 1 }}>Tide Product Analytics</Typography>
+      <Typography variant="h4" sx={{ mb: 1, visibility: pageLoading ? 'hidden' : 'visible' }}>Tide Product Analytics</Typography>
       {/* <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
         Click any bar or slice to see the employee drill-down table. Click a number in the table to edit and sync to Google Sheet.
       </Typography> */}

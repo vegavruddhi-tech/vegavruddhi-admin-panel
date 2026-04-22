@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import ReactDOM from 'react-dom';
 import {
   Box, Typography, Card, CardContent, Chip, CircularProgress,
   Alert, Button, Avatar, Table, TableBody, TableCell, TableContainer,
@@ -278,9 +279,10 @@ function TLCard({ tlData, search, verifyMap, onAssignTask }) {
   );
 }
 
-export default function TLOverview() {
+export default function TLOverview({ firstLoad = true, onLoaded }) {
   const [data,      setData]      = useState([]);
   const [loading,   setLoading]   = useState(true);
+  const [pageLoading, setPageLoading] = useState(true);
   const [error,     setError]     = useState('');
   const [search,    setSearch]    = useState('');
   const [drillOpen, setDrillOpen] = useState(null);
@@ -328,6 +330,8 @@ export default function TLOverview() {
       setError(err.message);
     } finally {
       setLoading(false);
+      setPageLoading(false);
+      if (onLoaded) onLoaded();
     }
   }, []);
 
@@ -638,8 +642,30 @@ export default function TLOverview() {
 
   return (
     <Box sx={{ maxWidth: 1100, mx: 'auto', px: { xs: 2, md: 4 }, py: 4 }}>
+      {/* Page Loader */}
+      {pageLoading && ReactDOM.createPortal(
+        <div style={{
+          position: 'fixed', inset: 0,
+          zIndex: 1099, background: '#f0f7f3',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: 16,
+        }}>
+          <style>{`@keyframes tlSpinner { to { transform: rotate(360deg); } }`}</style>
+          <div style={{
+            width: 56, height: 56, borderRadius: '50%',
+            border: '4px solid rgba(26,71,49,0.15)',
+            borderTop: '4px solid #1a4731',
+            animation: 'tlSpinner 0.9s linear infinite',
+          }} />
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#1a4731', letterSpacing: 3, textTransform: 'uppercase' }}>
+            TL Overview
+          </div>
+        </div>,
+        document.body
+      )}
+
       {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3, flexWrap: 'wrap', gap: 2 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3, flexWrap: 'wrap', gap: 2, visibility: pageLoading ? 'hidden' : 'visible' }}>
         <Box>
           <Typography variant="h5" sx={{ fontWeight: 800, color: BRAND.primary }}>TL Overview</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
@@ -1049,7 +1075,7 @@ export default function TLOverview() {
           }}>
             <Box sx={{ px: 3, pt: 3, pb: 2, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1.5 }}>
               <Box>
-                <Typography fontWeight={700} sx={{ fontSize: 17, color: '#0f172a', letterSpacing: -0.4 }}>FSE Activity Overview</Typography>
+                <Typography fontWeight={700} sx={{ fontSize: 17, color: '#0f172a', letterSpacing: -0.4 }}>Employee Activity Overview</Typography>
                 <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: 12 }}>Active vs Inactive FSEs per Team Leader · click any bar to explore</Typography>
               </Box>
               <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -1385,6 +1411,8 @@ export default function TLOverview() {
 
       {loading ? (
         <Box>
+          {/* Search bar skeleton */}
+          <Skeleton variant="rectangular" height={40} sx={{ borderRadius: 2, mb: 3 }} />
           {/* KPI cards skeleton */}
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 2, mb: 3 }}>
             {Array.from({ length: 3 }).map((_, i) => (

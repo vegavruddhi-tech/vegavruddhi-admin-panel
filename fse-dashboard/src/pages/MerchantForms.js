@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import ReactDOM from 'react-dom';
 import {
   Box, Typography, Card, CardContent, Button, Chip, CircularProgress,
   Alert, Tooltip, Table, TableBody, TableCell, TableContainer,
@@ -535,6 +536,7 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditP
           location:       editForm.location,
           status:         editForm.status,
           formFillingFor: editForm.formFillingFor,
+          reason:         editForm._editReason || '',
         }),
       });
       const data = await res.json();
@@ -760,6 +762,12 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditP
                   <MenuItem key={s} value={s}>{s}</MenuItem>
                 ))}
               </TextField>
+
+              <TextField fullWidth size="small" multiline rows={2}
+                label="Reason for edit (FSE will be notified)"
+                value={editForm._editReason || ''}
+                onChange={e => setEditForm(p => ({ ...p, _editReason: e.target.value }))}
+                placeholder="e.g. Corrected phone number, updated status" />
             </Box>
           </DialogContent>
 
@@ -1028,10 +1036,11 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditP
 }
 
 // ── Main Page ─────────────────────────────────────────────────
-export default function MerchantForms() {
+export default function MerchantForms({ firstLoad = true, onLoaded }) {
   const [forms,      setForms]      = useState([]);
   const [duplicates, setDuplicates] = useState([]);
   const [loading,    setLoading]    = useState(true);
+  const [pageLoading, setPageLoading] = useState(true);
   const [error,      setError]      = useState('');
   const [search,     setSearch]     = useState('');
   const [dupOpen,    setDupOpen]    = useState(false);
@@ -1047,7 +1056,11 @@ export default function MerchantForms() {
   const [editPtsValue, setEditPtsValue] = useState('');
   const [editPtsReason, setEditPtsReason] = useState('');
   const [editPtsSaving,setEditPtsSaving]= useState(false);
-  const [productAdjustments, setProductAdjustments] = useState({}); // { [product]: { value, reason } }
+  const [productAdjustments, setProductAdjustments] = useState({});
+  const [adjHistory, setAdjHistory] = useState([]);
+  const [deleteAdjDialog, setDeleteAdjDialog] = useState(null); // { historyId, delta, reason }
+  const [deleteAdjReason, setDeleteAdjReason] = useState('');
+  const [deleteAdjSaving, setDeleteAdjSaving] = useState(false);
   // const [todayOnly, setTodayOnly] = useState(false);
   const [dateFilter, setDateFilter] = useState('all');
   const [toDate, setToDate]         = useState('');
@@ -1082,6 +1095,8 @@ export default function MerchantForms() {
       setError(err.message);
     } finally {
       setLoading(false);
+      setPageLoading(false);
+      if (onLoaded) onLoaded();
     }
   }, []);
 
@@ -1135,6 +1150,11 @@ export default function MerchantForms() {
     const initAdj = {};
     Object.keys(productBreakdown || {}).forEach(p => { initAdj[p] = { value: '0', reason: '' }; });
     setProductAdjustments(initAdj);
+    // Fetch adjustment history
+    if (data?._id) {
+      fetch(`${EMP_API}/forms/admin/adjustment-history/${data._id}`)
+        .then(r => r.ok ? r.json() : []).then(setAdjHistory).catch(() => setAdjHistory([]));
+    }
     setEditPtsOpen(true);
   }, []);
 
@@ -1476,8 +1496,30 @@ export default function MerchantForms() {
   return (
     <Box sx={{ maxWidth: 1100, mx: 'auto', px: { xs: 2, md: 4 }, py: 4 }}>
 
+      {/* Page Loader */}
+      {pageLoading && ReactDOM.createPortal(
+        <div style={{
+          position: 'fixed', inset: 0,
+          zIndex: 1099, background: '#f0f7f3',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: 16,
+        }}>
+          <style>{`@keyframes mfSpinner { to { transform: rotate(360deg); } }`}</style>
+          <div style={{
+            width: 56, height: 56, borderRadius: '50%',
+            border: '4px solid rgba(26,71,49,0.15)',
+            borderTop: '4px solid #1a4731',
+            animation: 'mfSpinner 0.9s linear infinite',
+          }} />
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#1a4731', letterSpacing: 3, textTransform: 'uppercase' }}>
+            Merchant Forms
+          </div>
+        </div>,
+        document.body
+      )}
+
       {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3, flexWrap: 'wrap', gap: 2 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3, flexWrap: 'wrap', gap: 2, visibility: pageLoading ? 'hidden' : 'visible' }}>
         <Box>
           <Typography variant="h5" sx={{ fontWeight: 800, color: BRAND.primary }}>Merchant Forms</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
@@ -2137,24 +2179,11 @@ export default function MerchantForms() {
                 const pts = POINTS_MAP[product] || 0;
                 const adj = productAdjustments[product] || { value: '0', reason: '' };
                 return (
-                  <Box key={product} sx={{ mb: 1.5, p: 1.5, bgcolor: '#f0fdf4', borderRadius: 2, border: '1px solid #bbf7d0' }}>
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
-                      <Typography variant="body2" fontWeight={700} sx={{ color: '#065f46' }}>{product}</Typography>
-                      <Typography variant="caption" sx={{ color: '#059669', fontWeight: 700 }}>
-                        {count} × {pts} = {Math.round(count * pts * 10) / 10} pts
-                      </Typography>
-                    </Box>
-                    <Box sx={{ display: 'flex', gap: 1, mb: 0.8 }}>
-                      <TextField size="small" type="number" label="Adjust (+ or -)"
-                        value={adj.value}
-                        onChange={e => setProductAdjustments(prev => ({ ...prev, [product]: { ...prev[product], value: e.target.value } }))}
-                        inputProps={{ step: 0.1 }}
-                        sx={{ width: 120 }} />
-                      <TextField size="small" label="Reason" fullWidth
-                        value={adj.reason}
-                        onChange={e => setProductAdjustments(prev => ({ ...prev, [product]: { ...prev[product], reason: e.target.value } }))}
-                        placeholder="Why adjusting?" />
-                    </Box>
+                  <Box key={product} sx={{ mb: 1.5, p: 1.5, bgcolor: '#f0fdf4', borderRadius: 2, border: '1px solid #bbf7d0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <Typography variant="body2" fontWeight={700} sx={{ color: '#065f46' }}>{product}</Typography>
+                    <Typography variant="body2" sx={{ color: '#059669', fontWeight: 700 }}>
+                      {count} × {pts} = {Math.round(count * pts * 10) / 10} pts
+                    </Typography>
                   </Box>
                 );
               })}
@@ -2177,15 +2206,110 @@ export default function MerchantForms() {
               Total: {editPtsEmp?.autoPoints || 0} + ({parseFloat(editPtsValue) >= 0 ? '+' : ''}{parseFloat(editPtsValue) || 0}) = {Math.round(((editPtsEmp?.autoPoints || 0) + (parseFloat(editPtsValue) || 0)) * 10) / 10} pts
             </Typography>
           </Box>
+
+          {/* Adjustment History */}
+          {adjHistory.length > 0 && (
+            <Box sx={{ mt: 2 }}>
+              <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ display: 'block', mb: 1, textTransform: 'uppercase', letterSpacing: 0.8 }}>
+                Adjustment History
+              </Typography>
+              {adjHistory.slice().reverse().map((h) => (
+                <Box key={h._id} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mb: 0.8, p: 1, bgcolor: '#f9f9f9', borderRadius: 1.5, border: '1px solid #e0e0e0' }}>
+                  <Box sx={{ flex: 1 }}>
+                    <Typography variant="caption" fontWeight={700} sx={{ color: h.delta >= 0 ? '#2e7d32' : '#c62828' }}>
+                      {h.delta >= 0 ? '+' : ''}{h.delta} pts
+                    </Typography>
+                    {h.reason && <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>{h.reason}</Typography>}
+                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: 10 }}>
+                      {new Date(h.updatedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </Typography>
+                  </Box>
+                  <IconButton size="small" color="error"
+                    onClick={() => setDeleteAdjDialog({ historyId: h._id, delta: h.delta, reason: h.reason })}
+                    sx={{ '&:hover': { bgcolor: '#fdecea' } }}>
+                    <DeleteIcon fontSize="small" />
+                  </IconButton>
+                </Box>
+              ))}
+            </Box>
+          )}
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => { setEditPtsOpen(false); setEditPtsReason(''); setProductAdjustments({}); }} color="inherit">Cancel</Button>
-          <Button variant="contained" onClick={handleSavePoints} disabled={editPtsSaving}
-            sx={{ bgcolor: BRAND.primary, fontWeight: 700 }}>
-            {editPtsSaving ? 'Saving…' : 'Save Points'}
+        <DialogActions sx={{ px: 3, pb: 2, display: 'flex', justifyContent: 'space-between' }}>
+          <Button
+            color="error" variant="outlined" size="small"
+            onClick={() => {
+              if (!window.confirm('Reset all adjustments to 0? This will notify the FSE.')) return;
+              setEditPtsValue('0');
+              setProductAdjustments(prev => {
+                const reset = {};
+                Object.keys(prev).forEach(k => { reset[k] = { value: '0', reason: 'Admin reset all adjustments to 0' }; });
+                return reset;
+              });
+              setEditPtsReason('Admin reset all adjustments to 0');
+            }}
+            sx={{ fontWeight: 700 }}>
+            🗑 Reset All to 0
           </Button>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button onClick={() => { setEditPtsOpen(false); setEditPtsReason(''); setProductAdjustments({}); }} color="inherit">Cancel</Button>
+            <Button variant="contained" onClick={handleSavePoints} disabled={editPtsSaving}
+              sx={{ bgcolor: BRAND.primary, fontWeight: 700 }}>
+              {editPtsSaving ? 'Saving…' : 'Save Points'}
+            </Button>
+          </Box>
         </DialogActions>
       </Dialog>
+
+      {/* Delete Adjustment Dialog */}
+      {deleteAdjDialog && (
+        <Dialog open onClose={() => { setDeleteAdjDialog(null); setDeleteAdjReason(''); }} maxWidth="xs" fullWidth>
+          <DialogTitle sx={{ fontWeight: 800, color: '#c62828', pb: 1 }}>
+            🗑 Delete Adjustment
+          </DialogTitle>
+          <DialogContent>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+              Removing: <strong style={{ color: deleteAdjDialog.delta >= 0 ? '#2e7d32' : '#c62828' }}>
+                {deleteAdjDialog.delta >= 0 ? '+' : ''}{deleteAdjDialog.delta} pts
+              </strong>
+              {deleteAdjDialog.reason && ` — "${deleteAdjDialog.reason}"`}
+            </Typography>
+            <TextField fullWidth size="small" multiline rows={2}
+              label="Reason for deletion (FSE will be notified)"
+              value={deleteAdjReason}
+              onChange={e => setDeleteAdjReason(e.target.value)}
+              placeholder="e.g. Entered by mistake" />
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button onClick={() => { setDeleteAdjDialog(null); setDeleteAdjReason(''); }} color="inherit">Cancel</Button>
+            <Button variant="contained" color="error" disabled={deleteAdjSaving || !deleteAdjReason.trim()}
+              onClick={async () => {
+                setDeleteAdjSaving(true);
+                try {
+                  const res = await fetch(
+                    `${EMP_API}/forms/admin/adjust-points/${editPtsEmp.empData._id}/history/${deleteAdjDialog.historyId}`,
+                    { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ deleteReason: deleteAdjReason }) }
+                  );
+                  if (res.ok) {
+                    setNotifySnack(`✓ Adjustment deleted for ${editPtsEmp.empName}`);
+                    setDeleteAdjDialog(null);
+                    setDeleteAdjReason('');
+                    // Refresh history
+                    fetch(`${EMP_API}/forms/admin/adjustment-history/${editPtsEmp.empData._id}`)
+                      .then(r => r.ok ? r.json() : []).then(setAdjHistory).catch(() => {});
+                    load();
+                  } else {
+                    const d = await res.json();
+                    setNotifySnack(`Error: ${d.message}`);
+                  }
+                } catch { setNotifySnack('Failed to delete adjustment.'); }
+                finally { setDeleteAdjSaving(false); }
+              }}
+              sx={{ fontWeight: 700 }}>
+              {deleteAdjSaving ? 'Deleting…' : 'Confirm Delete'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
 
       {/* Settled Duplicates Dialog */}
       <Dialog open={settledOpen} onClose={() => setSettledOpen(false)} maxWidth="md" fullWidth>

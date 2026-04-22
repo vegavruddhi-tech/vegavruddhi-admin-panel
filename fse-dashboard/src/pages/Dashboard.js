@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import ReactDOM from "react-dom";
 import {
   Box, Typography, useTheme, Card, CardContent, Button, TextField, MenuItem,
   Dialog, DialogTitle, DialogContent, DialogActions, IconButton,
@@ -235,6 +236,7 @@ function Dashboard({ onReady }) {
   const [employees,    setEmployees]    = useState([]);
   const [tls,          setTls]          = useState([]);
   const [loading,      setLoading]      = useState(true);
+  const [pageLoading,  setPageLoading]  = useState(true);
   const [dateFilter,   setDateFilter]   = useState('all');
   const [fromDate,     setFromDate]     = useState('');
   const [toDate,       setToDate]       = useState('');
@@ -275,6 +277,7 @@ const loadData = async () => {
     console.error('Overview load error:', err);
   } finally {
     setLoading(false);
+    setPageLoading(false);
   }
 };
 
@@ -438,8 +441,28 @@ const kpiData = useMemo(() => {
         }} />
       </div>
     )}
+    {pageLoading && ReactDOM.createPortal(
+      <div style={{
+        position: 'fixed', inset: 0,
+        zIndex: 1099, background: '#f0f7f3',
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center', gap: 16,
+      }}>
+        <style>{`@keyframes aoSpinner { to { transform: rotate(360deg); } }`}</style>
+        <div style={{
+          width: 56, height: 56, borderRadius: '50%',
+          border: '4px solid rgba(26,71,49,0.15)',
+          borderTop: '4px solid #1a4731',
+          animation: 'aoSpinner 0.9s linear infinite',
+        }} />
+        <div style={{ fontSize: 13, fontWeight: 700, color: '#1a4731', letterSpacing: 3, textTransform: 'uppercase' }}>
+          Admin Overview
+        </div>
+      </div>,
+      document.body
+    )}
     <Box sx={{ p: { xs: 2, md: 3 }, bgcolor: 'background.default', minHeight: '100vh' }}>
-      <Typography variant="h4" sx={{ mb: 3, fontWeight: 800, color: BRAND.primary }}>FSE Overview</Typography>
+      <Typography variant="h4" sx={{ mb: 3, fontWeight: 800, color: BRAND.primary }}>Admin Overview</Typography>
       <Box sx={{ display: 'flex', gap: 1, mb: 3, flexWrap: 'wrap', alignItems: 'center' }}>
     {['all', 'today', 'week', 'month'].map(f => (
       <Button key={f} size="small"
