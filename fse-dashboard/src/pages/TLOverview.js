@@ -76,6 +76,7 @@ function FSEGroup({ fse, forms, verifyMap }) {
                   <TableCell>Verification</TableCell>
                   <TableCell>Product</TableCell>
                   <TableCell>Date</TableCell>
+                  <TableCell>Action</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
@@ -84,13 +85,22 @@ function FSEGroup({ fse, forms, verifyMap }) {
                   const vColor = vs === 'Fully Verified' ? '#2e7d32' : vs === 'Partially Done' ? '#f57f17' : '#888';
                   const vBg    = vs === 'Fully Verified' ? '#e6f4ea' : vs === 'Partially Done' ? '#fff8e1' : '#f5f5f5';
                   const vLabel = vs === 'Fully Verified' ? '✔ Fully Verified' : vs === 'Partially Done' ? '◑ Partially Done' : vs === 'Not Verified' ? '✗ Not Verified' : '– Not Found';
+                  const isManualVerification = verifyMap?.[getKey(f)]?.manualVerification;
+                  
                   return (
                     <TableRow key={f._id} hover sx={{ '&:last-child td': { border: 0 } }}>
                       <TableCell><Typography variant="body2" fontWeight={600}>{f.customerName}</Typography></TableCell>
                       <TableCell><Typography variant="body2" sx={{ fontFamily: 'monospace' }}>{f.customerNumber}</Typography></TableCell>
                       <TableCell><Typography variant="body2" color="text.secondary">{f.location}</Typography></TableCell>
                       <TableCell>
-                        <Box component="span" sx={{ px: 1, py: 0.3, borderRadius: 10, fontSize: 11, fontWeight: 700, bgcolor: vBg, color: vColor }}>{vLabel}</Box>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          <Box component="span" sx={{ px: 1, py: 0.3, borderRadius: 10, fontSize: 11, fontWeight: 700, bgcolor: vBg, color: vColor }}>{vLabel}</Box>
+                          {isManualVerification && (
+                            <Tooltip title={`Manually verified by ${verifyMap[getKey(f)]?.verifiedBy || 'Admin'}`}>
+                              <Box component="span" sx={{ fontSize: 11, color: '#7c3aed', cursor: 'help' }}>👤</Box>
+                            </Tooltip>
+                          )}
+                        </Box>
                       </TableCell>
                       <TableCell>
                         <Typography variant="caption">{f.tideProduct || f.brand || f.formFillingFor || '–'}</Typography>
@@ -99,6 +109,54 @@ function FSEGroup({ fse, forms, verifyMap }) {
                         <Typography variant="caption" color="text.secondary">
                           {new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                         </Typography>
+                      </TableCell>
+                      <TableCell>
+                        {vs === 'Not Found' && !isManualVerification && (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.handleManualVerify) {
+                                window.handleManualVerify(f);
+                              }
+                            }}
+                            sx={{
+                              fontSize: 10,
+                              textTransform: 'none',
+                              borderColor: '#7c3aed',
+                              color: '#7c3aed',
+                              px: 1,
+                              py: 0.3,
+                              minWidth: 'auto',
+                              '&:hover': { bgcolor: '#f3e8ff', borderColor: '#6d28d9' }
+                            }}>
+                            ✓ Verify
+                          </Button>
+                        )}
+                        {isManualVerification && (
+                          <Button
+                            size="small"
+                            variant="outlined"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.handleRevertVerification) {
+                                window.handleRevertVerification(f);
+                              }
+                            }}
+                            sx={{
+                              fontSize: 10,
+                              textTransform: 'none',
+                              borderColor: '#d32f2f',
+                              color: '#d32f2f',
+                              px: 1,
+                              py: 0.3,
+                              minWidth: 'auto',
+                              '&:hover': { bgcolor: '#ffebee', borderColor: '#c62828' }
+                            }}>
+                            ↺ Revert
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   );
@@ -242,6 +300,12 @@ export default function TLOverview() {
   const [selectedTL, setSelectedTL] = useState(null);
   const [taskForm, setTaskForm] = useState({ title: '', instructions: '', priority: 'normal', deadline: '' });
   const [submitting, setSubmitting] = useState(false);
+  
+  // Manual Verification Modal
+  const [manualVerifyOpen, setManualVerifyOpen] = useState(false);
+  const [selectedForm, setSelectedForm] = useState(null);
+  const [verifyReason, setVerifyReason] = useState('');
+  const [verifyingManually, setVerifyingManually] = useState(false);
   
   // Admin Notifications
   const [adminNotifications, setAdminNotifications] = useState([]);
@@ -409,6 +473,122 @@ export default function TLOverview() {
     setSelectedTL(tl);
     setTaskForm({ title: '', instructions: '', priority: 'normal', deadline: '' });
     setAssignTaskOpen(true);
+  };
+
+  const handleManualVerify = (form) => {
+    setSelectedForm(form);
+    setVerifyReason('');
+    setManualVerifyOpen(true);
+  };
+
+  // Make handler available globally for FSEGroup component
+  useEffect(() => {
+    window.handleManualVerify = handleManualVerify;
+    window.handleRevertVerification = handleRevertVerification;
+    return () => {
+      delete window.handleManualVerify;
+      delete window.handleRevertVerification;
+    };
+  }, []);
+
+  const handleRevertVerification = async (form) => {
+    const confirmRevert = window.confirm(
+      `Are you sure you want to revert the manual verification for:\n\n` +
+      `Customer: ${form.customerName}\n` +
+      `Phone: ${form.customerNumber}\n` +
+      `Product: ${form.formFillingFor || form.tideProduct || form.brand || '–'}\n\n` +
+      `This will change the status back to "Not Found".`
+    );
+
+    if (!confirmRevert) return;
+
+    try {
+      const product = (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
+      const month = new Date(form.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+
+      // First, check if manual verification exists
+      const checkRes = await fetch(
+        `${EMP_API}/manual-verification/check?phone=${encodeURIComponent(form.customerNumber)}&product=${encodeURIComponent(product)}&month=${encodeURIComponent(month)}`,
+        { headers: { 'Content-Type': 'application/json' } }
+      );
+
+      if (!checkRes.ok) {
+        throw new Error('Failed to check manual verification');
+      }
+
+      const checkData = await checkRes.json();
+
+      if (!checkData.exists || !checkData.verification) {
+        alert('❌ No manual verification found for this form');
+        return;
+      }
+
+      // Delete the manual verification
+      const deleteRes = await fetch(`${EMP_API}/manual-verification/${checkData.verification._id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (!deleteRes.ok) {
+        const err = await deleteRes.json();
+        throw new Error(err.message || 'Failed to delete manual verification');
+      }
+
+      alert(`✅ Manual verification reverted successfully!\n\nThe form will now show "Not Found" status.`);
+      
+      // Reload the page data
+      load();
+
+    } catch (err) {
+      console.error('Failed to revert manual verification:', err);
+      alert(`❌ Failed to revert verification: ${err.message}`);
+    }
+  };
+
+  const handleSubmitManualVerification = async () => {
+    if (!selectedForm) return;
+
+    setVerifyingManually(true);
+    try {
+      const adminEmail = localStorage.getItem('userEmail') || 'Admin';
+      const product = (selectedForm.formFillingFor || selectedForm.tideProduct || selectedForm.brand || '').toLowerCase().trim();
+      const month = new Date(selectedForm.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+
+      const res = await fetch(`${EMP_API}/manual-verification/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: selectedForm.customerNumber,
+          product: product,
+          month: month,
+          status: 'Fully Verified',
+          verifiedBy: adminEmail,
+          reason: verifyReason || 'Manual verification by admin - No automated rules available',
+          formId: selectedForm._id
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Failed to create manual verification');
+      }
+
+      alert(`✅ Form manually verified successfully!\n\nCustomer: ${selectedForm.customerName}\nPhone: ${selectedForm.customerNumber}\nProduct: ${product}`);
+      
+      // Refresh verification data
+      setManualVerifyOpen(false);
+      setSelectedForm(null);
+      setVerifyReason('');
+      
+      // Reload the page data to show updated verification status
+      load();
+
+    } catch (err) {
+      console.error('Failed to create manual verification:', err);
+      alert(`❌ Failed to verify form: ${err.message}`);
+    } finally {
+      setVerifyingManually(false);
+    }
   };
 
   const handleSubmitTask = async () => {
@@ -1451,6 +1631,70 @@ export default function TLOverview() {
               disabled={submitting}
               sx={{ bgcolor: '#7c3aed', fontWeight: 700, '&:hover': { bgcolor: '#6d28d9' } }}>
               {submitting ? 'Assigning...' : 'Assign Task'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
+
+      {/* Manual Verification Modal */}
+      {manualVerifyOpen && selectedForm && (
+        <Dialog open onClose={() => !verifyingManually && setManualVerifyOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle sx={{ bgcolor: '#7c3aed', color: '#fff', fontWeight: 700 }}>
+            Manual Verification
+          </DialogTitle>
+          <DialogContent sx={{ mt: 2 }}>
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                You are about to manually verify this form:
+              </Typography>
+              <Box sx={{ mt: 2, p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
+                <Typography variant="body2" sx={{ mb: 0.5 }}>
+                  <strong>Customer:</strong> {selectedForm.customerName}
+                </Typography>
+                <Typography variant="body2" sx={{ mb: 0.5 }}>
+                  <strong>Phone:</strong> {selectedForm.customerNumber}
+                </Typography>
+                <Typography variant="body2" sx={{ mb: 0.5 }}>
+                  <strong>Product:</strong> {selectedForm.formFillingFor || selectedForm.tideProduct || selectedForm.brand || '–'}
+                </Typography>
+                <Typography variant="body2" sx={{ mb: 0.5 }}>
+                  <strong>Location:</strong> {selectedForm.location}
+                </Typography>
+                <Typography variant="body2">
+                  <strong>FSE:</strong> {selectedForm.employeeName}
+                </Typography>
+              </Box>
+            </Box>
+
+            <TextField
+              fullWidth
+              multiline
+              rows={3}
+              label="Reason for Manual Verification (Optional)"
+              placeholder="e.g., No automated rules available for this product, Verified through alternate channel, etc."
+              value={verifyReason}
+              onChange={(e) => setVerifyReason(e.target.value)}
+              disabled={verifyingManually}
+              sx={{ mt: 2 }}
+            />
+
+            <Alert severity="info" sx={{ mt: 2 }}>
+              This form will be marked as <strong>"Fully Verified"</strong> and will be visible across all panels (Admin, TL, Employee).
+            </Alert>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, py: 2, gap: 1 }}>
+            <Button 
+              onClick={() => setManualVerifyOpen(false)} 
+              disabled={verifyingManually}
+              sx={{ fontWeight: 700 }}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSubmitManualVerification}
+              variant="contained"
+              disabled={verifyingManually}
+              sx={{ bgcolor: '#2e7d32', fontWeight: 700, '&:hover': { bgcolor: '#1b5e20' } }}>
+              {verifyingManually ? 'Verifying...' : '✓ Verify Form'}
             </Button>
           </DialogActions>
         </Dialog>

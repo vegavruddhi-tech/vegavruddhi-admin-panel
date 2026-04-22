@@ -247,7 +247,7 @@ function StatusChip({ status }) {
 }
 
 // ── Duplicate Alert Panel ─────────────────────────────────────
-function DuplicatePanel({ duplicates, open, onClose, onNotify, notifying, onSettle, settling }) {
+function DuplicatePanel({ duplicates, open, onClose, onNotify, notifying, onSettle, settling, forms, onEmployeeClick }) {
   const [tab, setTab]               = useState('active');
   const [settlements, setSettlements] = useState([]);
   const [loadingSett, setLoadingSett] = useState(false);
@@ -338,8 +338,29 @@ function DuplicatePanel({ duplicates, open, onClose, onNotify, notifying, onSett
                   </Typography>
                   <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: dup.settled ? 0 : 1.5 }}>
                     {dup.employees.map((emp, j) => (
-                      <Chip key={j} avatar={<Avatar sx={{ bgcolor: dup.settled ? '#888' : BRAND.primary, fontSize: 11 }}>{initials(emp)}</Avatar>}
-                        label={emp} size="small" sx={{ fontWeight: 600 }} />
+                      <Chip 
+                        key={j} 
+                        avatar={<Avatar sx={{ bgcolor: dup.settled ? '#888' : BRAND.primary, fontSize: 11 }}>{initials(emp)}</Avatar>}
+                        label={emp} 
+                        size="small" 
+                        onClick={() => {
+                          // Find the form submitted by this employee for this duplicate
+                          const empForm = forms.find(f => 
+                            f.employeeName === emp && 
+                            f.customerNumber === dup._id.customerNumber &&
+                            (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase() === (dup._id.formFillingFor || '').toLowerCase()
+                          );
+                          if (empForm) {
+                            onEmployeeClick({ employeeName: emp, form: empForm, duplicate: dup });
+                          }
+                        }}
+                        sx={{ 
+                          fontWeight: 600, 
+                          cursor: 'pointer',
+                          '&:hover': { bgcolor: '#e3f2fd', transform: 'scale(1.05)' },
+                          transition: 'all 0.2s'
+                        }} 
+                      />
                     ))}
                   </Box>
                   {/* Settlement info */}
@@ -424,7 +445,7 @@ function VerifyChip({ status, onClick }) {
 }
 
 // ── Employee Group Row ────────────────────────────────────────
-function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditPoints, onReload }) {
+function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditPoints, onManualVerify, onRevertVerification, onReload }) {
 
   // ✅ FIXED: consistent + safe product
   const getProduct = (f) =>
@@ -545,9 +566,11 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditP
         onReload();
       } else {
         setEditSnack(`Error: ${data.message}`);
+        console.error('Delete failed:', data);
       }
-    } catch {
-      setEditSnack('Failed to delete. Please try again.');
+    } catch (err) {
+      setEditSnack(`Failed to delete: ${err.message}`);
+      console.error('Delete error:', err);
     }
   };
 
@@ -726,13 +749,62 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditP
             </Box>
           </DialogContent>
 
-          <DialogActions sx={{ px: 3, py: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
-            <Button onClick={() => setEditForm(null)} color="inherit">Cancel</Button>
-            <Button variant="contained" onClick={handleSaveEdit} disabled={editSaving}
-              startIcon={editSaving ? <CircularProgress size={14} sx={{ color: 'inherit' }} /> : null}
-              sx={{ bgcolor: BRAND.primary, fontWeight: 700, '&:hover': { bgcolor: '#0f3320' } }}>
-              {editSaving ? 'Saving…' : 'Save Changes'}
-            </Button>
+          <DialogActions sx={{ px: 3, py: 1.5, borderTop: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between' }}>
+            <Box>
+              {(() => {
+                const vKey = getKey(editForm);
+                const vStatus = verifyMap[vKey]?.status || 'Not Found';
+                const isFullyVerified = vStatus === 'Fully Verified';
+                
+                return isFullyVerified ? (
+                  <Button 
+                    variant="outlined" 
+                    size="small"
+                    onClick={() => {
+                      // Revert verification logic - will be passed from parent
+                      if (window.confirm(`Revert verification for ${editForm.customerName}?\n\nThis will change status back to "Not Found".`)) {
+                        // Call revert handler from parent
+                        onRevertVerification(editForm);
+                        setEditForm(null);
+                      }
+                    }}
+                    sx={{ 
+                      color: '#c62828', 
+                      borderColor: '#c62828', 
+                      fontWeight: 700,
+                      '&:hover': { bgcolor: '#fdecea', borderColor: '#c62828' }
+                    }}
+                  >
+                    ↺ Revert Verification
+                  </Button>
+                ) : (
+                  <Button 
+                    variant="outlined" 
+                    size="small"
+                    onClick={() => {
+                      onManualVerify(editForm);
+                      setEditForm(null); // Close edit modal when opening verify modal
+                    }}
+                    sx={{ 
+                      color: '#2e7d32', 
+                      borderColor: '#2e7d32', 
+                      fontWeight: 700,
+                      '&:hover': { bgcolor: '#e6f4ea', borderColor: '#2e7d32' }
+                    }}
+                  >
+                    ✓ Verify Form
+                  </Button>
+                );
+              })()}
+            </Box>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button onClick={() => setEditForm(null)} color="inherit">Cancel</Button>
+              <Button variant="contained" onClick={handleSaveEdit} disabled={editSaving}
+                startIcon={editSaving ? <CircularProgress size={14} sx={{ color: 'inherit' }} /> : null}
+                sx={{ bgcolor: BRAND.primary, fontWeight: 700, '&:hover': { bgcolor: '#0f3320' } }}>
+                {editSaving ? 'Saving…' : 'Save Changes'}
+              </Button>
+            </Box>
           </DialogActions>
         </Dialog>
       )}
@@ -968,6 +1040,15 @@ export default function MerchantForms() {
   const [globalVerifyMap,  setGlobalVerifyMap]  = useState({});
   const [verifyKpiOpen,    setVerifyKpiOpen]    = useState(null); // 'Fully Verified' | 'Partially Done' | 'Not Found'
   const [drillProduct,     setDrillProduct]     = useState(null); // { product, status }
+  
+  // Manual Verification Modal
+  const [manualVerifyOpen, setManualVerifyOpen] = useState(false);
+  const [selectedForm, setSelectedForm] = useState(null);
+  const [verifyReason, setVerifyReason] = useState('');
+  const [verifyingManually, setVerifyingManually] = useState(false);
+  
+  // Employee Form Details Modal (for duplicate comparison)
+  const [employeeFormDetails, setEmployeeFormDetails] = useState(null); // { employeeName, form, duplicate }
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -1089,6 +1170,103 @@ export default function MerchantForms() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Manual Verification Handlers
+  const handleManualVerify = useCallback((form) => {
+    setSelectedForm(form);
+    setVerifyReason('');
+    setManualVerifyOpen(true);
+  }, []);
+
+  const handleRevertVerification = useCallback(async (form) => {
+    const confirmRevert = window.confirm(
+      `Are you sure you want to revert the manual verification for:\n\n` +
+      `Customer: ${form.customerName}\n` +
+      `Phone: ${form.customerNumber}\n` +
+      `Product: ${form.formFillingFor || form.tideProduct || form.brand || '–'}\n\n` +
+      `This will change the status back to "Not Found".`
+    );
+
+    if (!confirmRevert) return;
+
+    try {
+      const product = (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
+      const month = new Date(form.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+
+      const checkRes = await fetch(
+        `${EMP_API}/manual-verification/check?phone=${encodeURIComponent(form.customerNumber)}&product=${encodeURIComponent(product)}&month=${encodeURIComponent(month)}`,
+        { headers: { 'Content-Type': 'application/json' } }
+      );
+
+      if (!checkRes.ok) throw new Error('Failed to check manual verification');
+
+      const checkData = await checkRes.json();
+
+      if (!checkData.exists || !checkData.verification) {
+        alert('❌ No manual verification found for this form');
+        return;
+      }
+
+      const deleteRes = await fetch(`${EMP_API}/manual-verification/${checkData.verification._id}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (!deleteRes.ok) {
+        const err = await deleteRes.json();
+        throw new Error(err.message || 'Failed to delete manual verification');
+      }
+
+      setNotifySnack(`✅ Manual verification reverted successfully!`);
+      load();
+
+    } catch (err) {
+      console.error('Failed to revert manual verification:', err);
+      setNotifySnack(`❌ Failed to revert verification: ${err.message}`);
+    }
+  }, [load]);
+
+  const handleSubmitManualVerification = useCallback(async () => {
+    if (!selectedForm) return;
+
+    setVerifyingManually(true);
+    try {
+      const adminEmail = localStorage.getItem('userEmail') || 'Admin';
+      const product = (selectedForm.formFillingFor || selectedForm.tideProduct || selectedForm.brand || '').toLowerCase().trim();
+      const month = new Date(selectedForm.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+
+      const res = await fetch(`${EMP_API}/manual-verification/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: selectedForm.customerNumber,
+          product: product,
+          month: month,
+          status: 'Fully Verified',
+          verifiedBy: adminEmail,
+          reason: verifyReason || 'Manual verification by admin - No automated rules available',
+          formId: selectedForm._id
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || 'Failed to create manual verification');
+      }
+
+      setNotifySnack(`✅ Form manually verified successfully!`);
+      setManualVerifyOpen(false);
+      setSelectedForm(null);
+      setVerifyReason('');
+      load();
+
+    } catch (err) {
+      console.error('Failed to create manual verification:', err);
+      setNotifySnack(`❌ Failed to verify form: ${err.message}`);
+    } finally {
+      setVerifyingManually(false);
+    }
+  }, [selectedForm, verifyReason, load]);
 
   // Set of phone numbers that are cross-employee duplicates
   const duplicatePhones = useMemo(() => {
@@ -1484,13 +1662,25 @@ export default function MerchantForms() {
                       <TableCell>Location</TableCell>
                       <TableCell>FSE</TableCell>
                       <TableCell>Date</TableCell>
+                      <TableCell>Action</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {drillForms.map((f, i) => (
+                    {drillForms.map((f, i) => {
+                      const isManualVerification = globalVerifyMap[getFormKey(f)]?.manualVerification;
+                      return (
                       <TableRow key={f._id} hover>
                         <TableCell sx={{ color: 'text.secondary', fontSize: 11 }}>{i + 1}</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>{f.customerName}</TableCell>
+                        <TableCell sx={{ fontWeight: 700 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                            {f.customerName}
+                            {isManualVerification && (
+                              <Tooltip title={`Manually verified by ${globalVerifyMap[getFormKey(f)]?.verifiedBy || 'Admin'}`}>
+                                <Box component="span" sx={{ fontSize: 11, color: '#7c3aed', cursor: 'help' }}>👤</Box>
+                              </Tooltip>
+                            )}
+                          </Box>
+                        </TableCell>
                         <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>{f.customerNumber}</TableCell>
                         <TableCell sx={{ color: 'text.secondary', fontSize: 12 }}>{f.location}</TableCell>
                         <TableCell>
@@ -1498,11 +1688,55 @@ export default function MerchantForms() {
                             avatar={<Avatar sx={{ bgcolor: BRAND.primary, fontSize: 10 }}>{initials(f.employeeName)}</Avatar>}
                             sx={{ fontWeight: 600, fontSize: 11 }} />
                         </TableCell>
-                        <TableCell sx={{ color: 'text.secondary', fontSize: 11 }}>
-                          {f.createdAt ? new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '–'}
+                        <TableCell sx={{ fontSize: 11, color: 'text.secondary' }}>
+                          {new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
+                        </TableCell>
+                        <TableCell>
+                          {drillProduct.status === 'Not Found' && !isManualVerification && (
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleManualVerify(f);
+                              }}
+                              sx={{
+                                fontSize: 10,
+                                textTransform: 'none',
+                                borderColor: '#7c3aed',
+                                color: '#7c3aed',
+                                px: 1,
+                                py: 0.3,
+                                minWidth: 'auto',
+                                '&:hover': { bgcolor: '#f3e8ff', borderColor: '#6d28d9' }
+                              }}>
+                              ✓ Verify
+                            </Button>
+                          )}
+                          {isManualVerification && (
+                            <Button
+                              size="small"
+                              variant="outlined"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleRevertVerification(f);
+                              }}
+                              sx={{
+                                fontSize: 10,
+                                textTransform: 'none',
+                                borderColor: '#d32f2f',
+                                color: '#d32f2f',
+                                px: 1,
+                                py: 0.3,
+                                minWidth: 'auto',
+                                '&:hover': { bgcolor: '#ffebee', borderColor: '#c62828' }
+                              }}>
+                              ↺ Revert
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
-                    ))}
+                    )})}
                   </TableBody>
                 </Table>
               )}
@@ -1513,6 +1747,217 @@ export default function MerchantForms() {
           </Dialog>
         );
       })()}
+
+      {/* Manual Verification Modal */}
+      {manualVerifyOpen && selectedForm && (
+        <Dialog open onClose={() => !verifyingManually && setManualVerifyOpen(false)} maxWidth="sm" fullWidth>
+          <DialogTitle sx={{ bgcolor: '#7c3aed', color: '#fff', fontWeight: 700 }}>
+            Manual Verification
+          </DialogTitle>
+          <DialogContent sx={{ mt: 2 }}>
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                You are about to manually verify this form:
+              </Typography>
+              <Box sx={{ mt: 2, p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
+                <Typography variant="body2" sx={{ mb: 0.5 }}>
+                  <strong>Customer:</strong> {selectedForm.customerName}
+                </Typography>
+                <Typography variant="body2" sx={{ mb: 0.5 }}>
+                  <strong>Phone:</strong> {selectedForm.customerNumber}
+                </Typography>
+                <Typography variant="body2" sx={{ mb: 0.5 }}>
+                  <strong>Product:</strong> {selectedForm.formFillingFor || selectedForm.tideProduct || selectedForm.brand || '–'}
+                </Typography>
+                <Typography variant="body2" sx={{ mb: 0.5 }}>
+                  <strong>Location:</strong> {selectedForm.location}
+                </Typography>
+                <Typography variant="body2">
+                  <strong>FSE:</strong> {selectedForm.employeeName}
+                </Typography>
+              </Box>
+            </Box>
+
+            <TextField
+              fullWidth
+              multiline
+              rows={3}
+              label="Reason for Manual Verification (Optional)"
+              placeholder="e.g., No automated rules available for this product, Verified through alternate channel, etc."
+              value={verifyReason}
+              onChange={(e) => setVerifyReason(e.target.value)}
+              disabled={verifyingManually}
+              sx={{ mt: 2 }}
+            />
+
+            <Alert severity="info" sx={{ mt: 2 }}>
+              This form will be marked as <strong>"Fully Verified"</strong> and will be visible across all panels (Admin, TL, Employee).
+            </Alert>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, py: 2, gap: 1 }}>
+            <Button 
+              onClick={() => setManualVerifyOpen(false)} 
+              disabled={verifyingManually}
+              sx={{ fontWeight: 700 }}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSubmitManualVerification}
+              variant="contained"
+              disabled={verifyingManually}
+              sx={{ bgcolor: '#2e7d32', fontWeight: 700, '&:hover': { bgcolor: '#1b5e20' } }}>
+              {verifyingManually ? 'Verifying...' : '✓ Verify Form'}
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
+
+      {/* Employee Form Details Modal (for duplicate comparison) */}
+      {employeeFormDetails && (
+        <Dialog 
+          open 
+          onClose={() => setEmployeeFormDetails(null)} 
+          maxWidth="md" 
+          fullWidth
+          PaperProps={{ sx: { maxHeight: '90vh' } }}>
+          <DialogTitle sx={{ bgcolor: BRAND.primary, color: '#fff', fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Box>
+              <Typography variant="h6" fontWeight={800}>
+                Form Details - {employeeFormDetails.employeeName}
+              </Typography>
+              <Typography variant="caption" sx={{ opacity: 0.9 }}>
+                {employeeFormDetails.duplicate.customerNames[0]} ({employeeFormDetails.duplicate._id.customerNumber})
+              </Typography>
+            </Box>
+            <IconButton onClick={() => setEmployeeFormDetails(null)} size="small" sx={{ color: '#fff' }}>
+              <CloseIcon />
+            </IconButton>
+          </DialogTitle>
+          <DialogContent dividers sx={{ p: 3 }}>
+            <Box sx={{ mb: 3, p: 2, bgcolor: '#f5f5f5', borderRadius: 2 }}>
+              <Typography variant="subtitle2" fontWeight={700} gutterBottom sx={{ color: BRAND.primary }}>
+                Basic Information
+              </Typography>
+              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mt: 1 }}>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Customer Name</Typography>
+                  <Typography variant="body2" fontWeight={600}>{employeeFormDetails.form.customerName}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Customer Phone</Typography>
+                  <Typography variant="body2" fontWeight={600} sx={{ fontFamily: 'monospace' }}>
+                    {employeeFormDetails.form.customerNumber}
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Location</Typography>
+                  <Typography variant="body2" fontWeight={600}>{employeeFormDetails.form.location}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Visit Status</Typography>
+                  <Typography variant="body2" fontWeight={600}>{employeeFormDetails.form.status}</Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Product</Typography>
+                  <Typography variant="body2" fontWeight={600}>
+                    {employeeFormDetails.form.formFillingFor || employeeFormDetails.form.tideProduct || employeeFormDetails.form.brand || '–'}
+                  </Typography>
+                </Box>
+                <Box>
+                  <Typography variant="caption" color="text.secondary">Submitted On</Typography>
+                  <Typography variant="body2" fontWeight={600}>
+                    {new Date(employeeFormDetails.form.createdAt).toLocaleString('en-IN', { 
+                      day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' 
+                    })}
+                  </Typography>
+                </Box>
+              </Box>
+            </Box>
+
+            {/* Product-Specific Fields */}
+            <Box sx={{ mb: 3, p: 2, bgcolor: '#fff8e1', borderRadius: 2 }}>
+              <Typography variant="subtitle2" fontWeight={700} gutterBottom sx={{ color: '#f57f17' }}>
+                Product-Specific Details
+              </Typography>
+              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mt: 1 }}>
+                {/* Tide Fields */}
+                {employeeFormDetails.form.tide_qrPosted && (
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Tide QR Posted</Typography>
+                    <Typography variant="body2" fontWeight={600}>{employeeFormDetails.form.tide_qrPosted}</Typography>
+                  </Box>
+                )}
+                {employeeFormDetails.form.tide_upiTxnDone && (
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Tide UPI Txn Done</Typography>
+                    <Typography variant="body2" fontWeight={600}>{employeeFormDetails.form.tide_upiTxnDone}</Typography>
+                  </Box>
+                )}
+                
+                {/* Insurance Fields */}
+                {employeeFormDetails.form.ins_vehicleNumber && (
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Vehicle Number</Typography>
+                    <Typography variant="body2" fontWeight={600}>{employeeFormDetails.form.ins_vehicleNumber}</Typography>
+                  </Box>
+                )}
+                {employeeFormDetails.form.ins_vehicleType && (
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Vehicle Type</Typography>
+                    <Typography variant="body2" fontWeight={600}>{employeeFormDetails.form.ins_vehicleType}</Typography>
+                  </Box>
+                )}
+                {employeeFormDetails.form.ins_insuranceType && (
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Insurance Type</Typography>
+                    <Typography variant="body2" fontWeight={600}>{employeeFormDetails.form.ins_insuranceType}</Typography>
+                  </Box>
+                )}
+                
+                {/* PineLab Fields */}
+                {employeeFormDetails.form.pine_cardTxn && (
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">PineLab Card Txn</Typography>
+                    <Typography variant="body2" fontWeight={600}>{employeeFormDetails.form.pine_cardTxn}</Typography>
+                  </Box>
+                )}
+                {employeeFormDetails.form.pine_wifiConnected && (
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">PineLab WiFi Connected</Typography>
+                    <Typography variant="body2" fontWeight={600}>{employeeFormDetails.form.pine_wifiConnected}</Typography>
+                  </Box>
+                )}
+                
+                {/* Credit Card Fields */}
+                {employeeFormDetails.form.cc_cardName && (
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Credit Card Name</Typography>
+                    <Typography variant="body2" fontWeight={600}>{employeeFormDetails.form.cc_cardName}</Typography>
+                  </Box>
+                )}
+                
+                {/* Tide Insurance Fields */}
+                {employeeFormDetails.form.tideIns_type && (
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Tide Insurance Type</Typography>
+                    <Typography variant="body2" fontWeight={600}>{employeeFormDetails.form.tideIns_type}</Typography>
+                  </Box>
+                )}
+              </Box>
+            </Box>
+
+            <Alert severity="info" sx={{ mt: 2 }}>
+              <strong>Tip:</strong> Click on another employee's name to open their form details in a new window for side-by-side comparison.
+            </Alert>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, py: 2 }}>
+            <Button onClick={() => setEmployeeFormDetails(null)} sx={{ color: BRAND.primary, fontWeight: 700 }}>
+              Close
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
+
       {/* Date Filter */}
 <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', mb: 2 }}>
   {['all', 'today', 'week', 'month'].map(f => (
@@ -1591,13 +2036,23 @@ export default function MerchantForms() {
             duplicatePhones={duplicatePhones}
             empPointsData={empPointsMap[empName]}
             onEditPoints={handleEditPoints}
+            onManualVerify={handleManualVerify}
+            onRevertVerification={handleRevertVerification}
             onReload={load} />
         ))
       )}
 
-      <DuplicatePanel duplicates={duplicates} open={dupOpen} onClose={() => setDupOpen(false)}
-        onNotify={handleNotify} notifying={notifying}
-        onSettle={handleSettle} settling={settling} />
+      <DuplicatePanel 
+        duplicates={duplicates} 
+        open={dupOpen} 
+        onClose={() => setDupOpen(false)}
+        onNotify={handleNotify} 
+        notifying={notifying}
+        onSettle={handleSettle} 
+        settling={settling}
+        forms={forms}
+        onEmployeeClick={setEmployeeFormDetails}
+      />
       {/* <Button
         variant={todayOnly ? 'contained' : 'outlined'}
         onClick={() => setTodayOnly(prev => !prev)}
