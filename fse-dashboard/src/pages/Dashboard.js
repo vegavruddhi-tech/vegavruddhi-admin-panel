@@ -3,13 +3,13 @@ import {
   Box, Typography, useTheme, Card, CardContent, Button, TextField, MenuItem,
   Dialog, DialogTitle, DialogContent, DialogActions, IconButton,
   Table, TableHead, TableRow, TableCell, TableBody, TableContainer, Paper,
-  Autocomplete, Skeleton
+  Autocomplete, Skeleton, CircularProgress
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import { BRAND } from "../theme";
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
-  ResponsiveContainer, ComposedChart, Line, Cell
+  ResponsiveContainer, ComposedChart, Line, Cell, LabelList
 } from "recharts";
 
 const COLORS = ["#7c3aed","#10b981","#3b82f6","#f59e0b","#14b8a6","#ec4899","#0ea5e9","#ef4444"];
@@ -73,7 +73,8 @@ function OnboardVerifySection({ filteredForms, onboardVerifyMap, onboardVerifyin
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 2, mb: verifyDrillStatus ? 1 : 3 }}>
         {onboardVerifying ? (
           <Card sx={{ gridColumn: '1 / -1', borderRadius: 3, bgcolor: '#f9f9f9', border: '1.5px solid #e0e0e0' }}>
-            <CardContent sx={{ py: 1.5, textAlign: 'center' }}>
+            <CardContent sx={{ py: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1.5 }}>
+              <CircularProgress size={16} thickness={4} sx={{ color: BRAND.primary }} />
               <Typography variant="body2" color="text.secondary">Loading verification data…</Typography>
             </CardContent>
           </Card>
@@ -229,7 +230,7 @@ function OnboardVerifySection({ filteredForms, onboardVerifyMap, onboardVerifyin
   );
 }
 
-function Dashboard() {
+function Dashboard({ onReady }) {
   const [forms,        setForms]        = useState([]);
   const [employees,    setEmployees]    = useState([]);
   const [tls,          setTls]          = useState([]);
@@ -246,8 +247,10 @@ function Dashboard() {
   const [onboardVerifyMap,   setOnboardVerifyMap]   = useState({});
   const [globalVerifyMap,    setGlobalVerifyMap]    = useState({});
   const [chartMetric,        setChartMetric]        = useState('forms');
+  const [chartView,          setChartView]          = useState('fse'); // 'fse' | 'tl'
   const [verifyDrillStatus,  setVerifyDrillStatus]  = useState(null);
   const [kpiDrillOpen,       setKpiDrillOpen]       = useState(null); // 'totalForms'|'totalEmployees'|'activeEmployees'|'totalTLs'
+  const [kpiSearch,          setKpiSearch]          = useState('');
   const [chartDrill,         setChartDrill]         = useState(null); // { type, key, title, rows }
 
   const muiTheme = useTheme();
@@ -324,7 +327,10 @@ useEffect(() => {
     const months   = batch.map(f => encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))).join(',');
     return fetch(`${EMP_API}/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`)
       .then(r => r.ok ? r.json() : {}).catch(() => ({}));
-  })).then(results => setGlobalVerifyMap(Object.assign({}, ...results)));
+  })).then(results => {
+    setGlobalVerifyMap(Object.assign({}, ...results));
+    if (onReady) onReady();
+  });
 }, [filteredForms]); // eslint-disable-line
 const monthOptions = useMemo(() => {
   const seen = new Set();
@@ -412,6 +418,26 @@ const kpiData = useMemo(() => {
 
   return (
     <>
+    {/* YouTube-style top progress bar */}
+    <style>{`
+      @keyframes topProgressBar {
+        0%   { width: 0%;   margin-left: 0%; }
+        50%  { width: 60%;  margin-left: 20%; }
+        100% { width: 0%;   margin-left: 100%; }
+      }
+    `}</style>
+    {loading && (
+      <div style={{
+        position: 'fixed', top: 0, left: 0, width: '100%', height: '3px',
+        zIndex: 9999, overflow: 'hidden', background: 'transparent'
+      }}>
+        <div style={{
+          height: '100%',
+          background: BRAND.primary,
+          animation: 'topProgressBar 1.8s ease-in-out infinite'
+        }} />
+      </div>
+    )}
     <Box sx={{ p: { xs: 2, md: 3 }, bgcolor: 'background.default', minHeight: '100vh' }}>
       <Typography variant="h4" sx={{ mb: 3, fontWeight: 800, color: BRAND.primary }}>FSE Overview</Typography>
       <Box sx={{ display: 'flex', gap: 1, mb: 3, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -587,50 +613,117 @@ const kpiData = useMemo(() => {
     <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 3, mb: 3 }}>
 
       {/* Product Breakdown */}
-      <Card variant="outlined" sx={{ borderRadius: 3 }}>
-        <CardContent>
-          <Typography variant="h6" fontWeight={700} sx={{ mb: 2 }}>Forms by Product</Typography>
-          {loading ? <Skeleton variant="rounded" height={280} /> : (
+      <Card sx={{ borderRadius: 4, boxShadow: '0 2px 16px rgba(0,0,0,0.07)', border: '1px solid #f0f0f0' }}>
+        <CardContent sx={{ p: 3 }}>
+          {/* Header */}
+          <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: 2.5, flexWrap: 'wrap', gap: 1.5 }}>
             <Box>
-              <ResponsiveContainer width="100%" height={280}>
+              <Typography variant="h6" fontWeight={800} sx={{ color: '#1a1a1a', letterSpacing: -0.3 }}>Forms by Product</Typography>
+              <Typography variant="caption" color="text.secondary">Verification breakdown per product · click any segment</Typography>
+            </Box>
+            <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+              {[
+                { label: 'Fully Verified', color: '#16a34a', bg: '#dcfce7' },
+                { label: 'Partially Done', color: '#d97706', bg: '#fef3c7' },
+                { label: 'Not Found',      color: '#9ca3af', bg: '#f3f4f6' },
+              ].map(l => (
+                <Box key={l.label} sx={{ display: 'flex', alignItems: 'center', gap: 0.6, px: 1.2, py: 0.4, borderRadius: 20, bgcolor: l.bg }}>
+                  <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: l.color }} />
+                  <Typography variant="caption" fontWeight={600} sx={{ color: l.color, fontSize: 11 }}>{l.label}</Typography>
+                </Box>
+              ))}
+            </Box>
+          </Box>
+
+          {loading ? <Skeleton variant="rounded" height={300} sx={{ borderRadius: 3 }} /> : (
+            <Box>
+              <ResponsiveContainer width="100%" height={300}>
                 <BarChart
-                  data={Object.entries(kpiData.productMap).sort((a, b) => b[1] - a[1]).map(([name, count]) => ({ name, count }))}
-                  margin={{ top: 8, right: 16, bottom: 60, left: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                  <XAxis dataKey="name" angle={-30} textAnchor="end" tick={{ fontSize: 10 }} height={70} />
-                  <YAxis allowDecimals={false} />
-                  <Tooltip cursor={{ fill: 'rgba(124,58,237,0.08)' }} />
-                  <Bar dataKey="count" radius={[6, 6, 0, 0]} style={{ cursor: 'pointer' }}
+                  data={(() => {
+                    const getKey = (f) => { const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim(); return p ? `${f.customerNumber}__${p}` : f.customerNumber; };
+                    const map = {};
+                    filteredForms.forEach(f => {
+                      const raw = f.formFillingFor || f.tideProduct || f.brand || 'Other';
+                      const product = raw.toLowerCase() === 'msme' ? 'Tide MSME' : raw;
+                      if (!map[product]) map[product] = { name: product, Total: 0, 'Fully Verified': 0, 'Partially Done': 0, 'Not Found': 0 };
+                      map[product].Total++;
+                      const s = globalVerifyMap[getKey(f)]?.status || 'Not Found';
+                      if (s === 'Fully Verified') map[product]['Fully Verified']++;
+                      else if (s === 'Partially Done') map[product]['Partially Done']++;
+                      else map[product]['Not Found']++;
+                    });
+                    return Object.values(map).sort((a, b) => b.Total - a.Total);
+                  })()}
+                  margin={{ top: 24, right: 8, bottom: 60, left: 0 }}
+                  barCategoryGap="38%">
+                  <defs>
+                    <linearGradient id="fvGrad2" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#22c55e" /><stop offset="100%" stopColor="#16a34a" />
+                    </linearGradient>
+                    <linearGradient id="pdGrad2" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#fbbf24" /><stop offset="100%" stopColor="#d97706" />
+                    </linearGradient>
+                    <linearGradient id="nfGrad2" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#e5e7eb" /><stop offset="100%" stopColor="#d1d5db" />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#f3f4f6" />
+                  <XAxis dataKey="name" angle={-30} textAnchor="end" tick={{ fontSize: 10, fill: '#6b7280', fontWeight: 500 }} height={70} axisLine={false} tickLine={false} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: '#9ca3af' }} axisLine={false} tickLine={false} width={28} />
+                  <Tooltip
+                    cursor={{ fill: 'rgba(99,102,241,0.06)', radius: 8 }}
+                    content={({ active, payload, label }) => {
+                      if (!active || !payload?.length) return null;
+                      const colors = { 'Fully Verified': '#16a34a', 'Partially Done': '#d97706', 'Not Found': '#9ca3af' };
+                      return (
+                        <div style={{ background: '#fff', borderRadius: 10, padding: '10px 14px', boxShadow: '0 4px 16px rgba(0,0,0,0.12)', border: '1px solid #f1f5f9', minWidth: 160 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: '#0f172a', marginBottom: 8 }}>{label}</div>
+                          {payload.map(p => (
+                            <div key={p.dataKey} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24, marginBottom: 4 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <div style={{ width: 7, height: 7, borderRadius: '50%', background: colors[p.dataKey] || '#888' }} />
+                                <span style={{ fontSize: 12, color: '#64748b' }}>{p.dataKey}</span>
+                              </div>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: '#0f172a' }}>{p.value}</span>
+                            </div>
+                          ))}
+                          <div style={{ marginTop: 8, paddingTop: 6, borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between' }}>
+                            <span style={{ fontSize: 11, color: '#94a3b8' }}>Total</span>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}>{payload.reduce((s, p) => s + (p.value || 0), 0)}</span>
+                          </div>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Bar dataKey="Fully Verified" stackId="a" fill="url(#fvGrad2)" maxBarSize={52} style={{ cursor: 'pointer' }}
                     onClick={(data) => {
                       if (!data?.name) return;
                       const product = data.name;
-                      const rows = filteredForms
-                        .filter(f => {
-                          const p = f.formFillingFor || f.tideProduct || f.brand || 'Other';
-                          const normalized = p.toLowerCase() === 'msme' ? 'Tide MSME' : p;
-                          return normalized === product;
-                        })
-                        .map(f => {
-                          const emp = employees.find(e => e.newJoinerName === f.employeeName);
-                          return {
-                            merchant: f.customerName || '–',
-                            phone: f.customerNumber || '–',
-                            fse: f.employeeName || '–',
-                            fseEmail: emp?.email || emp?.newJoinerEmailId || '–',
-                            tl: emp?.reportingManager || '–',
-                            status: f.status || '–',
-                            date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
-                          };
-                        });
-                      setChartDrill({ title: `📦 ${product}`, subtitle: `${rows.length} forms`, color: '#7c3aed', cols: ['Merchant', 'Phone', 'FSE', 'FSE Email', 'TL', 'Status', 'Date'], rows });
+                      const getKey = (f) => { const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim(); return p ? `${f.customerNumber}__${p}` : f.customerNumber; };
+                      const rows = filteredForms.filter(f => { const p = f.formFillingFor || f.tideProduct || f.brand || 'Other'; const norm = p.toLowerCase() === 'msme' ? 'Tide MSME' : p; return norm === product && (globalVerifyMap[getKey(f)]?.status || 'Not Found') === 'Fully Verified'; }).map(f => { const emp = employees.find(e => e.newJoinerName === f.employeeName); return { merchant: f.customerName || '–', phone: f.customerNumber || '–', fse: f.employeeName || '–', fseEmail: emp?.email || emp?.newJoinerEmailId || '–', tl: emp?.reportingManager || '–', verification: 'Fully Verified', date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) }; });
+                      setChartDrill({ title: `✓ ${product} — Fully Verified`, subtitle: `${rows.length} forms`, color: '#16a34a', cols: ['Merchant', 'Phone', 'FSE', 'FSE Email', 'TL', 'Verification', 'Date'], rows });
+                    }} />
+                  <Bar dataKey="Partially Done" stackId="a" fill="url(#pdGrad2)" maxBarSize={52} style={{ cursor: 'pointer' }}
+                    onClick={(data) => {
+                      if (!data?.name) return;
+                      const product = data.name;
+                      const getKey = (f) => { const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim(); return p ? `${f.customerNumber}__${p}` : f.customerNumber; };
+                      const rows = filteredForms.filter(f => { const p = f.formFillingFor || f.tideProduct || f.brand || 'Other'; const norm = p.toLowerCase() === 'msme' ? 'Tide MSME' : p; return norm === product && (globalVerifyMap[getKey(f)]?.status || 'Not Found') === 'Partially Done'; }).map(f => { const emp = employees.find(e => e.newJoinerName === f.employeeName); return { merchant: f.customerName || '–', phone: f.customerNumber || '–', fse: f.employeeName || '–', fseEmail: emp?.email || emp?.newJoinerEmailId || '–', tl: emp?.reportingManager || '–', verification: 'Partially Done', date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) }; });
+                      setChartDrill({ title: `◑ ${product} — Partially Done`, subtitle: `${rows.length} forms`, color: '#d97706', cols: ['Merchant', 'Phone', 'FSE', 'FSE Email', 'TL', 'Verification', 'Date'], rows });
+                    }} />
+                  <Bar dataKey="Not Found" stackId="a" fill="url(#nfGrad2)" radius={[8,8,0,0]} maxBarSize={52} style={{ cursor: 'pointer' }}
+                    onClick={(data) => {
+                      if (!data?.name) return;
+                      const product = data.name;
+                      const getKey = (f) => { const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim(); return p ? `${f.customerNumber}__${p}` : f.customerNumber; };
+                      const rows = filteredForms.filter(f => { const p = f.formFillingFor || f.tideProduct || f.brand || 'Other'; const norm = p.toLowerCase() === 'msme' ? 'Tide MSME' : p; return norm === product && (globalVerifyMap[getKey(f)]?.status || 'Not Found') === 'Not Found'; }).map(f => { const emp = employees.find(e => e.newJoinerName === f.employeeName); return { merchant: f.customerName || '–', phone: f.customerNumber || '–', fse: f.employeeName || '–', fseEmail: emp?.email || emp?.newJoinerEmailId || '–', tl: emp?.reportingManager || '–', verification: 'Not Found', date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) }; });
+                      setChartDrill({ title: `– ${product} — Not Found`, subtitle: `${rows.length} forms`, color: '#9ca3af', cols: ['Merchant', 'Phone', 'FSE', 'FSE Email', 'TL', 'Verification', 'Date'], rows });
                     }}>
-                    {Object.keys(kpiData.productMap).map((_, i) => (
-                      <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                    ))}
+                    <LabelList dataKey="Total" position="top" style={{ fontSize: 11, fontWeight: 800, fill: '#374151' }} />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
-              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block', textAlign: 'center' }}>Click any bar to explore</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block', textAlign: 'center', letterSpacing: 0.3 }}>Click any bar segment to explore</Typography>
             </Box>
           )}
         </CardContent>
@@ -683,7 +776,20 @@ const kpiData = useMemo(() => {
     <Card variant="outlined" sx={{ borderRadius: 3 }}>
       <CardContent>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 1 }}>
-          <Typography variant="h6" fontWeight={700}>Top 10 FSEs</Typography>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="h6" fontWeight={700}>{chartView === 'fse' ? 'Top 10 FSEs' : 'Top 10 TLs'}</Typography>
+            <Box sx={{ display: 'flex', border: '1px solid #e0e0e0', borderRadius: 2, overflow: 'hidden' }}>
+              {[{ key: 'fse', label: 'FSEs' }, { key: 'tl', label: 'TLs' }].map(v => (
+                <Box key={v.key} onClick={() => setChartView(v.key)}
+                  sx={{ px: 1.5, py: 0.4, cursor: 'pointer', fontSize: 11, fontWeight: 700,
+                    bgcolor: chartView === v.key ? BRAND.primary : 'transparent',
+                    color: chartView === v.key ? '#fff' : 'text.secondary',
+                    '&:hover': { bgcolor: chartView === v.key ? BRAND.primary : '#f5f5f5' } }}>
+                  {v.label}
+                </Box>
+              ))}
+            </Box>
+          </Box>
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
             {[
               { key: 'forms',      label: 'Form Count',         color: BRAND.primary },
@@ -707,11 +813,40 @@ const kpiData = useMemo(() => {
           <Skeleton variant="rounded" height={280} />
         ) : (
           <Box>
-          <ResponsiveContainer width="100%" height={280}>
+          <ResponsiveContainer width="100%" height={360}>
           <BarChart
             data={(() => {
               const POINTS_MAP = { 'tide': 2, 'tide msme': 0.3, 'tide insurance': 1, 'tide credit card': 1, 'tide bt': 1 };
               const getKey = (f) => { const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim(); return p ? `${f.customerNumber}__${p}` : f.customerNumber; };
+
+              if (chartView === 'tl') {
+                const POINTS_MAP_TL = { 'tide': 2, 'tide msme': 0.3, 'tide insurance': 1, 'tide credit card': 1, 'tide bt': 1 };
+                // Build a normalized TL name map
+                const tlMap = {};
+                tls.forEach(tl => {
+                  const key = tl.name.trim().toLowerCase();
+                  tlMap[key] = { name: tl.name.trim(), forms: 0, onboarding: 0, verified: 0, points: 0 };
+                });
+                filteredForms.forEach(f => {
+                  const emp = employees.find(e => e.newJoinerName === f.employeeName);
+                  const tlName = emp?.reportingManager?.trim().toLowerCase();
+                  if (!tlName || !tlMap[tlName]) return;
+                  tlMap[tlName].forms++;
+                  if (f.status === 'Ready for Onboarding') tlMap[tlName].onboarding++;
+                  if (globalVerifyMap[getKey(f)]?.status === 'Fully Verified') {
+                    tlMap[tlName].verified++;
+                    const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+                    tlMap[tlName].points += POINTS_MAP_TL[p] || 0;
+                  }
+                });
+                return Object.values(tlMap)
+                  .filter(d => d.forms > 0)
+                  .sort((a, b) => b[chartMetric] - a[chartMetric])
+                  .slice(0, 10)
+                  .map(d => ({ name: d.name.split(' ')[0], fullName: d.name, count: Math.round(d[chartMetric] * 10) / 10 }));
+              }
+
+              // FSE view (default)
               const fseMap = {};
               filteredForms.forEach(f => {
                 const name = f.employeeName || 'Unknown';
@@ -727,21 +862,28 @@ const kpiData = useMemo(() => {
               return Object.values(fseMap)
                 .sort((a, b) => b[chartMetric] - a[chartMetric])
                 .slice(0, 10)
-                .map(d => ({ name: d.name, count: Math.round(d[chartMetric] * 10) / 10 }));
+                .map(d => ({ name: d.name.split(' ')[0], fullName: d.name, count: Math.round(d[chartMetric] * 10) / 10 }));
             })()}
-            layout="vertical"
-            margin={{ top: 8, right: 40, bottom: 8, left: 120 }}>
-            <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-            <XAxis type="number" allowDecimals={false} />
-            <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={120} />
+            margin={{ top: 20, right: 16, bottom: 60, left: 0 }}
+            barCategoryGap="20%"
+            barSize={48}>
+            <CartesianGrid strokeDasharray="3 3" vertical={false} />
+            <XAxis dataKey="name" angle={-30} textAnchor="end" tick={{ fontSize: 10 }} height={70} />
+            <YAxis allowDecimals={false} />
             <Tooltip formatter={(v) => [v, { forms: 'Forms', onboarding: 'Onboarding', verified: 'Verified', points: 'Points' }[chartMetric]]} cursor={{ fill: 'rgba(16,185,129,0.08)' }} />
-            <Bar dataKey="count" radius={[0, 6, 6, 0]} style={{ cursor: 'pointer' }}
+            <Bar dataKey="count" radius={[6, 6, 0, 0]} style={{ cursor: 'pointer' }}
               fill={{ forms: BRAND.primary, onboarding: '#2e7d32', verified: '#10b981', points: '#f59e0b' }[chartMetric]}
               onClick={(data) => {
-                if (!data?.name) return;
-                const fseName = data.name;
-                const emp = employees.find(e => e.newJoinerName === fseName);
-                const fseForms = filteredForms.filter(f => f.employeeName === fseName);
+                if (!data?.fullName) return;                const fseName = data.fullName;
+                const emp = employees.find(e => e.newJoinerName === fseName)
+                         || tls.find(t => t.name === fseName);
+                // For TL view: show all FSE forms under this TL
+                const fseForms = chartView === 'tl'
+                  ? filteredForms.filter(f => {
+                      const e = employees.find(emp => emp.newJoinerName === f.employeeName);
+                      return (e?.reportingManager || '').trim().toLowerCase() === fseName.trim().toLowerCase();
+                    })
+                  : filteredForms.filter(f => f.employeeName === fseName);
                 const getKey = (f) => { const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim(); return p ? `${f.customerNumber}__${p}` : f.customerNumber; };
                 const POINTS_MAP_LOCAL = { 'tide': 2, 'tide msme': 0.3, 'tide insurance': 1, 'tide credit card': 1, 'tide bt': 1 };
 
@@ -774,12 +916,13 @@ const kpiData = useMemo(() => {
                 } else if (chartMetric === 'verified') {
                   // Only Fully Verified
                   metricLabel = 'Fully Verified';
-                  cols = ['Merchant', 'Phone', 'Product', 'Status', 'Date'];
+                  cols = ['Merchant', 'Phone', 'Product', 'Verification', 'Date'];
                   rows = fseForms
                     .filter(f => globalVerifyMap[getKey(f)]?.status === 'Fully Verified')
                     .map(f => ({
                       merchant: f.customerName || '–', phone: f.customerNumber || '–',
-                      product: f.formFillingFor || f.brand || '–', status: f.status || '–',
+                      product: f.formFillingFor || f.brand || '–',
+                      verification: 'Fully Verified',
                       date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
                     }));
 
@@ -803,17 +946,24 @@ const kpiData = useMemo(() => {
 
                 subtitle = `${rows.length} ${metricLabel} · TL: ${emp?.reportingManager || '–'} · Email: ${emp?.email || emp?.newJoinerEmailId || '–'}`;
                 setChartDrill({
-                  title: `👤 ${fseName} — ${metricLabel}`,
+                  title: chartView === 'tl' ? `👥 ${fseName} (TL) — ${metricLabel}` : `👤 ${fseName} — ${metricLabel}`,
                   subtitle,
                   color: { forms: BRAND.primary, onboarding: '#2e7d32', verified: '#10b981', points: '#f59e0b' }[chartMetric],
                   cols,
                   rows,
-                  profile: { name: fseName, email: emp?.email || emp?.newJoinerEmailId || '–', phone: emp?.newJoinerPhone || '–', tl: emp?.reportingManager || '–', status: emp?.status || '–' }
+                  profile: {
+                    name: fseName,
+                    email: emp?.email || emp?.newJoinerEmailId || '–',
+                    phone: emp?.newJoinerPhone || emp?.phone || '–',
+                    tl: emp?.reportingManager || '–',
+                    status: emp?.status || '–'
+                  }
                 });
               }}>
               {kpiData.topFSEs.map((_, i) => (
                 <Cell key={i} fill={{ forms: BRAND.primary, onboarding: '#2e7d32', verified: '#10b981', points: '#f59e0b' }[chartMetric]} />
               ))}
+              <LabelList dataKey="count" position="top" style={{ fontSize: 10, fontWeight: 700, fill: '#555' }} />
             </Bar>
           </BarChart>
           </ResponsiveContainer>
@@ -842,11 +992,11 @@ const kpiData = useMemo(() => {
         {chartDrill.profile && (
           <Box sx={{ p: 2, bgcolor: `${chartDrill.color}10`, borderBottom: `1px solid ${chartDrill.color}20`, display: 'flex', gap: 3, flexWrap: 'wrap' }}>
             {[
-              { label: 'Name',   value: chartDrill.profile.name },
-              { label: 'Email',  value: chartDrill.profile.email },
-              { label: 'Phone',  value: chartDrill.profile.phone },
-              { label: 'TL',     value: chartDrill.profile.tl },
-              { label: 'Status', value: chartDrill.profile.status },
+              { label: 'Name',               value: chartDrill.profile.name },
+              { label: 'Email',              value: chartDrill.profile.email },
+              { label: 'Phone',              value: chartDrill.profile.phone },
+              { label: 'Reporting Manager',  value: chartDrill.profile.tl },
+              { label: 'Status',             value: chartDrill.profile.status },
             ].map(item => (
               <Box key={item.label}>
                 <Typography variant="caption" color="text.secondary" fontWeight={700}>{item.label}</Typography>
@@ -905,7 +1055,7 @@ const kpiData = useMemo(() => {
   {kpiDrillOpen && (() => {
     const configs = {
       totalForms:      { title: 'Total Forms',       color: '#7c3aed', rows: filteredForms.map(f => ({ name: f.customerName, phone: f.customerNumber, email: f.customerEmail || '–', employee: f.employeeName, status: f.status, date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) })), cols: ['Customer', 'Phone', 'Employee', 'Status', 'Date'] },
-      totalEmployees:  { title: `Total Employees${filterTL ? ` — ${filterTL}` : ''}`, color: '#3b82f6', rows: (filterTL ? employees.filter(e => (e.reportingManager||'').toLowerCase().trim() === filterTL.toLowerCase().trim()) : filterFSE ? employees.filter(e => e.newJoinerName === filterFSE) : employees).map(e => ({ name: e.newJoinerName, email: e.email || e.newJoinerEmailId || '–', phone: e.newJoinerPhone, tl: e.reportingManager, status: e.status })), cols: ['Name', 'Email', 'Phone', 'TL', 'Status'] },
+      totalEmployees:  { title: `Total Employees${filterTL ? ` — ${filterTL}` : ''}`, color: '#3b82f6', rows: (filterTL ? employees.filter(e => (e.reportingManager||'').toLowerCase().trim() === filterTL.toLowerCase().trim()) : filterFSE ? employees.filter(e => e.newJoinerName === filterFSE) : employees).map(e => ({ name: e.newJoinerName, email: e.email || e.newJoinerEmailId || '–', phone: e.newJoinerPhone, tl: e.reportingManager, status: e.status })).sort((a, b) => (a.name || '').localeCompare(b.name || '')), cols: ['Name', 'Email', 'Phone', 'TL', 'Status'] },
       activeEmployees: { title: 'Active Employees (submitted forms)', color: '#10b981', rows: [...new Set(filteredForms.map(f => f.employeeName).filter(Boolean))].map(name => { const emp = employees.find(e => e.newJoinerName === name); return { name, email: emp?.email || emp?.newJoinerEmailId || '–', phone: emp?.newJoinerPhone || '–', tl: emp?.reportingManager || '–', forms: filteredForms.filter(f => f.employeeName === name).length }; }), cols: ['Name', 'Email', 'Phone', 'TL', 'Forms'] },
       totalTLs:        { title: 'Total TLs',         color: '#f59e0b', rows: tls.map(t => ({ name: t.name, email: t.email, location: t.location, status: t.status })), cols: ['Name', 'Email', 'Location', 'Status'] },
       onboarding:      { title: 'Ready to Onboard',  color: '#14b8a6', rows: filteredForms.filter(f => f.status === 'Ready for Onboarding').map(f => ({ name: f.customerName, phone: f.customerNumber, employee: f.employeeName, product: f.formFillingFor || f.brand || '–', date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) })), cols: ['Customer', 'Phone', 'Employee', 'Product', 'Date'] },
@@ -913,14 +1063,29 @@ const kpiData = useMemo(() => {
     const cfg = configs[kpiDrillOpen];
     if (!cfg) return null;
     const colKeys = { 'Customer': 'name', 'Phone': 'phone', 'Email': 'email', 'Employee': 'employee', 'Status': 'status', 'Date': 'date', 'Name': 'name', 'TL': 'tl', 'Location': 'location', 'Forms': 'forms', 'Product': 'product' };
+
+    const q = kpiSearch.toLowerCase();
+    const visibleRows = q ? cfg.rows.filter(row =>
+      Object.values(row).some(v => String(v || '').toLowerCase().includes(q))
+    ) : cfg.rows;
+
     return (
-      <Dialog open onClose={() => setKpiDrillOpen(null)} maxWidth="md" fullWidth>
+      <Dialog open onClose={() => { setKpiDrillOpen(null); setKpiSearch(''); }} maxWidth="md" fullWidth>
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: cfg.color, fontWeight: 800 }}>
-          {cfg.title} ({cfg.rows.length})
-          <IconButton onClick={() => setKpiDrillOpen(null)} size="small"><CloseIcon /></IconButton>
+          {cfg.title} ({visibleRows.length}{q ? ` of ${cfg.rows.length}` : ''})
+          <IconButton onClick={() => { setKpiDrillOpen(null); setKpiSearch(''); }} size="small"><CloseIcon /></IconButton>
         </DialogTitle>
         <DialogContent dividers sx={{ p: 0 }}>
-          <TableContainer component={Paper} sx={{ maxHeight: 500 }}>
+          <Box sx={{ px: 2, py: 1.5, borderBottom: '1px solid #f0f0f0' }}>
+            <TextField
+              size="small" fullWidth
+              placeholder="Search..."
+              value={kpiSearch}
+              onChange={e => setKpiSearch(e.target.value)}
+              InputProps={{ startAdornment: <Box component="span" sx={{ mr: 1, color: 'text.secondary', fontSize: 16 }}>🔍</Box> }}
+            />
+          </Box>
+          <TableContainer component={Paper} sx={{ maxHeight: 460 }}>
             <Table size="small" stickyHeader>
               <TableHead>
                 <TableRow>
@@ -929,7 +1094,9 @@ const kpiData = useMemo(() => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {cfg.rows.map((row, i) => (
+                {visibleRows.length === 0 ? (
+                  <TableRow><TableCell colSpan={cfg.cols.length + 1} sx={{ textAlign: 'center', py: 3, color: 'text.secondary' }}>No results found</TableCell></TableRow>
+                ) : visibleRows.map((row, i) => (
                   <TableRow key={i} hover>
                     <TableCell>{i + 1}</TableCell>
                     {cfg.cols.map(c => <TableCell key={c}>{row[colKeys[c]] ?? '–'}</TableCell>)}
@@ -940,7 +1107,7 @@ const kpiData = useMemo(() => {
           </TableContainer>
         </DialogContent>
         <DialogActions>
-          <Button onClick={() => setKpiDrillOpen(null)} sx={{ color: cfg.color, fontWeight: 700 }}>Close</Button>
+          <Button onClick={() => { setKpiDrillOpen(null); setKpiSearch(''); }} sx={{ color: cfg.color, fontWeight: 700 }}>Close</Button>
         </DialogActions>
       </Dialog>
     );

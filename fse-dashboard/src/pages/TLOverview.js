@@ -291,6 +291,7 @@ export default function TLOverview() {
   const [chartDrillOpen, setChartDrillOpen] = useState(null); // { tlName, type: 'active'|'inactive', fses, forms }
   const [chartFilter, setChartFilter] = useState('both'); // 'both' | 'active' | 'inactive'
   const [fseForms, setFseForms] = useState(null); // { fseName, forms }
+  const [drillSearch, setDrillSearch] = useState('');
   const [fromDate,   setFromDate]   = useState('');
   const [toDate,     setToDate]     = useState('');
   const [dateFilter, setDateFilter] = useState('all');
@@ -1016,88 +1017,94 @@ export default function TLOverview() {
           if (!active || !payload?.length) return null;
           const total = (payload[0]?.value || 0) + (payload[1]?.value || 0);
           return (
-            <Box sx={{ bgcolor: '#fff', border: '1px solid #e8e8e8', borderRadius: 2, px: 2, py: 1.5,
-              boxShadow: '0 8px 24px rgba(0,0,0,0.12)', minWidth: 160 }}>
-              <Typography variant="body2" fontWeight={800} sx={{ mb: 1, color: '#1a1a1a' }}>{label}</Typography>
+            <Box sx={{
+              bgcolor: '#fff', borderRadius: '10px', px: 2, py: 1.5,
+              boxShadow: '0 4px 16px rgba(0,0,0,0.12)', minWidth: 140,
+              border: '1px solid #f1f5f9'
+            }}>
+              <Typography sx={{ fontSize: 13, fontWeight: 600, color: '#0f172a', mb: 1 }}>{label}</Typography>
               {payload.map(p => (
-                <Box key={p.dataKey} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 0.3 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.7 }}>
-                    <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: p.fill }} />
-                    <Typography variant="caption" sx={{ color: '#555' }}>{p.dataKey}</Typography>
+                <Box key={p.dataKey} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 3, mb: 0.5 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+                    <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: p.dataKey === 'Active' ? '#22c55e' : '#ef4444' }} />
+                    <Typography sx={{ fontSize: 12, color: '#64748b' }}>{p.dataKey}</Typography>
                   </Box>
-                  <Typography variant="caption" fontWeight={800} sx={{ color: p.fill }}>{p.value}</Typography>
+                  <Typography sx={{ fontSize: 12, fontWeight: 600, color: '#0f172a' }}>{p.value}</Typography>
                 </Box>
               ))}
-              <Box sx={{ mt: 1, pt: 0.8, borderTop: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between' }}>
-                <Typography variant="caption" color="text.secondary">Total</Typography>
-                <Typography variant="caption" fontWeight={800}>{total}</Typography>
+              <Box sx={{ mt: 1, pt: 0.8, borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between' }}>
+                <Typography sx={{ fontSize: 11, color: '#94a3b8' }}>Total</Typography>
+                <Typography sx={{ fontSize: 12, fontWeight: 700, color: '#0f172a' }}>{total}</Typography>
               </Box>
             </Box>
           );
         };
 
         return (
-          <Card sx={{ borderRadius: 3, mb: 3, overflow: 'hidden',
-            border: '1.5px solid #e8f5e9',
-            background: 'linear-gradient(135deg, #fafffe 0%, #f0faf4 100%)',
-            boxShadow: '0 2px 12px rgba(46,125,50,0.07)' }}>
-            <Box sx={{ px: 3, pt: 2.5, pb: 2, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1.5 }}>
+          <Card sx={{
+            borderRadius: '16px', mb: 3, overflow: 'hidden',
+            background: '#fff',
+            boxShadow: '0 2px 8px rgba(0,0,0,0.08), 0 0 0 1px rgba(0,0,0,0.04)',
+            border: 'none',
+          }}>
+            <Box sx={{ px: 3, pt: 3, pb: 2, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1.5 }}>
               <Box>
-                <Typography variant="h6" fontWeight={800} sx={{ color: '#1a1a1a', letterSpacing: -0.3 }}>FSE Activity Overview</Typography>
-                <Typography variant="caption" color="text.secondary">Active vs Inactive FSEs per Team Leader · click any bar to explore</Typography>
+                <Typography fontWeight={700} sx={{ fontSize: 17, color: '#0f172a', letterSpacing: -0.4 }}>FSE Activity Overview</Typography>
+                <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: 12 }}>Active vs Inactive FSEs per Team Leader · click any bar to explore</Typography>
               </Box>
-              <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }}>
                 {[
-                  { label: 'Active', value: totalActive, color: '#2e7d32', bg: '#e6f4ea', type: 'active' },
-                  { label: 'Inactive', value: totalInactive, color: '#c62828', bg: '#fdecea', type: 'inactive' },
+                  { label: 'Active', value: totalActive, color: '#16a34a', bg: '#f0fdf4', border: '#bbf7d0', type: 'active' },
+                  { label: 'Inactive', value: totalInactive, color: '#dc2626', bg: '#fef2f2', border: '#fecaca', type: 'inactive' },
                 ].map(s => {
                   const isOn = chartFilter === 'both' || chartFilter === s.type;
                   return (
                     <Box key={s.label} onClick={() => setChartFilter(prev => prev === s.type ? 'both' : s.type)}
-                      sx={{ display: 'flex', alignItems: 'center', gap: 1, px: 1.5, py: 0.6, borderRadius: 20,
-                        bgcolor: isOn ? s.color : '#f0f0f0', border: `1px solid ${isOn ? s.color : '#ccc'}`,
-                        cursor: 'pointer', transition: 'all 0.2s', opacity: isOn ? 1 : 0.5, '&:hover': { opacity: 1 } }}>
-                      <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: isOn ? '#fff' : s.color }} />
-                      <Typography variant="caption" fontWeight={700} sx={{ color: isOn ? '#fff' : '#888' }}>{s.label}</Typography>
-                      <Typography variant="caption" fontWeight={900} sx={{ color: isOn ? '#fff' : '#888' }}>{s.value}</Typography>
+                      sx={{ display: 'flex', alignItems: 'center', gap: 0.8, px: 1.5, py: 0.7, borderRadius: 20,
+                        bgcolor: isOn ? s.color : s.bg,
+                        border: `1.5px solid ${isOn ? s.color : s.border}`,
+                        cursor: 'pointer', transition: 'all 0.18s',
+                        opacity: isOn ? 1 : 0.6,
+                        '&:hover': { opacity: 1, transform: 'translateY(-1px)' } }}>
+                      <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: isOn ? '#fff' : s.color }} />
+                      <Typography sx={{ fontSize: 12, fontWeight: 600, color: isOn ? '#fff' : s.color }}>{s.label}</Typography>
+                      <Typography sx={{ fontSize: 12, fontWeight: 800, color: isOn ? '#fff' : s.color }}>{s.value}</Typography>
                     </Box>
                   );
                 })}
                 {chartFilter !== 'both' && (
                   <Box onClick={() => setChartFilter('both')}
-                    sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1.2, py: 0.6, borderRadius: 20,
-                      bgcolor: '#f5f5f5', border: '1px solid #ddd', cursor: 'pointer', '&:hover': { bgcolor: '#e0e0e0' } }}>
-                    <Typography variant="caption" fontWeight={700} sx={{ color: '#666' }}>↺ Reset</Typography>
+                    sx={{ display: 'flex', alignItems: 'center', gap: 0.5, px: 1.2, py: 0.7, borderRadius: 20,
+                      bgcolor: '#f8fafc', border: '1.5px solid #e2e8f0', cursor: 'pointer',
+                      '&:hover': { bgcolor: '#f1f5f9' } }}>
+                    <Typography sx={{ fontSize: 12, fontWeight: 600, color: '#64748b' }}>↺ Reset</Typography>
                   </Box>
                 )}
               </Box>
             </Box>
-            <CardContent sx={{ pt: 0, pb: '16px !important' }}>
-              <ResponsiveContainer width="100%" height={360}>
-                <BarChart data={chartData} margin={{ top: 28, right: 24, bottom: 65, left: 0 }} barCategoryGap="35%" barGap={3}>
+            <CardContent sx={{ pt: 0, pb: '12px !important', px: '20px' }}>
+              <ResponsiveContainer width="100%" height={340}>
+                <BarChart data={chartData} margin={{ top: 12, right: 16, bottom: 8, left: 0 }} barCategoryGap="20%" barGap={4} barSize={32}>
                   <defs>
-                    <linearGradient id="activeGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#43a047" /><stop offset="100%" stopColor="#2e7d32" />
+                    <linearGradient id="tlActiveGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#4ade80" /><stop offset="100%" stopColor="#22c55e" />
                     </linearGradient>
-                    <linearGradient id="inactiveGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#ef5350" /><stop offset="100%" stopColor="#c62828" />
+                    <linearGradient id="tlInactiveGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#f87171" /><stop offset="100%" stopColor="#ef4444" />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="4 4" vertical={false} stroke="#e8f5e9" />
-                  <XAxis dataKey="name" angle={-35} textAnchor="end"
-                    tick={{ fontSize: 11, fill: '#444', fontWeight: 600 }} height={68}
-                    axisLine={{ stroke: '#e0e0e0' }} tickLine={false} />
-                  <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#aaa' }}
-                    axisLine={false} tickLine={false} width={30} />
-                  <RechartsTooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(46,125,50,0.05)', radius: 4 }} />
-                  <Bar dataKey="Active" fill="url(#activeGrad)" radius={[8,8,2,2]} maxBarSize={32} cursor="pointer"
-                    hide={chartFilter === 'inactive'} onClick={(barData) => handleBarClick(barData, 'active')}>
-                    <LabelList dataKey="Active" position="top" style={{ fontSize: 13, fontWeight: 800, fill: '#2e7d32' }} />
-                  </Bar>
-                  <Bar dataKey="Inactive" fill="url(#inactiveGrad)" radius={[8,8,2,2]} maxBarSize={32} cursor="pointer"
-                    hide={chartFilter === 'active'} onClick={(barData) => handleBarClick(barData, 'inactive')}>
-                    <LabelList dataKey="Inactive" position="top" style={{ fontSize: 13, fontWeight: 800, fill: '#c62828' }} />
-                  </Bar>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                  <XAxis dataKey="name"
+                    tick={{ fontSize: 12, fill: '#64748b', fontWeight: 500 }} height={44}
+                    axisLine={false} tickLine={false} interval={0} />
+                  <YAxis allowDecimals={false} tick={{ fontSize: 11, fill: '#94a3b8' }}
+                    axisLine={false} tickLine={false} width={24} />
+                  <RechartsTooltip content={<CustomTooltip />}
+                    cursor={{ fill: 'rgba(148,163,184,0.08)', radius: 6 }} />
+                  <Bar dataKey="Active" fill="url(#tlActiveGrad)" radius={[6,6,0,0]} cursor="pointer"
+                    hide={chartFilter === 'inactive'} onClick={(barData) => handleBarClick(barData, 'active')} />
+                  <Bar dataKey="Inactive" fill="url(#tlInactiveGrad)" radius={[6,6,0,0]} cursor="pointer"
+                    hide={chartFilter === 'active'} onClick={(barData) => handleBarClick(barData, 'inactive')} />
                 </BarChart>
               </ResponsiveContainer>
             </CardContent>
@@ -1110,16 +1117,15 @@ export default function TLOverview() {
         const isActive = chartDrillOpen.type === 'active';
         const color    = isActive ? '#2e7d32' : '#c62828';
         const bg       = isActive ? '#e6f4ea' : '#fdecea';
-        const { fses, forms, tlName } = chartDrillOpen;
+        const { fses, forms, tlName, label } = chartDrillOpen;
         return (
           <>
           <Dialog open onClose={() => setChartDrillOpen(null)} maxWidth="md" fullWidth>
             <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <Box>
-                <Typography variant="h6" fontWeight={800} sx={{ color }}>{isActive ? '✓ Active' : '✗ Inactive'} FSEs — {tlName}</Typography>
+                <Typography variant="h6" fontWeight={800} sx={{ color }}>{label || (isActive ? '✓ Active' : '✗ Inactive')} FSEs — {tlName}</Typography>
                 <Typography variant="body2" color="text.secondary">
-                  {fses.length} {chartDrillOpen.type} FSE{fses.length !== 1 ? 's' : ''}
-                  {isActive ? ' · submitted at least one form' : ' · no forms submitted'}
+                  {fses.length} FSE{fses.length !== 1 ? 's' : ''} · {forms.length} form{forms.length !== 1 ? 's' : ''}
                 </Typography>
               </Box>
               <IconButton onClick={() => setChartDrillOpen(null)} size="small"><CloseIcon /></IconButton>
@@ -1702,16 +1708,23 @@ export default function TLOverview() {
 
       {/* Drill-down Modal */}
       {drillOpen && (
-        <Dialog open onClose={() => setDrillOpen(null)} maxWidth="lg" fullWidth>
+        <Dialog open onClose={() => { setDrillOpen(null); setDrillSearch(''); }} maxWidth="lg" fullWidth>
           <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <Box>
               <Typography variant="h6" component="span" fontWeight={800} sx={{ color: drillOpen.color }}>{drillOpen.title}</Typography>
-              <Typography variant="body2" color="text.secondary">{drillOpen.rows.length} records</Typography>
+              <Typography variant="body2" color="text.secondary">
+                {drillSearch ? `${drillOpen.rows.filter(row => Object.values(row).some(v => String(v||'').toLowerCase().includes(drillSearch.toLowerCase()))).length} of ` : ''}{drillOpen.rows.length} records
+              </Typography>
             </Box>
-            <IconButton onClick={() => setDrillOpen(null)} size="small"><CloseIcon /></IconButton>
+            <IconButton onClick={() => { setDrillOpen(null); setDrillSearch(''); }} size="small"><CloseIcon /></IconButton>
           </DialogTitle>
           <DialogContent dividers sx={{ p: 0 }}>
-            <TableContainer sx={{ maxHeight: 500 }}>
+            <Box sx={{ px: 2, py: 1.5, borderBottom: '1px solid #f0f0f0' }}>
+              <TextField size="small" fullWidth placeholder="Search..."
+                value={drillSearch} onChange={e => setDrillSearch(e.target.value)}
+                InputProps={{ startAdornment: <Box component="span" sx={{ mr: 1, color: 'text.secondary' }}>🔍</Box> }} />
+            </Box>
+            <TableContainer sx={{ maxHeight: 460 }}>
               <Table size="small" stickyHeader>
                 <TableHead>
                   <TableRow>
@@ -1720,7 +1733,9 @@ export default function TLOverview() {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {drillOpen.rows.map((row, i) => {
+                  {drillOpen.rows
+                    .filter(row => !drillSearch || Object.values(row).some(v => String(v||'').toLowerCase().includes(drillSearch.toLowerCase())))
+                    .map((row, i) => {
                     const colKeyMap = { 'Name': 'name', 'Email': 'email', 'Phone': 'phone', 'TL': 'tl', 'Status': 'status', 'Location': 'location', 'Manager': 'manager', 'Customer': 'customer', 'FSE': 'fse', 'Product': 'product', 'Date': 'date' };
                     return (
                       <TableRow key={i} hover sx={{ '&:nth-of-type(even)': { bgcolor: `${drillOpen.color}05` } }}>
@@ -1743,7 +1758,7 @@ export default function TLOverview() {
             </TableContainer>
           </DialogContent>
           <DialogActions sx={{ px: 3, py: 1.5 }}>
-            <Button onClick={() => setDrillOpen(null)} variant="contained" sx={{ bgcolor: drillOpen.color, fontWeight: 700 }}>Close</Button>
+            <Button onClick={() => { setDrillOpen(null); setDrillSearch(''); }} variant="contained" sx={{ bgcolor: drillOpen.color, fontWeight: 700 }}>Close</Button>
           </DialogActions>
         </Dialog>
       )}

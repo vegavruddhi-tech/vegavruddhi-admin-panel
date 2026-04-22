@@ -99,7 +99,8 @@ function OnboardVerifySection({ filteredForms, onboardVerifyMap, onboardVerifyin
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 2, mb: verifyDrillStatus ? 1 : 3 }}>
         {onboardVerifying ? (
           <Card sx={{ gridColumn: '1 / -1', borderRadius: 3, bgcolor: '#f9f9f9', border: '1.5px solid #e0e0e0' }}>
-            <CardContent sx={{ py: 1.5, textAlign: 'center' }}>
+            <CardContent sx={{ py: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1.5 }}>
+              <CircularProgress size={16} thickness={4} sx={{ color: '#1a472a' }} />
               <Typography variant="body2" color="text.secondary">Loading verification data…</Typography>
             </CardContent>
           </Card>
@@ -653,6 +654,8 @@ export default function ProductDashboard() {
   const muiTheme = useTheme();
   const ct = useMemo(() => toChartTheme(muiTheme), [muiTheme]);
 
+  const [pageLoading, setPageLoading] = useState(true);
+
   // ── Google Sheets data (for charts below) ──────────────────────────────
   const [raw, setRaw] = useState([]);
   const [selectedMonth, setSelectedMonth] = useState("");
@@ -691,6 +694,9 @@ export default function ProductDashboard() {
   const [mongoDrill, setMongoDrill] = useState(null); // { title, data: [{name, tl, ...products}], cols }
   const openMongoDrill = (title, data, cols) => setMongoDrill({ title, data, cols });
   const closeMongoDrill = () => setMongoDrill(null);
+
+  // Product KPI drill-down
+  const [productKpiDrill, setProductKpiDrill] = useState(null); // { product, rows }
 
   // employee profile popup state (custom chart bar click)
   const [empProfile, setEmpProfile] = useState(null); // { name, email, tl, status, employment, kpis: [{label, value, color}] }
@@ -765,8 +771,7 @@ export default function ProductDashboard() {
       setMongoTls(data.tls || []);
 
       // ── Auto-fetch verification for all forms in background ──────────
-      if (forms.length > 0) {
-        const getP = (f) => (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+      if (forms.length > 0) {        const getP = (f) => (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
         const BATCH = 50;
         const batches = [];
         for (let i = 0; i < forms.length; i += BATCH) batches.push(forms.slice(i, i + BATCH));
@@ -783,10 +788,12 @@ export default function ProductDashboard() {
             ).then(r => r.ok ? r.json() : {}).catch(() => ({}));
           }));
           setGlobalVerifyMap(Object.assign({}, ...results));
-        } catch { /* ignore verify errors */ }
+          setPageLoading(false);
+        } catch { /* ignore verify errors */ setPageLoading(false); }
       }
     } catch (err) {
       console.error('Product page MongoDB load error:', err);
+      setPageLoading(false);
     }
   };
 
@@ -1422,6 +1429,44 @@ export default function ProductDashboard() {
 
   return (
     <Box sx={{ p: { xs: 2, md: 3 }, bgcolor: "background.default", minHeight: "100vh" }}>
+
+      {/* Product Page Loader */}
+      {pageLoading && (
+        <>
+          <style>{`
+            @keyframes productPageBar {
+              0%   { width: 0%; margin-left: 0%; }
+              50%  { width: 60%; margin-left: 20%; }
+              100% { width: 0%; margin-left: 100%; }
+            }
+            @keyframes productLogoIn {
+              0%   { opacity: 0; transform: scale(0.75); }
+              60%  { opacity: 1; transform: scale(1.05); }
+              100% { opacity: 1; transform: scale(1); }
+            }
+          `}</style>
+          <Box sx={{
+            position: 'fixed', inset: 0, zIndex: 99999,
+            bgcolor: '#071a0f',
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', gap: 2.5,
+          }}>
+            <Box sx={{ animation: 'productLogoIn 0.8s ease forwards', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5 }}>
+              <Box component="img" src="/logo-full.png" alt="Vegavruddhi"
+                sx={{ width: 72, height: 72, objectFit: 'contain', filter: 'brightness(0) invert(1)' }} />
+              <Typography sx={{ color: '#fff', fontFamily: "'Georgia', serif", fontWeight: 700, fontSize: '1.3rem', letterSpacing: 3, textTransform: 'uppercase' }}>
+                Vegavruddhi
+              </Typography>
+              <Typography sx={{ color: '#c8a84b', fontSize: '0.6rem', letterSpacing: 4, textTransform: 'uppercase', fontWeight: 600 }}>
+                Product Page Loading
+              </Typography>
+            </Box>
+            <Box sx={{ width: 180, height: 3, bgcolor: 'rgba(255,255,255,0.1)', borderRadius: 10, overflow: 'hidden', mt: 1 }}>
+              <Box sx={{ height: '100%', bgcolor: '#c8a84b', borderRadius: 10, animation: 'productPageBar 1.4s ease-in-out infinite' }} />
+            </Box>
+          </Box>
+        </>
+      )}
       <Typography variant="h4" sx={{ mb: 1 }}>Tide Product Analytics</Typography>
       {/* <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
         Click any bar or slice to see the employee drill-down table. Click a number in the table to edit and sync to Google Sheet.
@@ -1494,8 +1539,24 @@ export default function ProductDashboard() {
           <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: 2, mb: 1 }}>
             {productKpis.map(k => (
               <Card key={k.product} variant="outlined"
+                onClick={() => {
+                  const rows = topFilteredForms
+                    .filter(f => {
+                      const raw = f.formFillingFor || f.tideProduct || f.brand || 'Other';
+                      const product = raw.toLowerCase() === 'msme' ? 'Tide MSME' : raw;
+                      return product === k.product;
+                    })
+                    .map(f => ({
+                      merchant: f.customerName || '–',
+                      phone: f.customerNumber || '–',
+                      fse: f.employeeName || '–',
+                      status: f.status || '–',
+                      date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+                    }));
+                  setProductKpiDrill({ product: k.product, color: k.color, rows });
+                }}
                 sx={{
-                  transition: 'all 0.2s', cursor: 'default',
+                  transition: 'all 0.2s', cursor: 'pointer',
                   '&:hover': { borderColor: k.color, transform: 'translateY(-2px)', boxShadow: `0 4px 20px ${k.color}33` },
                 }}>
                 <Box sx={{ height: 4, bgcolor: k.color, borderRadius: '3px 3px 0 0' }} />
@@ -1979,6 +2040,55 @@ export default function ProductDashboard() {
           </ResponsiveContainer>
         </DialogContent>
       </Dialog>
+
+      {/* Product KPI Drill-down */}
+      {productKpiDrill && (
+        <Dialog open onClose={() => setProductKpiDrill(null)} maxWidth="md" fullWidth
+          PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}>
+          <Box sx={{ background: `linear-gradient(135deg, ${productKpiDrill.color}cc, ${productKpiDrill.color}66)`, px: 3, py: 2.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Box>
+              <Typography variant="h6" sx={{ color: '#fff', fontWeight: 800 }}>📦 {productKpiDrill.product}</Typography>
+              <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.8)' }}>{productKpiDrill.rows.length} forms submitted</Typography>
+            </Box>
+            <IconButton onClick={() => setProductKpiDrill(null)} sx={{ color: '#fff' }}><CloseIcon /></IconButton>
+          </Box>
+          <DialogContent sx={{ p: 0 }}>
+            <TableContainer sx={{ maxHeight: 500 }}>
+              <Table size="small" stickyHeader>
+                <TableHead>
+                  <TableRow>
+                    {['#', 'Merchant', 'Phone', 'FSE', 'Status', 'Date'].map(h => (
+                      <TableCell key={h} sx={{ fontWeight: 700, bgcolor: productKpiDrill.color, color: '#fff', fontSize: 11, textTransform: 'uppercase' }}>{h}</TableCell>
+                    ))}
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {productKpiDrill.rows.map((row, i) => (
+                    <TableRow key={i} hover sx={{ '&:nth-of-type(even)': { bgcolor: `${productKpiDrill.color}08` } }}>
+                      <TableCell sx={{ color: 'text.secondary', fontWeight: 600 }}>{i + 1}</TableCell>
+                      <TableCell sx={{ fontWeight: 600 }}>{row.merchant}</TableCell>
+                      <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>{row.phone}</TableCell>
+                      <TableCell sx={{ fontSize: 12 }}>{row.fse}</TableCell>
+                      <TableCell>
+                        <Box component="span" sx={{ px: 1, py: 0.3, borderRadius: 10, fontSize: 11, fontWeight: 700,
+                          bgcolor: row.status === 'Ready for Onboarding' ? '#e6f4ea' : row.status === 'Not Interested' ? '#fdecea' : row.status === 'Try but not done due to error' ? '#fff3e0' : '#e3f2fd',
+                          color:   row.status === 'Ready for Onboarding' ? '#2e7d32' : row.status === 'Not Interested' ? '#c62828' : row.status === 'Try but not done due to error' ? '#e65100' : '#1565c0' }}>
+                          {row.status === 'Ready for Onboarding' ? 'Ready for Onboarding' : row.status === 'Not Interested' ? 'Not Interested' : row.status === 'Try but not done due to error' ? 'Try/Err' : row.status === 'Need to visit again' ? 'Need to Revisit' : row.status || '–'}
+                        </Box>
+                      </TableCell>
+                      <TableCell sx={{ color: 'text.secondary', fontSize: 11 }}>{row.date}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          </DialogContent>
+          <DialogActions sx={{ px: 3, py: 1.5 }}>
+            <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>{productKpiDrill.rows.length} records</Typography>
+            <Button onClick={() => setProductKpiDrill(null)} variant="contained" sx={{ bgcolor: productKpiDrill.color, fontWeight: 700 }}>Close</Button>
+          </DialogActions>
+        </Dialog>
+      )}
 
       {/* ── Per-Product Daily Trend Charts ─────────────────────────────── */}
       {Object.keys(productDailyData).length > 0 && (

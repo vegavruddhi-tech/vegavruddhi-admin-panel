@@ -445,31 +445,34 @@ function VerifyChip({ status, onClick }) {
 }
 
 // ── Employee Group Row ────────────────────────────────────────
-function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditPoints, onManualVerify, onRevertVerification, onReload }) {
+function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditPoints, onManualVerify, onRevertVerification, onReload, globalVerifyMap: parentVerifyMap }) {
 
-  // ✅ FIXED: consistent + safe product
   const getProduct = (f) =>
     (f?.tideProduct || f?.formFillingFor || f?.brand || '').toLowerCase().trim();
 
-  // ✅ FIXED: unique key
   const getKey = (f) => {
     const p = getProduct(f);
     return p ? `${f.customerNumber}__${p}` : f.customerNumber;
   };
 
   const [expanded, setExpanded] = useState(false);
-  const [verifyMap, setVerifyMap] = useState({});
+  const [localVerifyMap, setLocalVerifyMap] = useState({});
   const [verifying, setVerifying] = useState(false);
   const [verifyDetail, setVerifyDetail] = useState(null);
   const [verifyDetailLoading, setVerifyDetailLoading] = useState(false);
-  const [editForm, setEditForm]   = useState(null);   // form being edited
+  const [editForm, setEditForm]   = useState(null);
   const [editSaving, setEditSaving] = useState(false);
   const [editSnack, setEditSnack]   = useState('');
+
+  // Use parent globalVerifyMap if available, otherwise fall back to local fetch
+  const verifyMap = Object.keys(parentVerifyMap || {}).length > 0 ? (parentVerifyMap || {}) : localVerifyMap;
 
   const dupCount = forms.filter(f => duplicatePhones.has(f.customerNumber)).length;
 
   const fetchVerification = useCallback(async () => {
-    if (verifying || Object.keys(verifyMap).length > 0) return;
+    // Skip if parent already has data
+    if (Object.keys(parentVerifyMap || {}).length > 0) return;
+    if (verifying || Object.keys(localVerifyMap).length > 0) return;
     setVerifying(true);
     try {
       const phones   = forms.map(f => f.customerNumber).join(',');
@@ -481,21 +484,17 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditP
       const res = await fetch(
         `${EMP_API}/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`
       );
-      if (res.ok) {
-        const data = await res.json();
-        setVerifyMap(data);
-      }
+      if (res.ok) setLocalVerifyMap(await res.json());
     } catch (err) {
       console.error("Verification error:", err);
     } finally {
       setVerifying(false);
     }
-  }, [forms, verifyMap, verifying]);
+  }, [forms, localVerifyMap, verifying, parentVerifyMap]);
 
-  // Auto-fetch verification on mount so points show without needing to expand
-  // Use forms.length as dependency so it runs once forms are loaded
+  // Only auto-fetch if parent doesn't have data
   useEffect(() => {
-    if (forms.length > 0) fetchVerification();
+    if (forms.length > 0 && Object.keys(parentVerifyMap || {}).length === 0) fetchVerification();
   }, [forms.length]); // eslint-disable-line
 
   // ✅ FIXED: safe points calculation — deduplicate by customerNumber+product
@@ -542,8 +541,8 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditP
       if (res.ok) {
         setEditSnack('✓ Form updated successfully');
         setEditForm(null);
-        // Reset verifyMap so verification re-runs with new data
-        setVerifyMap({});
+        // Reset local verifyMap so verification re-runs with new data
+        setLocalVerifyMap({});
         onReload();
       } else {
         setEditSnack(`Error: ${data.message}`);
@@ -562,7 +561,7 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditP
       const data = await res.json();
       if (res.ok) {
         setEditSnack('✓ Form deleted successfully');
-        setVerifyMap({});
+        setLocalVerifyMap({});
         onReload();
       } else {
         setEditSnack(`Error: ${data.message}`);
@@ -629,7 +628,22 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditP
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
           <Chip
             label={`⭐ ${totalPoints}`}
-            onClick={e => { e.stopPropagation(); onEditPoints(empName, empPointsData, autoPoints); }}
+            onClick={e => {
+              e.stopPropagation();
+              // Build per-product verified breakdown
+              const productBreakdown = {};
+              Object.keys(verifyMap).forEach(key => {
+                if (verifyMap[key]?.status === 'Fully Verified') {
+                  const form = forms.find(f => getKey(f) === key);
+                  if (!form) return;
+                  const rawProduct = form.tideProduct || form.formFillingFor || form.brand || 'Other';
+                  const product = rawProduct.toLowerCase() === 'msme' ? 'Tide MSME' : rawProduct;
+                  if (!productBreakdown[product]) productBreakdown[product] = 0;
+                  productBreakdown[product]++;
+                }
+              });
+              onEditPoints(empName, empPointsData, autoPoints, productBreakdown);
+            }}
             sx={{ cursor: 'pointer', fontWeight: 700 }}
           />
 
@@ -1029,9 +1043,11 @@ export default function MerchantForms() {
   const [settling,   setSettling]   = useState(null); // index of dup being settled
   const [empPoints,  setEmpPoints]  = useState([]);   // [{_id, newJoinerName, pointsAdjustment}]
   const [editPtsOpen,  setEditPtsOpen]  = useState(false);
-  const [editPtsEmp,   setEditPtsEmp]   = useState(null); // {empName, empData, autoPoints}
+  const [editPtsEmp,   setEditPtsEmp]   = useState(null);
   const [editPtsValue, setEditPtsValue] = useState('');
+  const [editPtsReason, setEditPtsReason] = useState('');
   const [editPtsSaving,setEditPtsSaving]= useState(false);
+  const [productAdjustments, setProductAdjustments] = useState({}); // { [product]: { value, reason } }
   // const [todayOnly, setTodayOnly] = useState(false);
   const [dateFilter, setDateFilter] = useState('all');
   const [toDate, setToDate]         = useState('');
@@ -1096,8 +1112,7 @@ export default function MerchantForms() {
     }
   }, []);
 
-  const handleEditPoints = useCallback(async (empName, empData, autoPoints) => {
-    // If no points record exists yet, create one first
+  const handleEditPoints = useCallback(async (empName, empData, autoPoints, productBreakdown = {}) => {
     let data = empData;
     if (!data?._id) {
       try {
@@ -1108,14 +1123,18 @@ export default function MerchantForms() {
         });
         if (res.ok) {
           data = await res.json();
-          // Refresh empPoints list
           const ptsRes = await fetch(`${EMP_API}/forms/admin/employee-points`);
           if (ptsRes.ok) setEmpPoints(await ptsRes.json());
         }
       } catch {}
     }
-    setEditPtsEmp({ empName, empData: data, autoPoints });
+    setEditPtsEmp({ empName, empData: data, autoPoints, productBreakdown });
     setEditPtsValue(data?.pointsAdjustment !== undefined ? String(data.pointsAdjustment) : '0');
+    setEditPtsReason('');
+    // Init per-product adjustments
+    const initAdj = {};
+    Object.keys(productBreakdown || {}).forEach(p => { initAdj[p] = { value: '0', reason: '' }; });
+    setProductAdjustments(initAdj);
     setEditPtsOpen(true);
   }, []);
 
@@ -1123,18 +1142,38 @@ export default function MerchantForms() {
     if (!editPtsEmp?.empData?._id) return;
     setEditPtsSaving(true);
     try {
-      // Calculate the delta: newAdjustment - currentAdjustment
       const newAdj     = parseFloat(editPtsValue) || 0;
       const currentAdj = editPtsEmp.empData.pointsAdjustment || 0;
       const delta      = newAdj - currentAdj;
       const res = await fetch(`${EMP_API}/forms/admin/adjust-points/${editPtsEmp.empData._id}`, {
         method:  'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ adjustment: delta }),
+        body:    JSON.stringify({ adjustment: delta, reason: editPtsReason }),
       });
       if (res.ok) {
+        // Send notification to FSE with per-product reasons
+        const allReasons = [
+          ...(editPtsReason ? [`Overall: ${editPtsReason}`] : []),
+          ...Object.entries(productAdjustments)
+            .filter(([, v]) => v.reason && parseFloat(v.value) !== 0)
+            .map(([p, v]) => `${p} (${parseFloat(v.value) >= 0 ? '+' : ''}${v.value}): ${v.reason}`)
+        ].join(' | ');
+        if (allReasons) {
+          await fetch(`${EMP_API}/requests/notify-points`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              employeeName: editPtsEmp.empName,
+              adjustment: delta,
+              newTotal: Math.round(((editPtsEmp.autoPoints || 0) + newAdj) * 10) / 10,
+              reason: allReasons,
+            }),
+          }).catch(() => {});
+        }
         setNotifySnack(`✓ Points updated for ${editPtsEmp.empName}`);
         setEditPtsOpen(false);
+        setEditPtsReason('');
+        setProductAdjustments({});
         load();
       } else {
         const d = await res.json();
@@ -1145,7 +1184,7 @@ export default function MerchantForms() {
     } finally {
       setEditPtsSaving(false);
     }
-  }, [editPtsEmp, editPtsValue, load]);
+  }, [editPtsEmp, editPtsValue, editPtsReason, load]);
 
   const handleNotify = useCallback(async (dup, idx) => {
     setNotifying(idx);
@@ -2035,6 +2074,7 @@ export default function MerchantForms() {
           <EmployeeGroup key={empName} empName={empName} forms={empForms}
             duplicatePhones={duplicatePhones}
             empPointsData={empPointsMap[empName]}
+            globalVerifyMap={globalVerifyMap}
             onEditPoints={handleEditPoints}
             onManualVerify={handleManualVerify}
             onRevertVerification={handleRevertVerification}
@@ -2068,14 +2108,17 @@ export default function MerchantForms() {
 
 
       {/* Edit Points Dialog */}
-      <Dialog open={editPtsOpen} onClose={() => setEditPtsOpen(false)} maxWidth="xs" fullWidth>
+      <Dialog open={editPtsOpen} onClose={() => { setEditPtsOpen(false); setEditPtsReason(''); setProductAdjustments({}); }} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ fontWeight: 800, color: BRAND.primary, pb: 1 }}>
           ⭐ Edit Points — {editPtsEmp?.empName}
         </DialogTitle>
         <DialogContent>
           <Box sx={{ mb: 2, p: 1.5, bgcolor: '#fff8e1', borderRadius: 2, border: '1px solid #f4a261' }}>
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>Points criteria (Fully Verified only):</Typography>
-            {Object.entries(POINTS_MAP).map(([k, v]) => (
+            {[
+              ['Tide', 2], ['Tide MSME', 0.3], ['MSME', 0.3],
+              ['Tide Insurance', 1], ['Tide Credit Card', 1],
+            ].map(([k, v]) => (
               <Typography key={k} variant="caption" sx={{ display: 'block', color: '#e76f51', fontWeight: 600 }}>
                 {k}: {v} pts
               </Typography>
@@ -2084,11 +2127,51 @@ export default function MerchantForms() {
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
             Verified points (from employee dashboard, Fully Verified only): <strong style={{ color: '#e76f51' }}>{editPtsEmp?.autoPoints || 0}</strong>
           </Typography>
+          {/* Per-product verified breakdown with individual adjustment + reason */}
+          {editPtsEmp?.productBreakdown && Object.keys(editPtsEmp.productBreakdown).length > 0 && (
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, fontWeight: 600 }}>
+                Fully Verified by Product — adjust individually:
+              </Typography>
+              {Object.entries(editPtsEmp.productBreakdown).sort((a, b) => b[1] - a[1]).map(([product, count]) => {
+                const pts = POINTS_MAP[product] || 0;
+                const adj = productAdjustments[product] || { value: '0', reason: '' };
+                return (
+                  <Box key={product} sx={{ mb: 1.5, p: 1.5, bgcolor: '#f0fdf4', borderRadius: 2, border: '1px solid #bbf7d0' }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
+                      <Typography variant="body2" fontWeight={700} sx={{ color: '#065f46' }}>{product}</Typography>
+                      <Typography variant="caption" sx={{ color: '#059669', fontWeight: 700 }}>
+                        {count} × {pts} = {Math.round(count * pts * 10) / 10} pts
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 1, mb: 0.8 }}>
+                      <TextField size="small" type="number" label="Adjust (+ or -)"
+                        value={adj.value}
+                        onChange={e => setProductAdjustments(prev => ({ ...prev, [product]: { ...prev[product], value: e.target.value } }))}
+                        inputProps={{ step: 0.1 }}
+                        sx={{ width: 120 }} />
+                      <TextField size="small" label="Reason" fullWidth
+                        value={adj.reason}
+                        onChange={e => setProductAdjustments(prev => ({ ...prev, [product]: { ...prev[product], reason: e.target.value } }))}
+                        placeholder="Why adjusting?" />
+                    </Box>
+                  </Box>
+                );
+              })}
+            </Box>
+          )}
           <TextField fullWidth size="small" type="number" label="Manual Adjustment (+ or -)"
             value={editPtsValue}
             onChange={e => setEditPtsValue(e.target.value)}
             helperText="Added on top of verified points. Use negative to subtract."
-            inputProps={{ step: 0.1 }} />
+            inputProps={{ step: 0.1 }}
+            sx={{ mb: 2 }} />
+          <TextField fullWidth size="small" multiline rows={2}
+            label="Reason for adjustment (required for notification)"
+            value={editPtsReason}
+            onChange={e => setEditPtsReason(e.target.value)}
+            placeholder="e.g. Bonus for extra effort in April"
+            helperText="FSE will receive a notification with this reason." />
           <Box sx={{ mt: 1.5, p: 1.5, bgcolor: '#e6f4ea', borderRadius: 2 }}>
             <Typography variant="body2" fontWeight={700} sx={{ color: BRAND.primary }}>
               Total: {editPtsEmp?.autoPoints || 0} + ({parseFloat(editPtsValue) >= 0 ? '+' : ''}{parseFloat(editPtsValue) || 0}) = {Math.round(((editPtsEmp?.autoPoints || 0) + (parseFloat(editPtsValue) || 0)) * 10) / 10} pts
@@ -2096,7 +2179,7 @@ export default function MerchantForms() {
           </Box>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setEditPtsOpen(false)} color="inherit">Cancel</Button>
+          <Button onClick={() => { setEditPtsOpen(false); setEditPtsReason(''); setProductAdjustments({}); }} color="inherit">Cancel</Button>
           <Button variant="contained" onClick={handleSavePoints} disabled={editPtsSaving}
             sx={{ bgcolor: BRAND.primary, fontWeight: 700 }}>
             {editPtsSaving ? 'Saving…' : 'Save Points'}
