@@ -2158,11 +2158,7 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
       {/* Verification KPI Breakdown Dialog */}
       <Dialog open={!!verifyKpiOpen} onClose={() => setVerifyKpiOpen(null)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-<<<<<<< Updated upstream
-          <Typography variant="h6" component="span" fontWeight={800}>
-=======
           <Typography variant="h6" fontWeight={800} component="span">
->>>>>>> Stashed changes
             {verifyKpiOpen} — Product Breakdown
           </Typography>
           <IconButton onClick={() => setVerifyKpiOpen(null)} size="small"><CloseIcon /></IconButton>
