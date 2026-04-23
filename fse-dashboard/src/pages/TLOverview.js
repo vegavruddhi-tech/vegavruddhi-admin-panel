@@ -221,7 +221,7 @@ function TLCard({ tlData, search, verifyMap, onAssignTask }) {
           <Button
             size="small"
             variant="contained"
-            onClick={(e) => { e.stopPropagation(); onAssignTask(tl); }}
+            onClick={(e) => { e.stopPropagation(); onAssignTask(tlData); }}
             sx={{
               bgcolor: '#7c3aed',
               color: '#fff',
@@ -474,9 +474,42 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
     }
   };
 
-  const handleAssignTask = (tl) => {
-    setSelectedTL(tl);
-    setTaskForm({ title: '', instructions: '', priority: 'normal', deadline: '' });
+  const handleAssignTask = (tlDataObj) => {
+    // Calculate verification stats for this TL
+    const tlForms = tlDataObj.forms || [];
+    const stats = {
+      fullyVerified: 0,
+      partiallyDone: 0,
+      notFound: 0,
+      total: tlForms.length
+    };
+    
+    tlForms.forEach(f => {
+      const key = getFormKey(f);
+      const status = globalVerifyMap[key]?.status || 'Not Found';
+      if (status === 'Fully Verified') stats.fullyVerified++;
+      else if (status === 'Partially Done') stats.partiallyDone++;
+      else stats.notFound++;
+    });
+    
+    // Pre-fill instructions with verification gap info
+    const gapCount = stats.partiallyDone + stats.notFound;
+    const prefilledInstructions = gapCount > 0
+      ? `Please review and complete verification for your team's forms:\n\n` +
+        `✅ Fully Verified: ${stats.fullyVerified}\n` +
+        `⚠️ Partially Done: ${stats.partiallyDone}\n` +
+        `❌ Not Found: ${stats.notFound}\n\n` +
+        `Gap to close: ${gapCount} forms need attention.\n\n` +
+        `Please work with your FSEs to complete the pending verifications.`
+      : `All forms are verified! Great job managing your team.`;
+    
+    setSelectedTL({ ...tlDataObj.tl, stats, tlData: tlDataObj });
+    setTaskForm({ 
+      title: gapCount > 0 ? 'Complete Pending Verifications' : 'Team Performance Review',
+      instructions: prefilledInstructions,
+      priority: gapCount > 10 ? 'urgent' : 'normal',
+      deadline: ''
+    });
     setAssignTaskOpen(true);
   };
 
@@ -1149,7 +1182,7 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
           <Dialog open onClose={() => setChartDrillOpen(null)} maxWidth="md" fullWidth>
             <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <Box>
-                <Typography variant="h6" fontWeight={800} sx={{ color }}>{label || (isActive ? '✓ Active' : '✗ Inactive')} FSEs — {tlName}</Typography>
+                <Typography variant="h6" component="span" fontWeight={800} sx={{ color }}>{label || (isActive ? '✅ Active' : '❌ Inactive')} FSEs — {tlName}</Typography>
                 <Typography variant="body2" color="text.secondary">
                   {fses.length} FSE{fses.length !== 1 ? 's' : ''} · {forms.length} form{forms.length !== 1 ? 's' : ''}
                 </Typography>
@@ -1203,7 +1236,7 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
             <Dialog open onClose={() => setFseForms(null)} maxWidth="md" fullWidth>
               <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <Box>
-                  <Typography variant="h6" fontWeight={800} sx={{ color: '#2e7d32' }}>📋 {fseForms.fseName}</Typography>
+                  <Typography variant="h6" component="span" fontWeight={800} sx={{ color: '#2e7d32' }}>📋 {fseForms.fseName}</Typography>
                   <Typography variant="body2" color="text.secondary">{fseForms.forms.length} form{fseForms.forms.length !== 1 ? 's' : ''} submitted</Typography>
                 </Box>
                 <IconButton onClick={() => setFseForms(null)} size="small"><CloseIcon /></IconButton>
@@ -1592,70 +1625,190 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
 
       {/* Assign Task Modal */}
       {assignTaskOpen && selectedTL && (
-        <Dialog open onClose={() => !submitting && setAssignTaskOpen(false)} maxWidth="sm" fullWidth>
-          <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 1 }}>
+        <Dialog open onClose={() => !submitting && setAssignTaskOpen(false)} maxWidth="md" fullWidth>
+          <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 1, borderBottom: '2px solid #f0f0f0' }}>
             <Box>
-              <Typography variant="h6" fontWeight={800} sx={{ color: '#7c3aed' }}>📋 Assign Task to TL</Typography>
+              <Typography variant="h6" fontWeight={800} sx={{ color: '#7c3aed' }}>📋 Assign Alert to TL</Typography>
               <Typography variant="body2" color="text.secondary">
-                Assigning to: {selectedTL.name || selectedTL.email}
+                {selectedTL.name || selectedTL.email}
               </Typography>
             </Box>
             <IconButton onClick={() => !submitting && setAssignTaskOpen(false)} size="small" disabled={submitting}>
               <CloseIcon />
             </IconButton>
           </DialogTitle>
-          <DialogContent dividers sx={{ py: 3 }}>
+          
+          {/* Verification Stats Section - Separate from form */}
+          {selectedTL.stats && (
+            <Box sx={{ px: 3, py: 3, bgcolor: '#fafafa', borderBottom: '1px solid #e0e0e0' }}>
+              <Typography variant="subtitle1" fontWeight={800} sx={{ mb: 2, color: '#333' }}>
+                📊 Team Verification Status
+              </Typography>
+              
+              <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 2, mb: 2 }}>
+                {/* Total Forms */}
+                <Box sx={{ 
+                  p: 2, 
+                  borderRadius: 2, 
+                  bgcolor: '#fff', 
+                  border: '2px solid #e0e0e0',
+                  textAlign: 'center'
+                }}>
+                  <Typography variant="h4" fontWeight={800} sx={{ color: '#333' }}>
+                    {selectedTL.stats.total}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#666', fontWeight: 600, display: 'block', mt: 0.5 }}>
+                    Total Forms
+                  </Typography>
+                </Box>
+                
+                {/* Fully Verified */}
+                <Box sx={{ 
+                  p: 2, 
+                  borderRadius: 2, 
+                  bgcolor: '#e6f4ea', 
+                  border: '2px solid #2e7d32',
+                  textAlign: 'center'
+                }}>
+                  <Typography variant="h4" fontWeight={800} sx={{ color: '#2e7d32' }}>
+                    {selectedTL.stats.fullyVerified}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#2e7d32', fontWeight: 600, display: 'block', mt: 0.5 }}>
+                    ✓ Fully Verified
+                  </Typography>
+                </Box>
+                
+                {/* Partially Done */}
+                <Box sx={{ 
+                  p: 2, 
+                  borderRadius: 2, 
+                  bgcolor: '#fff8e1', 
+                  border: '2px solid #f57f17',
+                  textAlign: 'center'
+                }}>
+                  <Typography variant="h4" fontWeight={800} sx={{ color: '#f57f17' }}>
+                    {selectedTL.stats.partiallyDone}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#f57f17', fontWeight: 600, display: 'block', mt: 0.5 }}>
+                    ◑ Partially Done
+                  </Typography>
+                </Box>
+                
+                {/* Not Found */}
+                <Box sx={{ 
+                  p: 2, 
+                  borderRadius: 2, 
+                  bgcolor: '#fdecea', 
+                  border: '2px solid #c62828',
+                  textAlign: 'center'
+                }}>
+                  <Typography variant="h4" fontWeight={800} sx={{ color: '#c62828' }}>
+                    {selectedTL.stats.notFound}
+                  </Typography>
+                  <Typography variant="caption" sx={{ color: '#c62828', fontWeight: 600, display: 'block', mt: 0.5 }}>
+                    ✗ Not Found
+                  </Typography>
+                </Box>
+              </Box>
+              
+              {/* Gap Alert */}
+              {(selectedTL.stats.partiallyDone + selectedTL.stats.notFound) > 0 && (
+                <Alert severity="error" sx={{ fontSize: 13, fontWeight: 600 }}>
+                  ⚠️ <strong>Verification Gap: {selectedTL.stats.partiallyDone + selectedTL.stats.notFound} forms</strong> need immediate attention
+                </Alert>
+              )}
+            </Box>
+          )}
+          
+          {/* Task Assignment Form */}
+          <DialogContent sx={{ py: 3 }}>
             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2.5 }}>
-              <TextField
-                label="Task Title"
-                placeholder="e.g., Review pending verifications"
-                value={taskForm.title}
-                onChange={(e) => setTaskForm(prev => ({ ...prev, title: e.target.value }))}
-                fullWidth
-                required
-                disabled={submitting}
-                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-              />
-              <TextField
-                label="Instructions"
-                placeholder="Detailed instructions for the TL..."
-                value={taskForm.instructions}
-                onChange={(e) => setTaskForm(prev => ({ ...prev, instructions: e.target.value }))}
-                fullWidth
-                required
-                multiline
-                rows={4}
-                disabled={submitting}
-                sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
-              />
-              <Box sx={{ display: 'flex', gap: 2 }}>
+              {/* Title with Urgent Badge */}
+              <Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                  <Typography variant="subtitle2" fontWeight={700} sx={{ color: '#555' }}>
+                    Alert Title
+                  </Typography>
+                  {taskForm.priority === 'urgent' && (
+                    <Chip 
+                      label="URGENT" 
+                      size="small" 
+                      sx={{ 
+                        bgcolor: '#c62828', 
+                        color: '#fff', 
+                        fontWeight: 800, 
+                        fontSize: 10,
+                        height: 20
+                      }} 
+                    />
+                  )}
+                </Box>
                 <TextField
-                  select
-                  label="Priority"
-                  value={taskForm.priority}
-                  onChange={(e) => setTaskForm(prev => ({ ...prev, priority: e.target.value }))}
+                  placeholder="e.g., Complete Pending Verifications"
+                  value={taskForm.title}
+                  onChange={(e) => setTaskForm(prev => ({ ...prev, title: e.target.value }))}
                   fullWidth
+                  required
                   disabled={submitting}
-                  SelectProps={{ native: true }}
-                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}>
-                  <option value="normal">Normal</option>
-                  <option value="urgent">Urgent</option>
-                </TextField>
-                <TextField
-                  type="date"
-                  label="Deadline"
-                  value={taskForm.deadline}
-                  onChange={(e) => setTaskForm(prev => ({ ...prev, deadline: e.target.value }))}
-                  fullWidth
-                  disabled={submitting}
-                  InputLabelProps={{ shrink: true }}
-                  helperText={taskForm.priority === 'urgent' ? 'Required for urgent tasks' : 'Optional'}
                   sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
                 />
               </Box>
+              
+              {/* Instructions */}
+              <Box>
+                <Typography variant="subtitle2" fontWeight={700} sx={{ color: '#555', mb: 1 }}>
+                  Instructions
+                </Typography>
+                <TextField
+                  placeholder="Detailed instructions for the TL..."
+                  value={taskForm.instructions}
+                  onChange={(e) => setTaskForm(prev => ({ ...prev, instructions: e.target.value }))}
+                  fullWidth
+                  required
+                  multiline
+                  rows={6}
+                  disabled={submitting}
+                  sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                />
+              </Box>
+              
+              {/* Priority and Deadline */}
+              <Box sx={{ display: 'flex', gap: 2 }}>
+                <Box sx={{ flex: 1 }}>
+                  <Typography variant="subtitle2" fontWeight={700} sx={{ color: '#555', mb: 1 }}>
+                    Priority
+                  </Typography>
+                  <TextField
+                    select
+                    value={taskForm.priority}
+                    onChange={(e) => setTaskForm(prev => ({ ...prev, priority: e.target.value }))}
+                    fullWidth
+                    disabled={submitting}
+                    SelectProps={{ native: true }}
+                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}>
+                    <option value="normal">Normal</option>
+                    <option value="urgent">🔴 Urgent</option>
+                  </TextField>
+                </Box>
+                <Box sx={{ flex: 1 }}>
+                  <Typography variant="subtitle2" fontWeight={700} sx={{ color: '#555', mb: 1 }}>
+                    Deadline {taskForm.priority === 'urgent' && <span style={{ color: '#c62828' }}>*</span>}
+                  </Typography>
+                  <TextField
+                    type="date"
+                    value={taskForm.deadline}
+                    onChange={(e) => setTaskForm(prev => ({ ...prev, deadline: e.target.value }))}
+                    fullWidth
+                    disabled={submitting}
+                    InputLabelProps={{ shrink: true }}
+                    sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
+                  />
+                </Box>
+              </Box>
             </Box>
           </DialogContent>
-          <DialogActions sx={{ px: 3, py: 2, gap: 1 }}>
+          
+          <DialogActions sx={{ px: 3, py: 2, gap: 1, borderTop: '2px solid #f0f0f0' }}>
             <Button onClick={() => setAssignTaskOpen(false)} disabled={submitting} sx={{ fontWeight: 700 }}>
               Cancel
             </Button>
@@ -1664,7 +1817,7 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
               variant="contained"
               disabled={submitting}
               sx={{ bgcolor: '#7c3aed', fontWeight: 700, '&:hover': { bgcolor: '#6d28d9' } }}>
-              {submitting ? 'Assigning...' : 'Assign Task'}
+              {submitting ? 'Sending...' : '📤 Send Alert'}
             </Button>
           </DialogActions>
         </Dialog>

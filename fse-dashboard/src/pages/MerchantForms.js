@@ -1666,7 +1666,7 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
       {/* Verification KPI Breakdown Dialog */}
       <Dialog open={!!verifyKpiOpen} onClose={() => setVerifyKpiOpen(null)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h6" fontWeight={800}>
+          <Typography variant="h6" component="span" fontWeight={800}>
             {verifyKpiOpen} — Product Breakdown
           </Typography>
           <IconButton onClick={() => setVerifyKpiOpen(null)} size="small"><CloseIcon /></IconButton>
@@ -1723,7 +1723,7 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
           <Dialog open={!!drillProduct} onClose={() => setDrillProduct(null)} maxWidth="md" fullWidth>
             <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Box>
-                <Typography variant="h6" fontWeight={800}>
+                <Typography variant="h6" component="span" fontWeight={800}>
                   <ProductChip product={drillProduct.product} /> &nbsp; {drillProduct.status}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">{drillForms.length} merchant{drillForms.length !== 1 ? 's' : ''}</Typography>
@@ -1903,7 +1903,7 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
           PaperProps={{ sx: { maxHeight: '90vh' } }}>
           <DialogTitle sx={{ bgcolor: BRAND.primary, color: '#fff', fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <Box>
-              <Typography variant="h6" fontWeight={800}>
+              <Typography variant="h6" component="span" fontWeight={800}>
                 Form Details - {employeeFormDetails.employeeName}
               </Typography>
               <Typography variant="caption" sx={{ opacity: 0.9 }}>
