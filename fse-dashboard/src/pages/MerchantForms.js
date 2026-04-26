@@ -305,7 +305,13 @@ function DuplicatePanel({ duplicates, open, onClose, onNotify, notifying, onSett
                         {dup.customerNames[0] || dup._id.customerNumber}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">({dup._id.customerNumber})</Typography>
-                      <ProductChip product={dup._id.formFillingFor} />
+                      <ProductChip product={
+                        dup._id.formFillingFor || 
+                        dup._id.tideProduct || 
+                        dup._id.brand || 
+                        'Unknown'
+                      } />
+
                       <Chip label={`${dup.count} submissions`} size="small" sx={{ bgcolor: '#fdecea', color: '#c62828', fontWeight: 700 }} />
                     </Box>
                     {/* Action buttons — hide if already settled */}
@@ -1405,6 +1411,30 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
   // Employee Form Details Modal (for duplicate comparison)
   const [employeeFormDetails, setEmployeeFormDetails] = useState(null); // { employeeName, form, duplicate }
 
+  // Syncing indicator state
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  // Check if current time is during sync window (11:30-11:35 AM)
+  useEffect(() => {
+    const checkSyncTime = () => {
+      const now = new Date();
+      const hour = now.getHours();
+      const minute = now.getMinutes();
+      
+      // Sync window: 11:30 AM - 11:35 AM
+      if (hour === 11 && minute >= 30 && minute <= 35) {
+        setIsSyncing(true);
+      } else {
+        setIsSyncing(false);
+      }
+    };
+
+    checkSyncTime();
+    const interval = setInterval(checkSyncTime, 60000); // Check every minute
+
+    return () => clearInterval(interval);
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
@@ -1852,6 +1882,14 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
 
   return (
     <Box sx={{ maxWidth: 1100, mx: 'auto', px: { xs: 2, md: 4 }, py: 4 }}>
+
+      {/* Syncing Indicator Banner */}
+      {isSyncing && (
+        <Alert severity="info" sx={{ mb: 2 }}>
+          ⏳ Daily sync in progress (11:30-11:35 AM). Verification status is updating. 
+          Please refresh after 11:35 AM for latest data.
+        </Alert>
+      )}
 
       {/* Page Loader */}
       {pageLoading && ReactDOM.createPortal(

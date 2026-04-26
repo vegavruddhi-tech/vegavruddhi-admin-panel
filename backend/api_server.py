@@ -251,15 +251,65 @@ def home():
 
 @app.get("/cron/sync-sheets")
 def cron_sync():
+    import requests
+    import time
+    from datetime import datetime
+    
     try:
+        print("===== CRON TRIGGERED =====")
+        print(f"Timestamp: {datetime.now().isoformat()}")
+        
+        # Step 1: Sync Google Sheet → MongoDB
         from sync_sheet import process_sheet
         sheet_id = os.environ.get("GOOGLE_SHEET_ID", "")
         if not sheet_id:
             return {"status": "Error", "error": "GOOGLE_SHEET_ID not set"}
+        
+        print(f"Step 1: Syncing sheet {sheet_id}")
         process_sheet(sheet_id, "Tide Onboarding")
-        return {"status": "Sync completed successfully"}
+        print("✅ SYNC SUCCESS")
+        
+        # Step 2: Pre-compute verification cache
+        # Use localhost since .env is not loading properly
+        api_url = 'http://localhost:4000'
+        precompute_url = f'{api_url}/api/verify/precompute-all'
+        
+        print(f"\nStep 2: Pre-computing verification cache")
+        print(f"Calling: {precompute_url}")
+        
+        try:
+            start_time = time.time()
+            response = requests.post(
+                precompute_url,
+                timeout=600  # 10 minutes timeout
+            )
+            elapsed = time.time() - start_time
+            
+            if response.status_code == 200:
+                data = response.json()
+                print(f"✅ CACHE PRE-COMPUTE SUCCESS in {elapsed:.1f}s")
+                print(f"   Total forms: {data.get('total', 0)}")
+                print(f"   Verified: {data.get('cached', 0)}")
+                print(f"   Skipped (unchanged): {data.get('skipped', 0)}")
+            else:
+                print(f"⚠️ CACHE PRE-COMPUTE FAILED: HTTP {response.status_code}")
+                print(f"   Response: {response.text[:200]}")
+                
+        except requests.Timeout:
+            print("⚠️ CACHE PRE-COMPUTE TIMEOUT (took > 10 minutes)")
+            print("   Sync completed but cache not pre-populated")
+        except Exception as cache_error:
+            print(f"⚠️ CACHE PRE-COMPUTE ERROR: {cache_error}")
+            print("   Sync completed but cache not pre-populated")
+        
+        return {"status": "Sync and cache pre-computation completed"}
+        
     except Exception as e:
+        print(f"❌ SYNC ERROR: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return {"status": "Error", "error": str(e)}
+
 
 
 # -----------------------------

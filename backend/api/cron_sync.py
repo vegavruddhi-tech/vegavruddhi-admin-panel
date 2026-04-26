@@ -1,6 +1,8 @@
 import subprocess
 import os
 import sys
+import requests
+import time
 from datetime import datetime
 
 def handler(request):
@@ -8,13 +10,59 @@ def handler(request):
     import os
 
     print("===== CRON TRIGGERED =====")
+    print(f"Timestamp: {datetime.now().isoformat()}")
 
-    sheet_id = os.environ.get("1XD1x9VeyGbGnCKw2w8pAlsf6zoxs59OSKxpRDcgmZ6U")
+    sheet_id = os.environ.get("GOOGLE_SHEET_ID")
+    
+    if not sheet_id:
+        print("ERROR: GOOGLE_SHEET_ID not found in environment variables")
+        return {"statusCode": 500, "body": "GOOGLE_SHEET_ID not configured"}
 
     try:
+        # Step 1: Sync Google Sheet → MongoDB
+        print(f"Step 1: Syncing sheet {sheet_id}")
         process_sheet(sheet_id, "Tide Onboarding")
-        print("SYNC SUCCESS")
-        return {"statusCode": 200, "body": "Sync successful"}
+        print("✅ SYNC SUCCESS")
+        
+        # Step 2: Pre-compute verification cache
+        api_url = os.environ.get('API_URL', 'https://vegavruddhi-employee-panel.vercel.app')
+        precompute_url = f'{api_url}/api/verify/precompute-all'
+        
+        print(f"\nStep 2: Pre-computing verification cache")
+        print(f"Calling: {precompute_url}")
+        
+        try:
+            start_time = time.time()
+            response = requests.post(
+                precompute_url,
+                timeout=600  # 10 minutes timeout
+            )
+            elapsed = time.time() - start_time
+            
+            if response.status_code == 200:
+                data = response.json()
+                print(f"✅ CACHE PRE-COMPUTE SUCCESS in {elapsed:.1f}s")
+                print(f"   Total forms: {data.get('total', 0)}")
+                print(f"   Verified: {data.get('cached', 0)}")
+                print(f"   Skipped (unchanged): {data.get('skipped', 0)}")
+            else:
+                print(f"⚠️ CACHE PRE-COMPUTE FAILED: HTTP {response.status_code}")
+                print(f"   Response: {response.text[:200]}")
+                
+        except requests.Timeout:
+            print("⚠️ CACHE PRE-COMPUTE TIMEOUT (took > 10 minutes)")
+            print("   Sync completed but cache not pre-populated")
+        except Exception as cache_error:
+            print(f"⚠️ CACHE PRE-COMPUTE ERROR: {cache_error}")
+            print("   Sync completed but cache not pre-populated")
+        
+        return {
+            "statusCode": 200, 
+            "body": "Sync and cache pre-computation completed"
+        }
+        
     except Exception as e:
-        print("SYNC ERROR:", str(e))
+        print("❌ SYNC ERROR:", str(e))
+        import traceback
+        traceback.print_exc()
         return {"statusCode": 500, "body": str(e)}

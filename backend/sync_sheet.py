@@ -231,6 +231,42 @@ if __name__ == "__main__":
     try:
         process_sheet(SHEET_ID_1, "Tide Onboarding")
         logging.info("🎉 SYNC COMPLETED SUCCESSFULLY")
+        
+        # Pre-compute verification after successful sync
+        logging.info("\n" + "="*60)
+        logging.info("STEP: Pre-computing verification for all forms")
+        logging.info("="*60)
+        
+        import requests
+        import time
+        
+        try:
+            api_url = os.getenv('API_URL', 'https://vegavruddhi-employee-panel.vercel.app')
+            logging.info(f"🚀 Calling pre-computation API: {api_url}/api/verify/precompute-all")
+            
+            start_time = time.time()
+            response = requests.post(
+                f'{api_url}/api/verify/precompute-all',
+                timeout=600  # 10 minutes timeout
+            )
+            elapsed = time.time() - start_time
+            
+            if response.status_code == 200:
+                data = response.json()
+                logging.info(f"✅ Pre-computation complete in {elapsed:.1f}s")
+                logging.info(f"   Total forms: {data.get('total', 0)}")
+                logging.info(f"   Verified: {data.get('cached', 0)}")
+                logging.info(f"   Skipped (unchanged): {data.get('skipped', 0)}")
+            else:
+                logging.warning(f"⚠️ Pre-computation failed: HTTP {response.status_code}")
+                logging.warning(f"   Response: {response.text[:200]}")
+                
+        except requests.Timeout:
+            logging.warning("⚠️ Pre-computation timeout (took > 10 minutes)")
+        except Exception as e:
+            logging.warning(f"⚠️ Pre-computation error: {e}")
+            logging.warning("   Verification will still work, just won't be pre-cached")
+            
     except Exception as e:
         logging.error(f"🔥 Fatal error: {e}")
     finally:

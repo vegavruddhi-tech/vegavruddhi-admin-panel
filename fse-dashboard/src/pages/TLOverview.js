@@ -1498,7 +1498,7 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
         <Dialog open onClose={() => setNotificationOpen(false)} maxWidth="md" fullWidth>
           <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 1 }}>
             <Box>
-              <Typography variant="h6" fontWeight={800} sx={{ color: '#7c3aed' }}>🔔 TL Task Notifications</Typography>
+              <Typography variant="h6" component="span" fontWeight={800} sx={{ color: '#7c3aed' }}>🔔 TL Task Notifications</Typography>
               <Typography variant="body2" color="text.secondary">
                 {notificationCount} completed task{notificationCount !== 1 ? 's' : ''} from Team Leaders
               </Typography>
@@ -1628,7 +1628,7 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
         <Dialog open onClose={() => !submitting && setAssignTaskOpen(false)} maxWidth="md" fullWidth>
           <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 1, borderBottom: '2px solid #f0f0f0' }}>
             <Box>
-              <Typography variant="h6" fontWeight={800} sx={{ color: '#7c3aed' }}>📋 Assign Alert to TL</Typography>
+              <Typography variant="h6" component="span" fontWeight={800} sx={{ color: '#7c3aed' }}>📋 Assign Alert to TL</Typography>
               <Typography variant="body2" color="text.secondary">
                 {selectedTL.name || selectedTL.email}
               </Typography>
