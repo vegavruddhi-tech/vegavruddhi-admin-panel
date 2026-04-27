@@ -452,7 +452,7 @@ function VerifyChip({ status, onClick }) {
 }
 
 // ── Employee Group Row ────────────────────────────────────────
-function EmployeeGroup({ empName, forms, duplicatePhoneProducts, empPointsData, onEditPoints, onManualVerify, onRevertVerification, onReload, globalVerifyMap: parentVerifyMap }) {
+function EmployeeGroup({ empName, forms, duplicatePhoneProducts, empPointsData, empInfo, onEditPoints, onManualVerify, onRevertVerification, onReload, globalVerifyMap: parentVerifyMap }) {
 
   const getProduct = (f) =>
     (f?.tideProduct || f?.formFillingFor || f?.brand || '').toLowerCase().trim();
@@ -629,8 +629,20 @@ function EmployeeGroup({ empName, forms, duplicatePhoneProducts, empPointsData, 
           <Avatar sx={{ bgcolor: BRAND.primary }}>{initials(empName)}</Avatar>
 
           <Box>
-            <Typography fontWeight={700}>{empName}</Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography fontWeight={700}>{empName}</Typography>
+              {empInfo?.phone && (
+                <Typography variant="caption" color="text.secondary" sx={{ fontSize: 11 }}>
+                  · {empInfo.phone}
+                </Typography>
+              )}
+            </Box>
             <Typography variant="caption">{forms.length} merchants</Typography>
+            {empInfo?.reportingManager && (
+              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: 10 }}>
+                TL: {empInfo.reportingManager}{empInfo.tlPhone ? ` · ${empInfo.tlPhone}` : ''}
+              </Typography>
+            )}
           </Box>
         </Box>
 
@@ -1383,7 +1395,9 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
   const [notifying,  setNotifying]  = useState(null);
   const [notifySnack, setNotifySnack] = useState('');
   const [settling,   setSettling]   = useState(null);
-  const [empPoints,  setEmpPoints]  = useState([]);   // [{_id, newJoinerName, pointsAdjustment}]
+  const [empPoints,  setEmpPoints]  = useState([]);
+  const [employees,  setEmployees]  = useState([]);
+  const [tlList,     setTlList]     = useState([]);
   const [editPtsOpen,  setEditPtsOpen]  = useState(false);
   const [editPtsEmp,   setEditPtsEmp]   = useState(null);
   const [editPtsValue, setEditPtsValue] = useState('');
@@ -1439,15 +1453,19 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const [formsRes, dupRes, ptsRes] = await Promise.all([
+      const [formsRes, dupRes, ptsRes, empRes, tlRes] = await Promise.all([
         fetch(`${EMP_API}/forms/admin/all`),
         fetch(`${EMP_API}/forms/admin/duplicates`),
         fetch(`${EMP_API}/forms/admin/employee-points`),
+        fetch(`${EMP_API}/auth/all-employees`),
+        fetch(`${EMP_API}/tl/approved-list`),
       ]);
       if (!formsRes.ok) throw new Error('Failed to load merchant forms');
       setForms(await formsRes.json());
       setDuplicates(dupRes.ok ? await dupRes.json() : []);
       setEmpPoints(ptsRes.ok ? await ptsRes.json() : []);
+      setEmployees(empRes.ok ? await empRes.json() : []);
+      setTlList(tlRes.ok ? await tlRes.json() : []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -1824,6 +1842,17 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
     return m;
   }, [empPoints]);
 
+  const empInfoMap = useMemo(() => {
+    // Build TL phone lookup by name
+    const tlPhoneMap = {};
+    tlList.forEach(t => { if (t.name) tlPhoneMap[t.name.toLowerCase().trim()] = t.phone || ''; });
+    const m = {};
+    employees.forEach(e => {
+      const tlPhone = e.reportingManager ? (tlPhoneMap[e.reportingManager.toLowerCase().trim()] || '') : '';
+      m[e.newJoinerName] = { reportingManager: e.reportingManager, phone: e.newJoinerPhone, tlPhone };
+    });
+    return m;
+  }, [employees, tlList]);
   // Fetch global verification for all filtered forms
   const getFormProduct = (f) => (f?.tideProduct || f?.formFillingFor || f?.brand || '').toLowerCase().trim();
   const getFormKey     = (f) => { const p = getFormProduct(f); return p ? `${f.customerNumber}__${p}` : f.customerNumber; };
@@ -2652,6 +2681,7 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
           <EmployeeGroup key={empName} empName={empName} forms={empForms}
             duplicatePhoneProducts={duplicatePhoneProducts}
             empPointsData={empPointsMap[empName]}
+            empInfo={empInfoMap[empName]}
             globalVerifyMap={globalVerifyMap}
             onEditPoints={handleEditPoints}
             onManualVerify={handleManualVerify}

@@ -1069,6 +1069,7 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
           setChartDrillOpen({ tlName: barData.fullName, type,
             fses: type === 'active' ? barData.activeFSEs : barData.inactiveFSEs,
             forms: barData.forms,
+            allForms: allForms, // use ALL forms (unfiltered) for location lookup
           });
         };
 
@@ -1206,7 +1207,13 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
                     {fses.map((fse, i) => {
                       const fseName  = fse.newJoinerName;
                       const fseForms_ = forms.filter(f => f.employeeName === fseName);
-                      const location = fse.location || fse.newJoinerLocation || fseForms_[0]?.location || '–';
+                      // For inactive FSEs with no team forms, search all forms
+                      const allFseForms = (chartDrillOpen.allForms || []).filter(f => f.employeeName === fseName);
+                      const allFormLocations = [...fseForms_, ...allFseForms].map(f => f.location).filter(Boolean);
+                      const mostCommonLocation = allFormLocations.length > 0
+                        ? allFormLocations.sort((a, b) => allFormLocations.filter(l => l === b).length - allFormLocations.filter(l => l === a).length)[0]
+                        : null;
+                      const location = fse.location || fse.newJoinerLocation || mostCommonLocation || '–';
                       return (
                         <TableRow key={fse._id || i} hover sx={{ '&:last-child td': { border: 0 } }}>
                           <TableCell sx={{ color: 'text.secondary', fontWeight: 600 }}>{i + 1}</TableCell>
