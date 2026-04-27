@@ -18,6 +18,7 @@ import DownloadIcon       from '@mui/icons-material/Download';
 import TableChartIcon     from '@mui/icons-material/TableChart';
 import GridOnIcon         from '@mui/icons-material/GridOn';
 import EditIcon           from '@mui/icons-material/Edit';
+import DeleteIcon         from '@mui/icons-material/Delete';
 import * as XLSX          from 'xlsx';
 import { BRAND }          from '../theme';
 
@@ -398,7 +399,7 @@ function DuplicatePanel({ duplicates, open, onClose, onNotify, notifying, onSett
 }
 
 // ── Verification status chip ──────────────────────────────────
-function VerifyChip({ status }) {
+function VerifyChip({ status, onClick }) {
   const map = {
     'Fully Verified': { bg: '#e6f4ea', color: '#2e7d32', icon: '✓' },
     'Partially Done': { bg: '#fff8e1', color: '#f57f17', icon: '◑' },
@@ -407,13 +408,23 @@ function VerifyChip({ status }) {
   };
   const s = map[status] || map['Not Found'];
   return (
-    <Chip label={`${s.icon} ${status || 'Not Found'}`} size="small"
-      sx={{ bgcolor: s.bg, color: s.color, fontWeight: 700, fontSize: 11, border: `1px solid ${s.color}30` }} />
+    <Chip
+      label={`${s.icon} ${status || 'Not Found'}`}
+      size="small"
+      onClick={onClick}
+      sx={{
+        bgcolor: s.bg, color: s.color, fontWeight: 700, fontSize: 11,
+        border: `1px solid ${s.color}30`,
+        cursor: onClick ? 'pointer' : 'default',
+        '&:hover': onClick ? { opacity: 0.85, transform: 'scale(1.04)' } : {},
+        transition: 'all 0.15s',
+      }}
+    />
   );
 }
 
 // ── Employee Group Row ────────────────────────────────────────
-function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditPoints }) {
+function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, empData, tlData, filterProduct, setFilterProduct, onEditPoints, onManualVerify, onRevertVerification, onReload, globalVerifyMap: parentVerifyMap }) {
 
   // ✅ FIXED: consistent + safe product
   const getProduct = (f) =>
@@ -426,14 +437,24 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditP
   };
 
   const [expanded, setExpanded] = useState(false);
-  const [verifyMap, setVerifyMap] = useState({});
+  const [localVerifyMap, setLocalVerifyMap] = useState({});
   const [verifying, setVerifying] = useState(false);
+  const [verifyDetail, setVerifyDetail] = useState(null);
+  const [verifyDetailLoading, setVerifyDetailLoading] = useState(false);
+  const [editForm, setEditForm]   = useState(null);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editSnack, setEditSnack]   = useState('');
+
+  // Use parent globalVerifyMap if available, otherwise fall back to local fetch
+  const verifyMap = Object.keys(parentVerifyMap || {}).length > 0 ? (parentVerifyMap || {}) : localVerifyMap;
 
   const dupCount = forms.filter(f => duplicatePhones.has(f.customerNumber)).length;
 
   // ✅ FIXED: consistent product usage
   const fetchVerification = useCallback(async () => {
-    if (verifying || Object.keys(verifyMap).length > 0) return;
+    // Skip if parent already has data
+    if (Object.keys(parentVerifyMap || {}).length > 0) return;
+    if (verifying || Object.keys(localVerifyMap).length > 0) return;
 
     setVerifying(true);
     try {
@@ -452,7 +473,7 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditP
 
       if (res.ok) {
         const data = await res.json();
-        setVerifyMap(data);
+        setLocalVerifyMap(data);
       }
 
     } catch (err) {
@@ -460,28 +481,107 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditP
     } finally {
       setVerifying(false);
     }
-  }, [forms, verifyMap, verifying]);
+  }, [forms, localVerifyMap, verifying, parentVerifyMap]);
 
-  // Auto-fetch verification on mount so points show without needing to expand
-  // useEffect(() => { fetchVerification(); }, []); // eslint-disable-line
+  // Only auto-fetch if parent doesn't have data
+  useEffect(() => {
+    if (forms.length > 0 && Object.keys(parentVerifyMap || {}).length === 0) fetchVerification();
+  }, [forms.length]); // eslint-disable-line
 
-  // ✅ FIXED: safe points calculation
-  const autoPoints = Object.keys(verifyMap).reduce((sum, key) => {
-    if (verifyMap[key]?.status === 'Fully Verified') {
-      const form = forms.find(f => getKey(f) === key);
-      if (!form) return sum;
-
-      const product = getProduct(form); // lowercase
-      // Case-insensitive lookup in POINTS_MAP
-      const pointsKey = Object.keys(POINTS_MAP).find(k => k.toLowerCase().trim() === product);
-      sum += pointsKey ? POINTS_MAP[pointsKey] : 0;
-    }
-    return sum;
-  }, 0);
+  // ✅ FIXED: Count ALL verified forms directly (no deduplication)
+  const autoPoints = (() => {
+    let sum = 0;
+    
+    // Count each form that is verified
+    forms.forEach(form => {
+      const formKey = getKey(form);
+      const verificationStatus = verifyMap[formKey]?.status;
+      
+      // Only count if this specific form is Fully Verified
+      if (verificationStatus === 'Fully Verified') {
+        const product = getProduct(form); // lowercase
+        const pointsKey = Object.keys(POINTS_MAP).find(k => k.toLowerCase().trim() === product);
+        sum += pointsKey ? POINTS_MAP[pointsKey] : 0;
+      }
+    });
+    
+    return Math.round(sum * 10) / 10;
+  })();
 
   const adjustment  = empPointsData?.pointsAdjustment || 0;
-  const verified    = autoPoints || empPointsData?.verifiedPoints || 0;
+  // Only fall back to saved verifiedPoints if verifyMap hasn't been loaded yet
+  const verified    = Object.keys(verifyMap).length > 0 ? autoPoints : (empPointsData?.verifiedPoints || 0);
   const totalPoints = Math.round((verified + adjustment) * 10) / 10;
+
+  const handleSaveEdit = async () => {
+    if (!editForm?._id) return;
+    setEditSaving(true);
+    try {
+      const res = await fetch(`${EMP_API}/forms/admin/update/${editForm._id}`, {
+        method:  'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          customerName:   editForm.customerName,
+          customerNumber: editForm.customerNumber,
+          location:       editForm.location,
+          status:         editForm.status,
+          formFillingFor: editForm.formFillingFor,
+          reason:         editForm._editReason || '',
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setEditSnack('✓ Form updated successfully');
+        setEditForm(null);
+        // Reset local verifyMap so verification re-runs with new data
+        setLocalVerifyMap({});
+        onReload();
+      } else {
+        setEditSnack(`Error: ${data.message}`);
+      }
+    } catch {
+      setEditSnack('Failed to update. Please try again.');
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleDeleteForm = async (f) => {
+    if (!window.confirm(`Delete form for "${f.customerName}"? This cannot be undone.`)) return;
+    try {
+      const res = await fetch(`${EMP_API}/forms/admin/delete/${f._id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (res.ok) {
+        setEditSnack('✓ Form deleted successfully');
+        setLocalVerifyMap({});
+        onReload();
+      } else {
+        setEditSnack(`Error: ${data.message}`);
+      }
+    } catch (err) {
+      setEditSnack(`Failed to delete: ${err.message}`);
+    }
+  };
+
+  const openVerifyDetail = async (f) => {
+    setVerifyDetail({ form: f, loading: true, data: null });
+    setVerifyDetailLoading(true);
+    try {
+      const product = getProduct(f);
+      const month   = f.createdAt
+        ? new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' })
+        : '';
+      const res = await fetch(
+        `${EMP_API}/verify/check-admin?phone=${encodeURIComponent(f.customerNumber)}&name=${encodeURIComponent(f.customerName || '')}&product=${encodeURIComponent(product)}&month=${encodeURIComponent(month)}`
+      );
+      const data = res.ok ? await res.json() : null;
+      setVerifyDetail({ form: f, loading: false, data });
+    } catch {
+      setVerifyDetail({ form: f, loading: false, data: null });
+    } finally {
+      setVerifyDetailLoading(false);
+    }
+  };
 
   return (
     <Card sx={{ mb: 2, border: `1.5px solid ${BRAND.primaryLight || '#c8e6c9'}`, borderRadius: 2 }}>
@@ -508,15 +608,52 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditP
           <Avatar sx={{ bgcolor: BRAND.primary }}>{initials(empName)}</Avatar>
 
           <Box>
-            <Typography fontWeight={700}>{empName}</Typography>
-            <Typography variant="caption">{forms.length} merchants</Typography>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Typography fontWeight={700}>{empName}</Typography>
+              {empData?.newJoinerPhone && (
+                <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                  · {empData.newJoinerPhone}
+                </Typography>
+              )}
+            </Box>
+            <Typography variant="caption" sx={{ display: 'block' }}>
+              {forms.length} merchants
+            </Typography>
+            {tlData && (
+              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
+                TL: {tlData.name} · {tlData.phone}
+              </Typography>
+            )}
           </Box>
         </Box>
 
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
           <Chip
             label={`⭐ ${totalPoints}`}
-            onClick={e => { e.stopPropagation(); onEditPoints(empName, empPointsData, autoPoints); }}
+            onClick={e => {
+              e.stopPropagation();
+              
+              // Build per-product verified breakdown (count ALL verified forms directly)
+              const productBreakdown = {};
+              
+              // Count each form that is verified (don't rely on verifyMap keys)
+              forms.forEach(form => {
+                const formKey = getKey(form);
+                const verificationStatus = verifyMap[formKey]?.status;
+                
+                // Only count if this specific form is Fully Verified
+                if (verificationStatus === 'Fully Verified') {
+                  const rawProduct = form.tideProduct || form.formFillingFor || form.brand || 'Other';
+                  const product = rawProduct.toLowerCase() === 'msme' ? 'Tide MSME' : rawProduct;
+                  
+                  // Count every verified form (no deduplication)
+                  if (!productBreakdown[product]) productBreakdown[product] = 0;
+                  productBreakdown[product]++;
+                }
+              });
+              
+              onEditPoints(empName, empPointsData, autoPoints, productBreakdown);
+            }}
             sx={{ cursor: 'pointer', fontWeight: 700 }}
           />
 
@@ -530,9 +667,81 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditP
 
       {/* TABLE */}
       <Collapse in={expanded}>
+        {/* Product Breakdown Chips */}
+        <Box sx={{ px: 2.5, py: 1.5, bgcolor: '#f9fffe', borderTop: '1px solid #e0e0e0', display: 'flex', gap: 1, flexWrap: 'wrap', alignItems: 'center' }} key={`chips-${Object.keys(verifyMap).length}`}>
+          <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', mr: 1 }}>
+            Verified by Product:
+          </Typography>
+          {(() => {
+            // Calculate product breakdown for this employee (count ALL verified forms directly)
+            const productBreakdown = {};
+            
+            // Count each form that is verified
+            forms.forEach(form => {
+              const formKey = getKey(form);
+              const verificationStatus = verifyMap[formKey]?.status;
+              
+              if (verificationStatus === 'Fully Verified') {
+                const rawProduct = form.tideProduct || form.formFillingFor || form.brand || 'Other';
+                const product = rawProduct.toLowerCase() === 'msme' ? 'Tide MSME' : rawProduct;
+                
+                // Count every verified form (no deduplication)
+                if (!productBreakdown[product]) productBreakdown[product] = 0;
+                productBreakdown[product]++;
+              }
+            });
+            
+            // Sort by count descending
+            const sorted = Object.entries(productBreakdown).sort((a, b) => b[1] - a[1]);
+            
+            if (sorted.length === 0) {
+              return <Typography variant="caption" color="text.secondary">No verified forms yet</Typography>;
+            }
+            
+            return sorted.map(([product, count]) => {
+              const isSelected = filterProduct === product;
+              return (
+                <Chip
+                  key={product}
+                  label={`${product}: ${count} ✓`}
+                  size="small"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    if (setFilterProduct) {
+                      setFilterProduct(isSelected ? '' : product);
+                    }
+                  }}
+                  sx={{
+                    bgcolor: isSelected ? '#2e7d32' : '#e6f4ea',
+                    color: isSelected ? '#fff' : '#2e7d32',
+                    fontWeight: 700,
+                    fontSize: 11,
+                    border: `1px solid ${isSelected ? '#2e7d32' : '#2e7d3230'}`,
+                    cursor: 'pointer',
+                    '&:hover': {
+                      bgcolor: isSelected ? '#1b5e20' : '#c8e6c9',
+                      transform: 'scale(1.05)'
+                    },
+                    transition: 'all 0.2s'
+                  }}
+                />
+              );
+            });
+          })()}
+        </Box>
+        
+        <Box sx={{ overflowX: 'auto' }}>
         <Table size="small">
           <TableBody>
-            {forms.map(f => {
+            {forms
+              .filter(f => {
+                // Filter by selected product chip
+                if (!filterProduct) return true; // Show all if no filter
+                const rawProduct = f.tideProduct || f.formFillingFor || f.brand || 'Other';
+                const product = rawProduct.toLowerCase() === 'msme' ? 'Tide MSME' : rawProduct;
+                return product === filterProduct;
+              })
+              .map(f => {
               const isDup = duplicatePhones.has(f.customerNumber);
               const date  = f.createdAt ? new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '–';
 
@@ -549,7 +758,10 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditP
                   <TableCell>
                     {verifying
                       ? <CircularProgress size={12} />
-                      : <VerifyChip status={verifyMap[getKey(f)]?.status} />
+                      : <VerifyChip
+                          status={verifyMap[getKey(f)]?.status}
+                          onClick={() => openVerifyDetail(f)}
+                        />
                     }
                   </TableCell>
 
@@ -561,12 +773,149 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditP
                     {isDup && <WarningAmberIcon color="error" />}
                   </TableCell>
 
+                  {/* Edit + Delete */}
+                  <TableCell>
+                    <Box sx={{ display: 'flex', gap: 0.5 }}>
+                      <Tooltip title="Edit form">
+                        <IconButton size="small"
+                          onClick={() => setEditForm({ ...f })}
+                          sx={{ color: BRAND.primary, '&:hover': { bgcolor: '#e6f4ea' } }}>
+                          <EditIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                      </Tooltip>
+                      <Tooltip title="Delete form">
+                        <IconButton size="small"
+                          onClick={() => handleDeleteForm(f)}
+                          sx={{ color: '#c62828', '&:hover': { bgcolor: '#fdecea' } }}>
+                          <DeleteIcon sx={{ fontSize: 16 }} />
+                        </IconButton>
+                      </Tooltip>
+                    </Box>
+                  </TableCell>
+
                 </TableRow>
               );
             })}
           </TableBody>
         </Table>
+        </Box>
       </Collapse>
+
+      {/* ── Edit Form Modal ───────────────────────────────────── */}
+      {editForm && (
+        <Dialog open={!!editForm} onClose={() => setEditForm(null)} maxWidth="sm" fullWidth
+          PaperProps={{ sx: { borderRadius: 3 } }}>
+          <Box sx={{ background: `linear-gradient(135deg, ${BRAND.primary}dd, ${BRAND.primary}88)`, px: 3, py: 2.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Box>
+              <Typography variant="overline" sx={{ color: 'rgba(255,255,255,0.8)', fontSize: 10, letterSpacing: 1.5 }}>EDIT FORM</Typography>
+              <Typography variant="h6" sx={{ color: '#fff', fontWeight: 800 }}>{editForm.customerName}</Typography>
+              <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.75)' }}>FSE: {editForm.employeeName}</Typography>
+            </Box>
+            <IconButton onClick={() => setEditForm(null)} sx={{ color: '#fff', bgcolor: 'rgba(255,255,255,0.15)' }}>
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </Box>
+
+          <DialogContent sx={{ p: 3 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <TextField fullWidth size="small" label="Customer Name"
+                value={editForm.customerName || ''}
+                onChange={e => setEditForm(p => ({ ...p, customerName: e.target.value }))} />
+
+              <TextField fullWidth size="small" label="Customer Phone"
+                value={editForm.customerNumber || ''}
+                onChange={e => setEditForm(p => ({ ...p, customerNumber: e.target.value }))} />
+
+              <TextField fullWidth size="small" label="Location"
+                value={editForm.location || ''}
+                onChange={e => setEditForm(p => ({ ...p, location: e.target.value }))} />
+
+              <TextField fullWidth size="small" label="Product (formFillingFor)"
+                value={editForm.formFillingFor || ''}
+                onChange={e => setEditForm(p => ({ ...p, formFillingFor: e.target.value }))} />
+
+              <TextField fullWidth size="small" label="Visit Status" select
+                value={editForm.status || ''}
+                onChange={e => setEditForm(p => ({ ...p, status: e.target.value }))}>
+                {['Ready for Onboarding', 'Not Interested', 'Try but not done due to error', 'Need to visit again'].map(s => (
+                  <MenuItem key={s} value={s}>{s}</MenuItem>
+                ))}
+              </TextField>
+
+              <TextField fullWidth size="small" multiline rows={2}
+                label="Reason for edit (FSE will be notified)"
+                value={editForm._editReason || ''}
+                onChange={e => setEditForm(p => ({ ...p, _editReason: e.target.value }))}
+                placeholder="e.g. Corrected phone number, updated status" />
+            </Box>
+          </DialogContent>
+
+          <DialogActions sx={{ px: 3, py: 1.5, borderTop: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between' }}>
+            <Box>
+              {(() => {
+                const vKey = getKey(editForm);
+                const vStatus = verifyMap[vKey]?.status || 'Not Found';
+                const isFullyVerified = vStatus === 'Fully Verified';
+                
+                return isFullyVerified ? (
+                  <Button 
+                    variant="outlined" 
+                    size="small"
+                    onClick={() => {
+                      if (window.confirm(`Revert verification for ${editForm.customerName}?\n\nThis will change status back to "Not Found".`)) {
+                        onRevertVerification(editForm);
+                        setEditForm(null);
+                      }
+                    }}
+                    sx={{ 
+                      color: '#c62828', 
+                      borderColor: '#c62828', 
+                      fontWeight: 700,
+                      '&:hover': { bgcolor: '#fdecea', borderColor: '#c62828' }
+                    }}
+                  >
+                    ↺ Revert Verification
+                  </Button>
+                ) : (
+                  <Button 
+                    variant="outlined" 
+                    size="small"
+                    onClick={() => {
+                      onManualVerify(editForm);
+                      setEditForm(null);
+                    }}
+                    sx={{ 
+                      color: '#2e7d32', 
+                      borderColor: '#2e7d32', 
+                      fontWeight: 700,
+                      '&:hover': { bgcolor: '#e6f4ea', borderColor: '#2e7d32' }
+                    }}
+                  >
+                    ✓ Verify Form
+                  </Button>
+                );
+              })()}
+            </Box>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button onClick={() => setEditForm(null)} color="inherit">Cancel</Button>
+              <Button variant="contained" onClick={handleSaveEdit} disabled={editSaving}
+                startIcon={editSaving ? <CircularProgress size={14} sx={{ color: 'inherit' }} /> : null}
+                sx={{ bgcolor: BRAND.primary, fontWeight: 700, '&:hover': { bgcolor: '#0f3320' } }}>
+                {editSaving ? 'Saving…' : 'Save Changes'}
+              </Button>
+            </Box>
+          </DialogActions>
+        </Dialog>
+      )}
+
+      {/* Edit/Delete Snackbar */}
+      <Snackbar open={!!editSnack} autoHideDuration={3000} onClose={() => setEditSnack('')}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
+        <Alert severity={editSnack.startsWith('✓') ? 'success' : 'error'} variant="filled"
+          onClose={() => setEditSnack('')}>
+          {editSnack}
+        </Alert>
+      </Snackbar>
 
     </Card>
   );
@@ -598,19 +947,28 @@ export default function MerchantForms() {
   const [globalVerifyMap,  setGlobalVerifyMap]  = useState({});
   const [verifyKpiOpen,    setVerifyKpiOpen]    = useState(null); // 'Fully Verified' | 'Partially Done' | 'Not Found'
   const [drillProduct,     setDrillProduct]     = useState(null); // { product, status }
+  const [filterProduct,    setFilterProduct]    = useState(''); // For product chip filtering
+  const [selectedMonth,    setSelectedMonth]    = useState(new Date().toLocaleString('en-US', { month: 'long' })); // Default current month
+  const [selectedYear,     setSelectedYear]     = useState(new Date().getFullYear()); // Default current year
+  const [employees,        setEmployees]        = useState([]); // Employee data with phone and TL
+  const [teamLeaders,      setTeamLeaders]      = useState([]); // TL data
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const [formsRes, dupRes, ptsRes] = await Promise.all([
+      const [formsRes, dupRes, ptsRes, empRes, tlRes] = await Promise.all([
         fetch(`${EMP_API}/forms/admin/all`),
         fetch(`${EMP_API}/forms/admin/duplicates`),
         fetch(`${EMP_API}/forms/admin/employee-points`),
+        fetch(`${EMP_API}/auth/all-employees`),
+        fetch(`${EMP_API}/tl/approved-list`),
       ]);
       if (!formsRes.ok) throw new Error('Failed to load merchant forms');
       setForms(await formsRes.json());
       setDuplicates(dupRes.ok ? await dupRes.json() : []);
       setEmpPoints(ptsRes.ok ? await ptsRes.json() : []);
+      setEmployees(empRes.ok ? await empRes.json() : []);
+      setTeamLeaders(tlRes.ok ? await tlRes.json() : []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -696,6 +1054,69 @@ export default function MerchantForms() {
     }
   }, [editPtsEmp, editPtsValue, load]);
 
+  const handleManualVerify = useCallback(async (form) => {
+    // Open manual verification dialog or directly create
+    const product = form.formFillingFor || form.tideProduct || form.brand || '';
+    const month = form.createdAt 
+      ? new Date(form.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' })
+      : '';
+    
+    if (!window.confirm(`Manually verify ${form.customerName} (${form.customerNumber}) for ${product}?`)) return;
+    
+    try {
+      const res = await fetch(`${EMP_API}/manual-verification/create`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: form.customerNumber,
+          product: product,
+          month: month,
+          status: 'Fully Verified',
+          verifiedBy: 'Admin',
+          reason: 'Manual verification by admin',
+          formId: form._id
+        })
+      });
+      
+      if (res.ok) {
+        setNotifySnack('✓ Form manually verified successfully');
+        load(); // Reload to refresh verification status
+      } else {
+        const data = await res.json();
+        setNotifySnack(`Error: ${data.message}`);
+      }
+    } catch (err) {
+      setNotifySnack('Failed to verify form. Please try again.');
+    }
+  }, [load]);
+
+  const handleRevertVerification = useCallback(async (form) => {
+    // This would delete the manual verification record
+    const product = form.formFillingFor || form.tideProduct || form.brand || '';
+    
+    try {
+      const res = await fetch(`${EMP_API}/manual-verification/list?phone=${form.customerNumber}&product=${product}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.verifications && data.verifications.length > 0) {
+          const verification = data.verifications[0];
+          const deleteRes = await fetch(`${EMP_API}/manual-verification/${verification._id}`, {
+            method: 'DELETE'
+          });
+          
+          if (deleteRes.ok) {
+            setNotifySnack('✓ Verification reverted successfully');
+            load();
+          } else {
+            setNotifySnack('Error reverting verification');
+          }
+        }
+      }
+    } catch (err) {
+      setNotifySnack('Failed to revert verification');
+    }
+  }, [load]);
+
   const handleNotify = useCallback(async (dup, idx) => {
     setNotifying(idx);
     try {
@@ -763,6 +1184,7 @@ export default function MerchantForms() {
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
   const filtered = forms.filter(f => {
+    // Date filter
     if (dateFilter !== 'all') {
       const d = new Date(f.createdAt);
       if (dateFilter === 'today' && d < todayStart) return false;
@@ -774,6 +1196,17 @@ export default function MerchantForms() {
       }
     }
 
+    // Month/Year filter
+    if (selectedYear || selectedMonth) {
+      const formDate = new Date(f.createdAt);
+      const formYear = formDate.getFullYear();
+      const formMonth = formDate.toLocaleString('en-US', { month: 'long' });
+      
+      if (selectedYear && formYear !== selectedYear) return false;
+      if (selectedMonth && formMonth !== selectedMonth) return false;
+    }
+
+    // Search filter
     return (
       !q ||
       (f.customerName   || '').toLowerCase().includes(q) ||
@@ -789,7 +1222,7 @@ export default function MerchantForms() {
     map[key].push(f);
   });
   return Object.entries(map).sort((a, b) => b[1].length - a[1].length);
-}, [forms, search, dateFilter, fromDate, toDate]);
+}, [forms, search, dateFilter, fromDate, toDate, selectedMonth, selectedYear]);
 
 
 
@@ -804,18 +1237,33 @@ export default function MerchantForms() {
     return m;
   }, [empPoints]);
 
+  // Map empName → employee data (phone, TL, etc.)
+  const empDataMap = useMemo(() => {
+    const m = {};
+    employees.forEach(e => { m[e.newJoinerName] = e; });
+    return m;
+  }, [employees]);
+
+  // Map TL name → TL data (phone, email, etc.)
+  const tlDataMap = useMemo(() => {
+    const m = {};
+    teamLeaders.forEach(tl => { m[tl.name.toLowerCase().trim()] = tl; });
+    return m;
+  }, [teamLeaders]);
+
   // Fetch global verification for all filtered forms
   const getFormProduct = (f) => (f?.tideProduct || f?.formFillingFor || f?.brand || '').toLowerCase().trim();
   const getFormKey     = (f) => { const p = getFormProduct(f); return p ? `${f.customerNumber}__${p}` : f.customerNumber; };
 
   useEffect(() => {
-  const filteredForms = grouped.flatMap(([, empForms]) => empForms);
-  if (!filteredForms.length) { setGlobalVerifyMap({}); return; }
+  // ✅ OPTIMIZED: Fetch verification ONCE on page load based on ALL forms, not filtered forms
+  // This prevents re-fetching when user types in search or changes filters
+  if (!forms.length) { setGlobalVerifyMap({}); return; }
 
   const BATCH = 50;
   const batches = [];
-  for (let i = 0; i < filteredForms.length; i += BATCH) {
-    batches.push(filteredForms.slice(i, i + BATCH));
+  for (let i = 0; i < forms.length; i += BATCH) {
+    batches.push(forms.slice(i, i + BATCH));
   }
 
   Promise.all(batches.map(batch => {
@@ -830,8 +1278,7 @@ export default function MerchantForms() {
     const merged = Object.assign({}, ...results);
     setGlobalVerifyMap(merged);
   });
-}, [grouped]); // eslint-disable-line
- // eslint-disable-line
+}, [forms]); // ✅ Changed from [grouped] to [forms] - only fetch once on page load
 
   // Compute verification KPI counts from global map
   const verifyKpiCounts = useMemo(() => {
@@ -1155,11 +1602,82 @@ export default function MerchantForms() {
 
 
 
-      {/* Search */}
-      <TextField fullWidth size="small" placeholder="Search by merchant name, phone, employee or location…"
-        value={search} onChange={e => setSearch(e.target.value)}
-        sx={{ mb: 3 }}
-        InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color: 'text.secondary' }} /></InputAdornment> }} />
+      {/* Search and Filters */}
+      <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap', alignItems: 'center' }}>
+        <TextField 
+          fullWidth 
+          size="small" 
+          placeholder="Search by merchant name, phone, employee or location…"
+          value={search} 
+          onChange={e => setSearch(e.target.value)}
+          sx={{ flex: 1, minWidth: 300 }}
+          InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color: 'text.secondary' }} /></InputAdornment> }} 
+        />
+        
+        {/* Year Filter */}
+        <TextField
+          select
+          size="small"
+          label="Year"
+          value={selectedYear}
+          onChange={e => setSelectedYear(e.target.value)}
+          sx={{ minWidth: 120 }}
+        >
+          {(() => {
+            const currentYear = new Date().getFullYear();
+            const years = [];
+            for (let y = currentYear; y >= currentYear - 5; y--) {
+              years.push(y);
+            }
+            return years.map(year => (
+              <MenuItem key={year} value={year}>{year}</MenuItem>
+            ));
+          })()}
+        </TextField>
+
+        {/* Month Filter */}
+        <TextField
+          select
+          size="small"
+          label="Month"
+          value={selectedMonth}
+          onChange={e => setSelectedMonth(e.target.value)}
+          sx={{ minWidth: 150 }}
+        >
+          <MenuItem value="">All Months</MenuItem>
+          <MenuItem value="January">January</MenuItem>
+          <MenuItem value="February">February</MenuItem>
+          <MenuItem value="March">March</MenuItem>
+          <MenuItem value="April">April</MenuItem>
+          <MenuItem value="May">May</MenuItem>
+          <MenuItem value="June">June</MenuItem>
+          <MenuItem value="July">July</MenuItem>
+          <MenuItem value="August">August</MenuItem>
+          <MenuItem value="September">September</MenuItem>
+          <MenuItem value="October">October</MenuItem>
+          <MenuItem value="November">November</MenuItem>
+          <MenuItem value="December">December</MenuItem>
+        </TextField>
+
+        {/* Reset Button */}
+        <Button 
+          variant="outlined" 
+          size="small"
+          onClick={() => {
+            setSearch('');
+            setSelectedMonth('');
+            setSelectedYear(new Date().getFullYear());
+            setFilterProduct('');
+          }}
+          sx={{ 
+            color: BRAND.primary, 
+            borderColor: BRAND.primary,
+            '&:hover': { bgcolor: '#e6f4ea' }
+          }}
+        >
+          Reset
+        </Button>
+      </Box>
 
       {error && <Alert severity="error" sx={{ mb: 3 }} action={<Button size="small" onClick={load}>Retry</Button>}>{error}</Alert>}
 
@@ -1173,10 +1691,22 @@ export default function MerchantForms() {
         </Card>
       ) : (
         grouped.map(([empName, empForms]) => (
-          <EmployeeGroup key={empName} empName={empName} forms={empForms}
+          <EmployeeGroup 
+            key={empName} 
+            empName={empName} 
+            forms={empForms}
             duplicatePhones={duplicatePhones}
             empPointsData={empPointsMap[empName]}
-            onEditPoints={handleEditPoints} />
+            empData={empDataMap[empName]}
+            tlData={tlDataMap[(empDataMap[empName]?.reportingManager || '').toLowerCase().trim()]}
+            filterProduct={filterProduct}
+            setFilterProduct={setFilterProduct}
+            onEditPoints={handleEditPoints}
+            onManualVerify={handleManualVerify}
+            onRevertVerification={handleRevertVerification}
+            onReload={load}
+            globalVerifyMap={globalVerifyMap}
+          />
         ))
       )}
 
