@@ -422,7 +422,7 @@ def get_sheet_client():
         import json
         creds = ServiceAccountCredentials.from_json_keyfile_dict(json.loads(creds_json), scope)
     else:
-        creds = ServiceAccountCredentials.from_json_keyfile_name("credentials.json", scope)
+        creds = ServiceAccountCredentials.from_json_keyfile_name("google_credentials.json", scope)
     client = gspread.authorize(creds)
     return client.open("VV - Day Working (Responses)").worksheet("FSE")
 

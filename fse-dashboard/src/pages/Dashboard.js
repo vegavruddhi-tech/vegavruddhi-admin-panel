@@ -317,12 +317,13 @@ const loadData = async () => {
 }, [forms, dateFilter, fromDate, toDate, filterMonth, filterTL, filterFSE, filterStatus, employees]);
 
 // Fetch global verification for all filtered forms (batched to avoid URL length limit)
+// Fetch verification for all forms once on page load (not on filter changes)
 useEffect(() => {
-  if (!filteredForms.length) { setGlobalVerifyMap({}); return; }
+  if (!forms.length) { setGlobalVerifyMap({}); return; }
   const getP = (f) => (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
   const BATCH = 50;
   const batches = [];
-  for (let i = 0; i < filteredForms.length; i += BATCH) batches.push(filteredForms.slice(i, i + BATCH));
+  for (let i = 0; i < forms.length; i += BATCH) batches.push(forms.slice(i, i + BATCH));
   Promise.all(batches.map(batch => {
     const phones   = batch.map(f => f.customerNumber).join(',');
     const names    = batch.map(f => encodeURIComponent(f.customerName || '')).join(',');
@@ -334,7 +335,7 @@ useEffect(() => {
     setGlobalVerifyMap(Object.assign({}, ...results));
     if (onReady) onReady();
   });
-}, [filteredForms]); // eslint-disable-line
+}, [forms]); // Only run when forms data changes (page load/refresh)
 const monthOptions = useMemo(() => {
   const seen = new Set();
   forms.forEach(f => {

@@ -407,13 +407,13 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
     });
   }, [allForms, dateFilter, fromDate, toDate]);
 
-  // Bulk verify all filtered forms
+  // Bulk verify all forms once on page load (not on filter changes)
   useEffect(() => {
-    if (!filteredAllForms.length) { setGlobalVerifyMap({}); return; }
+    if (!allForms.length) { setGlobalVerifyMap({}); return; }
     const getP = (f) => (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
     const BATCH = 50;
     const batches = [];
-    for (let i = 0; i < filteredAllForms.length; i += BATCH) batches.push(filteredAllForms.slice(i, i + BATCH));
+    for (let i = 0; i < allForms.length; i += BATCH) batches.push(allForms.slice(i, i + BATCH));
     Promise.all(batches.map(batch => {
       const phones   = batch.map(f => f.customerNumber).join(',');
       const names    = batch.map(f => encodeURIComponent(f.customerName || '')).join(',');
@@ -422,7 +422,7 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
       return fetch(`${EMP_API}/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`)
         .then(r => r.ok ? r.json() : {}).catch(() => ({}));
     })).then(results => setGlobalVerifyMap(Object.assign({}, ...results)));
-  }, [filteredAllForms]); // eslint-disable-line
+  }, [allForms]); // Only run when forms data changes (page load/refresh)
 
   const getFormKey = (f) => { const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim(); return p ? `${f.customerNumber}__${p}` : f.customerNumber; };
 
