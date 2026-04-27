@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import ReactDOM from 'react-dom';
 import {
   Box, Typography, Card, CardContent, Button, Chip, CircularProgress,
   Alert, Tooltip, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, Avatar, Tabs, Tab, Badge, TextField,
   InputAdornment, Dialog, DialogTitle, DialogContent, DialogActions,
   IconButton, Collapse, Menu, MenuItem, ListItemIcon, ListItemText,
-  Snackbar, Skeleton, Checkbox,
+  Snackbar,
 } from '@mui/material';
 import RefreshIcon        from '@mui/icons-material/Refresh';
 import SearchIcon         from '@mui/icons-material/Search';
@@ -19,7 +18,6 @@ import DownloadIcon       from '@mui/icons-material/Download';
 import TableChartIcon     from '@mui/icons-material/TableChart';
 import GridOnIcon         from '@mui/icons-material/GridOn';
 import EditIcon           from '@mui/icons-material/Edit';
-import DeleteIcon         from '@mui/icons-material/Delete';
 import * as XLSX          from 'xlsx';
 import { BRAND }          from '../theme';
 
@@ -248,7 +246,7 @@ function StatusChip({ status }) {
 }
 
 // ── Duplicate Alert Panel ─────────────────────────────────────
-function DuplicatePanel({ duplicates, open, onClose, onNotify, notifying, onSettle, settling, forms, onEmployeeClick }) {
+function DuplicatePanel({ duplicates, open, onClose, onNotify, notifying, onSettle, settling }) {
   const [tab, setTab]               = useState('active');
   const [settlements, setSettlements] = useState([]);
   const [loadingSett, setLoadingSett] = useState(false);
@@ -305,13 +303,7 @@ function DuplicatePanel({ duplicates, open, onClose, onNotify, notifying, onSett
                         {dup.customerNames[0] || dup._id.customerNumber}
                       </Typography>
                       <Typography variant="caption" color="text.secondary">({dup._id.customerNumber})</Typography>
-                      <ProductChip product={
-                        dup._id.formFillingFor || 
-                        dup._id.tideProduct || 
-                        dup._id.brand || 
-                        'Unknown'
-                      } />
-
+                      <ProductChip product={dup._id.formFillingFor} />
                       <Chip label={`${dup.count} submissions`} size="small" sx={{ bgcolor: '#fdecea', color: '#c62828', fontWeight: 700 }} />
                     </Box>
                     {/* Action buttons — hide if already settled */}
@@ -345,29 +337,8 @@ function DuplicatePanel({ duplicates, open, onClose, onNotify, notifying, onSett
                   </Typography>
                   <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: dup.settled ? 0 : 1.5 }}>
                     {dup.employees.map((emp, j) => (
-                      <Chip 
-                        key={j} 
-                        avatar={<Avatar sx={{ bgcolor: dup.settled ? '#888' : BRAND.primary, fontSize: 11 }}>{initials(emp)}</Avatar>}
-                        label={emp} 
-                        size="small" 
-                        onClick={() => {
-                          // Find the form submitted by this employee for this duplicate
-                          const empForm = forms.find(f => 
-                            f.employeeName === emp && 
-                            f.customerNumber === dup._id.customerNumber &&
-                            (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase() === (dup._id.formFillingFor || '').toLowerCase()
-                          );
-                          if (empForm) {
-                            onEmployeeClick({ employeeName: emp, form: empForm, duplicate: dup });
-                          }
-                        }}
-                        sx={{ 
-                          fontWeight: 600, 
-                          cursor: 'pointer',
-                          '&:hover': { bgcolor: '#e3f2fd', transform: 'scale(1.05)' },
-                          transition: 'all 0.2s'
-                        }} 
-                      />
+                      <Chip key={j} avatar={<Avatar sx={{ bgcolor: dup.settled ? '#888' : BRAND.primary, fontSize: 11 }}>{initials(emp)}</Avatar>}
+                        label={emp} size="small" sx={{ fontWeight: 600 }} />
                     ))}
                   </Box>
                   {/* Settlement info */}
@@ -427,7 +398,7 @@ function DuplicatePanel({ duplicates, open, onClose, onNotify, notifying, onSett
 }
 
 // ── Verification status chip ──────────────────────────────────
-function VerifyChip({ status, onClick }) {
+function VerifyChip({ status }) {
   const map = {
     'Fully Verified': { bg: '#e6f4ea', color: '#2e7d32', icon: '✓' },
     'Partially Done': { bg: '#fff8e1', color: '#f57f17', icon: '◑' },
@@ -436,171 +407,81 @@ function VerifyChip({ status, onClick }) {
   };
   const s = map[status] || map['Not Found'];
   return (
-    <Chip
-      label={`${s.icon} ${status || 'Not Found'}`}
-      size="small"
-      onClick={onClick}
-      sx={{
-        bgcolor: s.bg, color: s.color, fontWeight: 700, fontSize: 11,
-        border: `1px solid ${s.color}30`,
-        cursor: onClick ? 'pointer' : 'default',
-        '&:hover': onClick ? { opacity: 0.85, transform: 'scale(1.04)' } : {},
-        transition: 'all 0.15s',
-      }}
-    />
+    <Chip label={`${s.icon} ${status || 'Not Found'}`} size="small"
+      sx={{ bgcolor: s.bg, color: s.color, fontWeight: 700, fontSize: 11, border: `1px solid ${s.color}30` }} />
   );
 }
 
 // ── Employee Group Row ────────────────────────────────────────
-function EmployeeGroup({ empName, forms, duplicatePhoneProducts, empPointsData, empInfo, onEditPoints, onManualVerify, onRevertVerification, onReload, globalVerifyMap: parentVerifyMap }) {
+function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditPoints }) {
 
+  // ✅ FIXED: consistent + safe product
   const getProduct = (f) =>
     (f?.tideProduct || f?.formFillingFor || f?.brand || '').toLowerCase().trim();
 
+  // ✅ FIXED: unique key
   const getKey = (f) => {
     const p = getProduct(f);
     return p ? `${f.customerNumber}__${p}` : f.customerNumber;
   };
 
   const [expanded, setExpanded] = useState(false);
-  const [localVerifyMap, setLocalVerifyMap] = useState({});
+  const [verifyMap, setVerifyMap] = useState({});
   const [verifying, setVerifying] = useState(false);
-  const [verifyDetail, setVerifyDetail] = useState(null);
-  const [verifyDetailLoading, setVerifyDetailLoading] = useState(false);
-  const [editForm, setEditForm]   = useState(null);
-  const [editSaving, setEditSaving] = useState(false);
-  const [editSnack, setEditSnack]   = useState('');
 
-  // Use parent globalVerifyMap if available, otherwise fall back to local fetch
-  const verifyMap = Object.keys(parentVerifyMap || {}).length > 0 ? (parentVerifyMap || {}) : localVerifyMap;
+  const dupCount = forms.filter(f => duplicatePhones.has(f.customerNumber)).length;
 
-  // Count duplicates by checking phone+product combination
-  const dupCount = forms.filter(f => duplicatePhoneProducts.has(getKey(f))).length;
-
+  // ✅ FIXED: consistent product usage
   const fetchVerification = useCallback(async () => {
-    // Skip if parent already has data
-    if (Object.keys(parentVerifyMap || {}).length > 0) return;
-    if (verifying || Object.keys(localVerifyMap).length > 0) return;
+    if (verifying || Object.keys(verifyMap).length > 0) return;
+
     setVerifying(true);
     try {
       const phones   = forms.map(f => f.customerNumber).join(',');
       const names    = forms.map(f => encodeURIComponent(f.customerName)).join(',');
       const products = forms.map(f => encodeURIComponent(getProduct(f))).join(',');
       const months   = forms.map(f =>
-        encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))
+        encodeURIComponent(
+          new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' })
+        )
       ).join(',');
+
       const res = await fetch(
         `${EMP_API}/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`
       );
-      if (res.ok) setLocalVerifyMap(await res.json());
+
+      if (res.ok) {
+        const data = await res.json();
+        setVerifyMap(data);
+      }
+
     } catch (err) {
       console.error("Verification error:", err);
     } finally {
       setVerifying(false);
     }
-  }, [forms, localVerifyMap, verifying, parentVerifyMap]);
+  }, [forms, verifyMap, verifying]);
 
-  // Only auto-fetch if parent doesn't have data
-  useEffect(() => {
-    if (forms.length > 0 && Object.keys(parentVerifyMap || {}).length === 0) fetchVerification();
-  }, [forms.length]); // eslint-disable-line
+  // Auto-fetch verification on mount so points show without needing to expand
+  // useEffect(() => { fetchVerification(); }, []); // eslint-disable-line
 
-  // ✅ FIXED: safe points calculation — deduplicate by customerNumber+product
-  // so same merchant submitted multiple times only counts once per product
-  const autoPoints = (() => {
-    const counted = new Set(); // track customerNumber__product already counted
-    let sum = 0;
-    Object.keys(verifyMap).forEach(key => {
-      if (verifyMap[key]?.status === 'Fully Verified') {
-        const form = forms.find(f => getKey(f) === key);
-        if (!form) return;
-        const product  = getProduct(form); // lowercase
-        const dedupKey = `${form.customerNumber}__${product}`;
-        if (counted.has(dedupKey)) return; // already counted this merchant+product
-        counted.add(dedupKey);
-        const pointsKey = Object.keys(POINTS_MAP).find(k => k.toLowerCase().trim() === product);
-        sum += pointsKey ? POINTS_MAP[pointsKey] : 0;
-      }
-    });
-    return Math.round(sum * 10) / 10;
-  })();
+  // ✅ FIXED: safe points calculation
+  const autoPoints = Object.keys(verifyMap).reduce((sum, key) => {
+    if (verifyMap[key]?.status === 'Fully Verified') {
+      const form = forms.find(f => getKey(f) === key);
+      if (!form) return sum;
+
+      const product = getProduct(form); // lowercase
+      // Case-insensitive lookup in POINTS_MAP
+      const pointsKey = Object.keys(POINTS_MAP).find(k => k.toLowerCase().trim() === product);
+      sum += pointsKey ? POINTS_MAP[pointsKey] : 0;
+    }
+    return sum;
+  }, 0);
 
   const adjustment  = empPointsData?.pointsAdjustment || 0;
-  // Only fall back to saved verifiedPoints if verifyMap hasn't been loaded yet
-  const verified    = Object.keys(verifyMap).length > 0 ? autoPoints : (empPointsData?.verifiedPoints || 0);
+  const verified    = autoPoints || empPointsData?.verifiedPoints || 0;
   const totalPoints = Math.round((verified + adjustment) * 10) / 10;
-
-  const handleSaveEdit = async () => {
-    if (!editForm?._id) return;
-    setEditSaving(true);
-    try {
-      const res = await fetch(`${EMP_API}/forms/admin/update/${editForm._id}`, {
-        method:  'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({
-          customerName:   editForm.customerName,
-          customerNumber: editForm.customerNumber,
-          location:       editForm.location,
-          status:         editForm.status,
-          formFillingFor: editForm.formFillingFor,
-          reason:         editForm._editReason || '',
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setEditSnack('✓ Form updated successfully');
-        setEditForm(null);
-        // Reset local verifyMap so verification re-runs with new data
-        setLocalVerifyMap({});
-        onReload();
-      } else {
-        setEditSnack(`Error: ${data.message}`);
-      }
-    } catch {
-      setEditSnack('Failed to update. Please try again.');
-    } finally {
-      setEditSaving(false);
-    }
-  };
-
-  const handleDeleteForm = async (f) => {
-    if (!window.confirm(`Delete form for "${f.customerName}"? This cannot be undone.`)) return;
-    try {
-      const res = await fetch(`${EMP_API}/forms/admin/delete/${f._id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (res.ok) {
-        setEditSnack('✓ Form deleted successfully');
-        setLocalVerifyMap({});
-        onReload();
-      } else {
-        setEditSnack(`Error: ${data.message}`);
-        console.error('Delete failed:', data);
-      }
-    } catch (err) {
-      setEditSnack(`Failed to delete: ${err.message}`);
-      console.error('Delete error:', err);
-    }
-  };
-
-  const openVerifyDetail = async (f) => {
-    setVerifyDetail({ form: f, loading: true, data: null });
-    setVerifyDetailLoading(true);
-    try {
-      const product = getProduct(f);
-      const month   = f.createdAt
-        ? new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' })
-        : '';
-      const res = await fetch(
-        `${EMP_API}/verify/check-admin?phone=${encodeURIComponent(f.customerNumber)}&name=${encodeURIComponent(f.customerName || '')}&product=${encodeURIComponent(product)}&month=${encodeURIComponent(month)}`
-      );
-      const data = res.ok ? await res.json() : null;
-      setVerifyDetail({ form: f, loading: false, data });
-    } catch {
-      setVerifyDetail({ form: f, loading: false, data: null });
-    } finally {
-      setVerifyDetailLoading(false);
-    }
-  };
 
   return (
     <Card sx={{ mb: 2, border: `1.5px solid ${BRAND.primaryLight || '#c8e6c9'}`, borderRadius: 2 }}>
@@ -616,8 +497,6 @@ function EmployeeGroup({ empName, forms, duplicatePhoneProducts, empPointsData, 
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          flexWrap: 'wrap',
-          gap: 1,
           px: 2.5,
           py: 1.5,
           cursor: 'pointer',
@@ -629,42 +508,15 @@ function EmployeeGroup({ empName, forms, duplicatePhoneProducts, empPointsData, 
           <Avatar sx={{ bgcolor: BRAND.primary }}>{initials(empName)}</Avatar>
 
           <Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <Typography fontWeight={700}>{empName}</Typography>
-              {empInfo?.phone && (
-                <Typography variant="caption" color="text.secondary" sx={{ fontSize: 11 }}>
-                  · {empInfo.phone}
-                </Typography>
-              )}
-            </Box>
+            <Typography fontWeight={700}>{empName}</Typography>
             <Typography variant="caption">{forms.length} merchants</Typography>
-            {empInfo?.reportingManager && (
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: 10 }}>
-                TL: {empInfo.reportingManager}{empInfo.tlPhone ? ` · ${empInfo.tlPhone}` : ''}
-              </Typography>
-            )}
           </Box>
         </Box>
 
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
           <Chip
             label={`⭐ ${totalPoints}`}
-            onClick={e => {
-              e.stopPropagation();
-              // Build per-product verified breakdown
-              const productBreakdown = {};
-              Object.keys(verifyMap).forEach(key => {
-                if (verifyMap[key]?.status === 'Fully Verified') {
-                  const form = forms.find(f => getKey(f) === key);
-                  if (!form) return;
-                  const rawProduct = form.tideProduct || form.formFillingFor || form.brand || 'Other';
-                  const product = rawProduct.toLowerCase() === 'msme' ? 'Tide MSME' : rawProduct;
-                  if (!productBreakdown[product]) productBreakdown[product] = 0;
-                  productBreakdown[product]++;
-                }
-              });
-              onEditPoints(empName, empPointsData, autoPoints, productBreakdown);
-            }}
+            onClick={e => { e.stopPropagation(); onEditPoints(empName, empPointsData, autoPoints); }}
             sx={{ cursor: 'pointer', fontWeight: 700 }}
           />
 
@@ -678,15 +530,14 @@ function EmployeeGroup({ empName, forms, duplicatePhoneProducts, empPointsData, 
 
       {/* TABLE */}
       <Collapse in={expanded}>
-        <Box sx={{ overflowX: 'auto' }}>
         <Table size="small">
           <TableBody>
             {forms.map(f => {
-              const isDup = duplicatePhoneProducts.has(getKey(f));
+              const isDup = duplicatePhones.has(f.customerNumber);
               const date  = f.createdAt ? new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '–';
 
               return (
-                <TableRow key={f._id} hover>
+                <TableRow key={f._id}>
 
                   <TableCell>{f.customerName}</TableCell>
                   <TableCell>{f.customerNumber}</TableCell>
@@ -698,10 +549,7 @@ function EmployeeGroup({ empName, forms, duplicatePhoneProducts, empPointsData, 
                   <TableCell>
                     {verifying
                       ? <CircularProgress size={12} />
-                      : <VerifyChip
-                          status={verifyMap[getKey(f)]?.status}
-                          onClick={() => openVerifyDetail(f)}
-                        />
+                      : <VerifyChip status={verifyMap[getKey(f)]?.status} />
                     }
                   </TableCell>
 
@@ -713,765 +561,60 @@ function EmployeeGroup({ empName, forms, duplicatePhoneProducts, empPointsData, 
                     {isDup && <WarningAmberIcon color="error" />}
                   </TableCell>
 
-                  {/* Edit + Delete */}
-                  <TableCell>
-                    <Box sx={{ display: 'flex', gap: 0.5 }}>
-                      <Tooltip title="Edit form">
-                        <IconButton size="small"
-                          onClick={() => setEditForm({ ...f })}
-                          sx={{ color: BRAND.primary, '&:hover': { bgcolor: '#e6f4ea' } }}>
-                          <EditIcon sx={{ fontSize: 16 }} />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Delete form">
-                        <IconButton size="small"
-                          onClick={() => handleDeleteForm(f)}
-                          sx={{ color: '#c62828', '&:hover': { bgcolor: '#fdecea' } }}>
-                          <DeleteIcon sx={{ fontSize: 16 }} />
-                        </IconButton>
-                      </Tooltip>
-                    </Box>
-                  </TableCell>
-
                 </TableRow>
               );
             })}
           </TableBody>
         </Table>
-        </Box>
       </Collapse>
-
-      {/* ── Edit Form Modal ───────────────────────────────────── */}
-      {editForm && (
-        <Dialog open={!!editForm} onClose={() => setEditForm(null)} maxWidth="sm" fullWidth
-          PaperProps={{ sx: { borderRadius: 3 } }}>
-          <Box sx={{ background: `linear-gradient(135deg, ${BRAND.primary}dd, ${BRAND.primary}88)`, px: 3, py: 2.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Box>
-              <Typography variant="overline" sx={{ color: 'rgba(255,255,255,0.8)', fontSize: 10, letterSpacing: 1.5 }}>EDIT FORM</Typography>
-              <Typography variant="h6" sx={{ color: '#fff', fontWeight: 800 }}>{editForm.customerName}</Typography>
-              <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.75)' }}>FSE: {editForm.employeeName}</Typography>
-            </Box>
-            <IconButton onClick={() => setEditForm(null)} sx={{ color: '#fff', bgcolor: 'rgba(255,255,255,0.15)' }}>
-              <CloseIcon fontSize="small" />
-            </IconButton>
-          </Box>
-
-          <DialogContent sx={{ p: 3 }}>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-              <TextField fullWidth size="small" label="Customer Name"
-                value={editForm.customerName || ''}
-                onChange={e => setEditForm(p => ({ ...p, customerName: e.target.value }))} />
-
-              <TextField fullWidth size="small" label="Customer Phone"
-                value={editForm.customerNumber || ''}
-                onChange={e => setEditForm(p => ({ ...p, customerNumber: e.target.value }))} />
-
-              <TextField fullWidth size="small" label="Location"
-                value={editForm.location || ''}
-                onChange={e => setEditForm(p => ({ ...p, location: e.target.value }))} />
-
-              <TextField fullWidth size="small" label="Product (formFillingFor)"
-                value={editForm.formFillingFor || ''}
-                onChange={e => setEditForm(p => ({ ...p, formFillingFor: e.target.value }))} />
-
-              <TextField fullWidth size="small" label="Visit Status" select
-                value={editForm.status || ''}
-                onChange={e => setEditForm(p => ({ ...p, status: e.target.value }))}>
-                {['Ready for Onboarding', 'Not Interested', 'Try but not done due to error', 'Need to visit again'].map(s => (
-                  <MenuItem key={s} value={s}>{s}</MenuItem>
-                ))}
-              </TextField>
-
-              <TextField fullWidth size="small" multiline rows={2}
-                label="Reason for edit (FSE will be notified)"
-                value={editForm._editReason || ''}
-                onChange={e => setEditForm(p => ({ ...p, _editReason: e.target.value }))}
-                placeholder="e.g. Corrected phone number, updated status" />
-            </Box>
-          </DialogContent>
-
-          <DialogActions sx={{ px: 3, py: 1.5, borderTop: '1px solid', borderColor: 'divider', display: 'flex', justifyContent: 'space-between' }}>
-            <Box>
-              {(() => {
-                const vKey = getKey(editForm);
-                const vStatus = verifyMap[vKey]?.status || 'Not Found';
-                const isFullyVerified = vStatus === 'Fully Verified';
-                
-                return isFullyVerified ? (
-                  <Button 
-                    variant="outlined" 
-                    size="small"
-                    onClick={() => {
-                      // Revert verification logic - will be passed from parent
-                      if (window.confirm(`Revert verification for ${editForm.customerName}?\n\nThis will change status back to "Not Found".`)) {
-                        // Call revert handler from parent
-                        onRevertVerification(editForm);
-                        setEditForm(null);
-                      }
-                    }}
-                    sx={{ 
-                      color: '#c62828', 
-                      borderColor: '#c62828', 
-                      fontWeight: 700,
-                      '&:hover': { bgcolor: '#fdecea', borderColor: '#c62828' }
-                    }}
-                  >
-                    ↺ Revert Verification
-                  </Button>
-                ) : (
-                  <Button 
-                    variant="outlined" 
-                    size="small"
-                    onClick={() => {
-                      onManualVerify(editForm);
-                      setEditForm(null); // Close edit modal when opening verify modal
-                    }}
-                    sx={{ 
-                      color: '#2e7d32', 
-                      borderColor: '#2e7d32', 
-                      fontWeight: 700,
-                      '&:hover': { bgcolor: '#e6f4ea', borderColor: '#2e7d32' }
-                    }}
-                  >
-                    ✓ Verify Form
-                  </Button>
-                );
-              })()}
-            </Box>
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <Button onClick={() => setEditForm(null)} color="inherit">Cancel</Button>
-              <Button variant="contained" onClick={handleSaveEdit} disabled={editSaving}
-                startIcon={editSaving ? <CircularProgress size={14} sx={{ color: 'inherit' }} /> : null}
-                sx={{ bgcolor: BRAND.primary, fontWeight: 700, '&:hover': { bgcolor: '#0f3320' } }}>
-                {editSaving ? 'Saving…' : 'Save Changes'}
-              </Button>
-            </Box>
-          </DialogActions>
-        </Dialog>
-      )}
-
-      {/* Edit/Delete Snackbar */}
-      <Snackbar open={!!editSnack} autoHideDuration={3000} onClose={() => setEditSnack('')}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
-        <Alert severity={editSnack.startsWith('✓') ? 'success' : 'error'} variant="filled"
-          onClose={() => setEditSnack('')}>
-          {editSnack}
-        </Alert>
-      </Snackbar>
-
-      {/* ── Verification Detail Modal ─────────────────────────── */}
-      {verifyDetail && (() => {
-        const f   = verifyDetail.form;
-        const v   = verifyDetail.data?.verification || {};
-        const pc  = verifyDetail.data?.phoneCheck   || {};
-        const STATUS_COLORS = {
-          'Fully Verified': { bg: '#e6f4ea', color: '#2e7d32', icon: '✓' },
-          'Partially Done': { bg: '#fff8e1', color: '#f57f17', icon: '◑' },
-          'Not Verified':   { bg: '#fdecea', color: '#c62828', icon: '✗' },
-          'Not Found':      { bg: '#f5f5f5', color: '#888',    icon: '–' },
-        };
-        const vb = STATUS_COLORS[v.status] || STATUS_COLORS['Not Found'];
-
-        return (
-          <Dialog
-            open={!!verifyDetail}
-            onClose={() => setVerifyDetail(null)}
-            maxWidth="sm"
-            fullWidth
-            PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}
-          >
-            {/* Colored header */}
-            <Box sx={{
-              background: `linear-gradient(135deg, ${vb.color}dd, ${vb.color}88)`,
-              px: 3, py: 2.5,
-              display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between'
-            }}>
-              <Box>
-                <Typography variant="overline" sx={{ color: 'rgba(255,255,255,0.8)', fontSize: 10, letterSpacing: 1.5 }}>
-                  VERIFICATION DETAIL
-                </Typography>
-                <Typography variant="h6" sx={{ color: '#fff', fontWeight: 800, mt: 0.3 }}>
-                  {f.customerName}
-                </Typography>
-                <Box sx={{ display: 'flex', gap: 2, mt: 0.5, flexWrap: 'wrap' }}>
-                  <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.85)', fontFamily: 'monospace' }}>
-                    {f.customerNumber}
-                  </Typography>
-                  <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.75)' }}>
-                    {getProduct(f) || '–'}
-                  </Typography>
-                  <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.65)' }}>
-                    FSE: {f.employeeName || '–'}
-                  </Typography>
-                </Box>
-              </Box>
-              <IconButton onClick={() => setVerifyDetail(null)}
-                sx={{ color: '#fff', bgcolor: 'rgba(255,255,255,0.15)', '&:hover': { bgcolor: 'rgba(255,255,255,0.25)' } }}>
-                <CloseIcon fontSize="small" />
-              </IconButton>
-            </Box>
-
-            <DialogContent sx={{ p: 3 }}>
-              {verifyDetail.loading ? (
-                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 4, gap: 2 }}>
-                  <CircularProgress sx={{ color: vb.color }} />
-                  <Typography variant="body2" color="text.secondary">Loading verification details…</Typography>
-                </Box>
-              ) : !verifyDetail.data ? (
-                <Box sx={{ textAlign: 'center', py: 4 }}>
-                  <Typography variant="body1" color="text.secondary">Could not load verification data.</Typography>
-                  <Typography variant="caption" color="text.secondary">Make sure the employee server is running on port 4000.</Typography>
-                </Box>
-              ) : (
-                <Box>
-                  {/* Overall status badge */}
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 3, p: 2, borderRadius: 2, bgcolor: vb.bg, border: `1.5px solid ${vb.color}30` }}>
-                    <Typography variant="h4" sx={{ color: vb.color }}>{vb.icon}</Typography>
-                    <Box>
-                      <Typography variant="subtitle1" fontWeight={800} sx={{ color: vb.color }}>
-                        {v.status || 'Not Found'}
-                      </Typography>
-                      {v.passed !== undefined && (
-                        <Typography variant="caption" color="text.secondary">
-                          {v.passed} of {v.total} conditions passed
-                        </Typography>
-                      )}
-                    </Box>
-                  </Box>
-
-                  {/* Condition chips summary */}
-                  {(v.checks || []).length > 0 && (
-                    <Box sx={{ mb: 3 }}>
-                      <Typography variant="overline" sx={{ color: 'text.secondary', fontWeight: 700, letterSpacing: 1, fontSize: 10 }}>
-                        Condition Summary
-                      </Typography>
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 1 }}>
-                        {v.checks.map((c, i) => (
-                          <Box key={i} sx={{
-                            display: 'inline-flex', alignItems: 'center', gap: 0.5,
-                            px: 1.5, py: 0.5, borderRadius: 20, fontSize: 12, fontWeight: 700,
-                            bgcolor: c.pass ? '#e6f4ea' : '#fdecea',
-                            color: c.pass ? '#2e7d32' : '#c62828',
-                            border: `1.5px solid ${c.pass ? '#a8d5b5' : '#f5a5a5'}`,
-                          }}>
-                            {c.pass ? '✓' : '✗'} {c.label}
-                          </Box>
-                        ))}
-                      </Box>
-                    </Box>
-                  )}
-
-                  {/* Detailed condition rows */}
-                  {(v.checks || []).length > 0 && (
-                    <Box sx={{ mb: 2 }}>
-                      <Typography variant="overline" sx={{ color: 'text.secondary', fontWeight: 700, letterSpacing: 1, fontSize: 10 }}>
-                        Condition Details
-                      </Typography>
-                      <Box sx={{ mt: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
-                        {v.checks.map((c, i) => (
-                          <Box key={i} sx={{
-                            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                            p: 1.5, borderRadius: 2,
-                            bgcolor: c.pass ? '#f0fdf4' : '#fff5f5',
-                            border: `1px solid ${c.pass ? '#bbf7d0' : '#fecaca'}`,
-                          }}>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <Box sx={{
-                                width: 24, height: 24, borderRadius: '50%',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                bgcolor: c.pass ? '#2e7d32' : '#c62828',
-                                color: '#fff', fontSize: 12, fontWeight: 800, flexShrink: 0,
-                              }}>
-                                {c.pass ? '✓' : '✗'}
-                              </Box>
-                              <Typography variant="body2" fontWeight={700} sx={{ color: c.pass ? '#2e7d32' : '#c62828' }}>
-                                {c.label}
-                              </Typography>
-                            </Box>
-                            <Box sx={{ textAlign: 'right' }}>
-                              <Typography variant="caption" color="text.secondary">
-                                Actual value:
-                              </Typography>
-                              <Typography variant="body2" fontWeight={700} sx={{
-                                color: c.pass ? '#2e7d32' : '#c62828',
-                                fontFamily: 'monospace', fontSize: 12,
-                              }}>
-                                {c.actual || '–'}
-                              </Typography>
-                            </Box>
-                          </Box>
-                        ))}
-                      </Box>
-                    </Box>
-                  )}
-
-                  {/* Not Found case */}
-                  {(v.checks || []).length === 0 && v.status === 'Not Found' && (
-                    <Box sx={{ p: 2, borderRadius: 2, bgcolor: '#f5f5f5', border: '1px solid #e0e0e0', textAlign: 'center' }}>
-                      <Typography variant="body2" color="text.secondary">
-                        Merchant not found in the verification collection.
-                      </Typography>
-                      <Typography variant="caption" color="text.secondary">
-                        Phone: {f.customerNumber} · Product: {getProduct(f) || '–'}
-                      </Typography>
-                    </Box>
-                  )}
-
-                  {/* Phone match info */}
-                  <Box sx={{
-                    mt: 2, p: 1.5, borderRadius: 2,
-                    bgcolor: pc.matched ? '#f0fdf4' : '#f9f9f9',
-                    border: `1px solid ${pc.matched ? '#bbf7d0' : '#e0e0e0'}`,
-                    display: 'flex', alignItems: 'center', gap: 1
-                  }}>
-                    <Typography variant="caption" fontWeight={700} sx={{ color: pc.matched ? '#2e7d32' : '#888' }}>
-                      {pc.matched ? '✓ Found in collection' : '– Not found in collection'}
-                    </Typography>
-                    {v.collection && (
-                      <Typography variant="caption" color="text.secondary" sx={{ fontFamily: 'monospace' }}>
-                        · {v.collection}
-                      </Typography>
-                    )}
-                  </Box>
-                </Box>
-              )}
-            </DialogContent>
-
-            <DialogActions sx={{ px: 3, py: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
-              <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
-                {f.createdAt ? new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : ''}
-              </Typography>
-              <Button onClick={() => setVerifyDetail(null)} variant="contained"
-                sx={{ bgcolor: vb.color, fontWeight: 700, borderRadius: 2, '&:hover': { opacity: 0.9 } }}>
-                Close
-              </Button>
-            </DialogActions>
-          </Dialog>
-        );
-      })()}
 
     </Card>
   );
 }
 
-// ── Edit Points Dialog (isolated component to prevent parent re-renders on typing) ──
-function EditPointsDialog({ open, empData, onClose, onSave, adjHistory, onDeleteAdj, EMP_API, BRAND, POINTS_MAP }) {
-  const [localValue,        setLocalValue]        = React.useState('0');
-  const [localReason,       setLocalReason]        = React.useState('');
-  const [localProductAdj,   setLocalProductAdj]    = React.useState({});
-  const [localSlabs,        setLocalSlabs]         = React.useState({}); // { product: [{minForms, multiplier}] }
-  const [manualDelta,       setManualDelta]        = React.useState('');
-  const [manualReason,      setManualReason]       = React.useState('');
-  const [saving,            setSaving]             = React.useState(false);
-  const [deleteDialog,      setDeleteDialog]       = React.useState(null);
-  const [deleteReason,      setDeleteReason]       = React.useState('');
-  const [deleteSaving,      setDeleteSaving]       = React.useState(false);
-
-  // Sync when dialog opens
-  React.useEffect(() => {
-    if (open && empData) {
-      setLocalValue('0');
-      setLocalReason('');
-      setManualDelta('');
-      setManualReason('');
-      const initAdj = {};
-      const initSlabs = {};
-      Object.keys(empData.productBreakdown || {}).forEach(p => {
-        initAdj[p] = { value: '0', reason: '' };
-        initSlabs[p] = []; // empty slabs — admin adds
-      });
-      setLocalProductAdj(initAdj);
-      setLocalSlabs(initSlabs);
-    }
-  }, [open, empData]);
-
-  if (!open || !empData) return null;
-
-  const { empName, empData: eData, autoPoints, productBreakdown } = empData;
-
-  const handleSave = async () => {
-    setSaving(true);
-    await onSave({
-      empData: eData,
-      empName,
-      autoPoints,
-      editPtsValue: localValue,
-      editPtsReason: localReason,
-      productAdjustments: localProductAdj,
-      productSlabs: localSlabs,
-      manualDelta,
-      manualReason,
-    });
-    setSaving(false);
-  };
-
-  const handleClose = () => {
-    setDeleteDialog(null);
-    setDeleteReason('');
-    onClose();
-  };
-
-  const productDelta = Object.entries(productBreakdown || {}).reduce((sum, [product, count]) => {
-    const pts = POINTS_MAP[product] || 0;
-    const slabs = (localSlabs[product] || []).filter(s => s.minForms !== '' && s.multiplier !== '');
-    if (!slabs.length) return sum;
-    // ALL qualifying slabs add up (cumulative)
-    const totalBonus = slabs
-      .filter(s => count >= Number(s.minForms))
-      .reduce((s2, slab) => {
-        const mul = parseFloat(slab.multiplier);
-        return isNaN(mul) ? s2 : s2 + Math.round(count * pts * mul * 10000) / 10000;
-      }, 0);
-    return sum + totalBonus;
-  }, 0);
-  const overallDelta = 0;
-  const manualCorrectionDelta = parseFloat(manualDelta) || 0;
-  const existingAdj  = empData?.empData?.pointsAdjustment || 0;
-  const newTotal = Math.round(((autoPoints || 0) + existingAdj + overallDelta + productDelta + manualCorrectionDelta) * 10) / 10;
-
-  return (
-    <>
-      <Dialog open={open} onClose={handleClose} maxWidth="sm" fullWidth>
-        <DialogTitle sx={{ fontWeight: 800, color: BRAND.primary, pb: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span>⭐ Edit Points — {empName}</span>
-          <IconButton size="small" onClick={handleClose}><CloseIcon fontSize="small" /></IconButton>
-        </DialogTitle>
-        <DialogContent>
-          <Box sx={{ mb: 2, p: 1.5, bgcolor: '#fff8e1', borderRadius: 2, border: '1px solid #f4a261' }}>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>Points criteria (Fully Verified only):</Typography>
-            {[['Tide', 2], ['Tide MSME', 0.3], ['MSME', 0.3], ['Tide Insurance', 1], ['Tide Credit Card', 1]].map(([k, v]) => (
-              <Typography key={k} variant="caption" sx={{ display: 'block', color: '#e76f51', fontWeight: 600 }}>{k}: {v} pts</Typography>
-            ))}
-          </Box>
-          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-            Verified points (Fully Verified only): <strong style={{ color: '#e76f51' }}>{autoPoints || 0}</strong>
-          </Typography>
-
-          {/* Per-product adjustments */}
-          {productBreakdown && Object.keys(productBreakdown).length > 0 && (
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1, fontWeight: 600 }}>
-                Fully Verified by Product — adjust individually:
-              </Typography>
-              {Object.entries(productBreakdown).sort((a, b) => b[1] - a[1]).map(([product, count]) => {
-                const pts = POINTS_MAP[product] || 0;
-                const basePoints = Math.round(count * pts * 10000) / 10000;
-                const slabs = localSlabs[product] || [];
-                const reason = (localProductAdj[product] || {}).reason || '';
-
-                // All qualifying slabs
-                const qualifyingSlabs = slabs.map((slab, idx) => {
-                  const qualifies = slab.minForms !== '' && count >= Number(slab.minForms);
-                  const mul = parseFloat(slab.multiplier);
-                  const result = qualifies && !isNaN(mul) ? Math.round(count * pts * mul * 10000) / 10000 : null;
-                  return { ...slab, idx, qualifies, result };
-                });
-                const totalBonus = qualifyingSlabs.reduce((s, sl) => s + (sl.result || 0), 0);
-                const roundedTotal = Math.round(totalBonus * 10000) / 10000;
-
-                return (
-                  <Box key={product} sx={{ mb: 2, p: 1.5, bgcolor: '#f0fdf4', borderRadius: 2, border: `1.5px solid ${totalBonus > 0 ? '#7c3aed' : '#bbf7d0'}` }}>
-                    {/* Product header — only verified count + base pts */}
-                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
-                      <Typography variant="body2" fontWeight={700} sx={{ color: '#065f46' }}>{product}</Typography>
-                      <Typography variant="body2" sx={{ color: '#059669', fontWeight: 700 }}>
-                        {count} verified cases — {basePoints} pts
-                      </Typography>
-                    </Box>
-
-                    {/* Slab rows */}
-                    {slabs.map((slab, idx) => {
-                      const qualifies = slab.minForms !== '' && count >= Number(slab.minForms);
-                      const mul = parseFloat(slab.multiplier);
-                      const slabResult = qualifies && !isNaN(mul) ? Math.round(count * pts * mul * 10000) / 10000 : null;
-                      return (
-                        <Box key={idx} sx={{ display: 'flex', gap: 1, mb: 1, alignItems: 'center' }}>
-                          <Typography variant="caption" sx={{ color: '#555', fontWeight: 700, minWidth: 50 }}>
-                            Slab {idx + 1}
-                          </Typography>
-                          <TextField size="small" type="number" label="Min Forms"
-                            value={slab.minForms}
-                            onChange={e => setLocalSlabs(prev => {
-                              const updated = [...(prev[product] || [])];
-                              updated[idx] = { ...updated[idx], minForms: e.target.value };
-                              return { ...prev, [product]: updated };
-                            })}
-                            inputProps={{ step: 1, min: 0 }}
-                            placeholder="e.g. 10"
-                            sx={{ width: 110 }} />
-                          <TextField size="small" type="number" label="Multiplier"
-                            value={slab.multiplier}
-                            onChange={e => setLocalSlabs(prev => {
-                              const updated = [...(prev[product] || [])];
-                              updated[idx] = { ...updated[idx], multiplier: e.target.value };
-                              return { ...prev, [product]: updated };
-                            })}
-                            inputProps={{ step: 'any' }}
-                            placeholder="e.g. 1.5"
-                            sx={{ width: 110 }} />
-                          <IconButton size="small" color="error"
-                            onClick={() => setLocalSlabs(prev => ({
-                              ...prev,
-                              [product]: (prev[product] || []).filter((_, i) => i !== idx)
-                            }))}>
-                            <DeleteIcon fontSize="small" />
-                          </IconButton>
-                          {/* Qualifies badge with count × multiplier = result */}
-                          {qualifies && slabResult !== null && (
-                            <Chip
-                              label={`✓ ${count} × ${slab.multiplier} = ${slabResult} pts`}
-                              size="small"
-                              sx={{ bgcolor: '#e8f4fd', color: '#1565c0', fontWeight: 700, fontSize: 10 }}
-                            />
-                          )}
-                        </Box>
-                      );
-                    })}
-
-                    {/* Add Slab button */}
-                    <Button size="small" variant="outlined"
-                      onClick={() => setLocalSlabs(prev => ({
-                        ...prev,
-                        [product]: [...(prev[product] || []), { minForms: '', multiplier: '' }]
-                      }))}
-                      sx={{ color: BRAND.primary, borderColor: BRAND.primary, fontWeight: 700, fontSize: 11, mb: 1 }}>
-                      + Add Slab
-                    </Button>
-
-                    {/* Total of all qualifying slabs */}
-                    {roundedTotal > 0 && (
-                      <Box sx={{ mt: 1, p: 1, bgcolor: '#f3e8ff', borderRadius: 1.5, border: '1px solid #c4b5fd' }}>
-                        <Typography variant="caption" sx={{ color: '#7c3aed', fontWeight: 700 }}>
-                          🏆 Total Contest Bonus: {qualifyingSlabs.filter(s => s.result).map(s => `${s.result}`).join(' + ')} = <b>+{roundedTotal} pts</b>
-                        </Typography>
-                      </Box>
-                    )}
-
-                    {/* Reason */}
-                    <TextField size="small" fullWidth label="Reason (FSE will see this)"
-                      value={reason}
-                      onChange={e => setLocalProductAdj(prev => ({ ...prev, [product]: { ...prev[product], reason: e.target.value } }))}
-                      placeholder="e.g. Contest April 2026"
-                      sx={{ mt: 1 }} />
-                  </Box>
-                );
-              })}
-            </Box>
-          )}
-
-          {/* Manual Correction Section */}
-          <Box sx={{ mt: 2, mb: 1.5, p: 1.5, bgcolor: '#fff8e1', borderRadius: 2, border: '1.5px solid #f4a261' }}>
-            <Typography variant="caption" fontWeight={700} sx={{ display: 'block', mb: 1, color: '#e65100', textTransform: 'uppercase', letterSpacing: 0.8 }}>
-              🔧 Manual Correction
-            </Typography>
-            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1.5 }}>
-              Use this to fix mistakes or add/subtract points directly.
-            </Typography>
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <TextField size="small" type="number" label="Points (+/-)"
-                value={manualDelta}
-                onChange={e => setManualDelta(e.target.value)}
-                inputProps={{ step: 'any' }}
-                placeholder="e.g. +5, -2"
-                sx={{ width: 130 }} />
-              <TextField size="small" label="Reason (required)"
-                value={manualReason}
-                onChange={e => setManualReason(e.target.value)}
-                placeholder="e.g. Correction for missed entry"
-                sx={{ flex: 1 }} />
-            </Box>
-          </Box>
-
-          <Box sx={{ mt: 1.5, p: 1.5, bgcolor: '#e6f4ea', borderRadius: 2 }}>
-            <Typography variant="body2" fontWeight={700} sx={{ color: BRAND.primary }}>
-              Current: {Math.round(((autoPoints || 0) + existingAdj) * 10) / 10} pts
-              {(overallDelta + productDelta + manualCorrectionDelta) !== 0 && (
-                <> → After: <span style={{ color: (overallDelta + productDelta + manualCorrectionDelta) > 0 ? '#2e7d32' : '#c62828' }}>{newTotal} pts ({(overallDelta + productDelta + manualCorrectionDelta) > 0 ? '+' : ''}{Math.round((overallDelta + productDelta + manualCorrectionDelta) * 10) / 10})</span></>
-              )}
-            </Typography>
-          </Box>
-
-          {/* Adjustment History */}
-          {adjHistory.length > 0 && (
-            <Box sx={{ mt: 2 }}>
-              <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ display: 'block', mb: 1, textTransform: 'uppercase', letterSpacing: 0.8 }}>
-                Adjustment History
-              </Typography>
-              {adjHistory.slice().reverse().map((h) => (
-                <Box key={h._id} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, mb: 0.8, p: 1, bgcolor: '#f9f9f9', borderRadius: 1.5, border: '1px solid #e0e0e0' }}>
-                  <Box sx={{ flex: 1 }}>
-                    <Typography variant="caption" fontWeight={700} sx={{ color: h.delta >= 0 ? '#2e7d32' : '#c62828' }}>
-                      {h.delta >= 0 ? '+' : ''}{h.delta} pts
-                    </Typography>
-                    {h.reason && <Typography variant="caption" color="text.secondary" sx={{ ml: 1 }}>{h.reason}</Typography>}
-                    <Typography variant="caption" color="text.secondary" sx={{ display: 'block', fontSize: 10 }}>
-                      {new Date(h.updatedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                    </Typography>
-                  </Box>
-                  <IconButton size="small" color="error" onClick={() => setDeleteDialog({ historyId: h._id, delta: h.delta, reason: h.reason })}
-                    sx={{ '&:hover': { bgcolor: '#fdecea' } }}>
-                    <DeleteIcon fontSize="small" />
-                  </IconButton>
-                </Box>
-              ))}
-            </Box>
-          )}
-        </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2, display: 'flex', justifyContent: 'space-between' }}>
-          <Button color="error" variant="outlined" size="small"
-            onClick={() => {
-              if (!window.confirm('Reset all slabs and corrections?')) return;
-              const reset = {};
-              Object.keys(empData?.productBreakdown || {}).forEach(k => { reset[k] = []; });
-              setLocalSlabs(reset);
-              setManualDelta('');
-              setManualReason('');
-            }}
-            sx={{ fontWeight: 700 }}>
-            🗑 Reset All to 0
-          </Button>
-          <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button onClick={handleClose} color="inherit">Cancel</Button>
-            <Button variant="contained" onClick={handleSave} disabled={saving}
-              sx={{ bgcolor: BRAND.primary, fontWeight: 700 }}>
-              {saving ? 'Saving…' : 'Save Points'}
-            </Button>
-          </Box>
-        </DialogActions>
-      </Dialog>
-
-      {/* Delete Adjustment Dialog */}
-      {deleteDialog && (
-        <Dialog open onClose={() => { setDeleteDialog(null); setDeleteReason(''); }} maxWidth="xs" fullWidth>
-          <DialogTitle sx={{ fontWeight: 800, color: '#c62828', pb: 1 }}>🗑 Delete Adjustment</DialogTitle>
-          <DialogContent>
-            <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-              Removing: <strong style={{ color: deleteDialog.delta >= 0 ? '#2e7d32' : '#c62828' }}>
-                {deleteDialog.delta >= 0 ? '+' : ''}{deleteDialog.delta} pts
-              </strong>
-              {deleteDialog.reason && ` — "${deleteDialog.reason}"`}
-            </Typography>
-            <TextField fullWidth size="small" multiline rows={2}
-              label="Reason for deletion (FSE will be notified)"
-              value={deleteReason} onChange={e => setDeleteReason(e.target.value)}
-              placeholder="e.g. Entered by mistake" />
-          </DialogContent>
-          <DialogActions sx={{ px: 3, pb: 2 }}>
-            <Button onClick={() => { setDeleteDialog(null); setDeleteReason(''); }} color="inherit">Cancel</Button>
-            <Button variant="contained" color="error" disabled={deleteSaving || !deleteReason.trim()}
-              onClick={async () => {
-                setDeleteSaving(true);
-                await onDeleteAdj(eData._id, deleteDialog.historyId, deleteReason);
-                setDeleteDialog(null);
-                setDeleteReason('');
-                setDeleteSaving(false);
-              }}
-              sx={{ fontWeight: 700 }}>
-              {deleteSaving ? 'Deleting…' : 'Confirm Delete'}
-            </Button>
-          </DialogActions>
-        </Dialog>
-      )}
-    </>
-  );
-}
-
 // ── Main Page ─────────────────────────────────────────────────
-export default function MerchantForms({ firstLoad = true, onLoaded }) {
+export default function MerchantForms() {
   const [forms,      setForms]      = useState([]);
   const [duplicates, setDuplicates] = useState([]);
   const [loading,    setLoading]    = useState(true);
-  const [pageLoading, setPageLoading] = useState(true);
   const [error,      setError]      = useState('');
   const [search,     setSearch]     = useState('');
-  const [activeTab,  setActiveTab]  = useState('forms'); // 'forms' | 'activity'
-  const [pointsActivity, setPointsActivity] = useState([]);
-  const [activityLoading, setActivityLoading] = useState(false);
-  const [selectedActivity, setSelectedActivity] = useState([]);
   const [dupOpen,    setDupOpen]    = useState(false);
   const [settledOpen,setSettledOpen]= useState(false);
   const [exporting,  setExporting]  = useState(false);
   const [exportAnchor, setExportAnchor] = useState(null);
-  const [notifying,  setNotifying]  = useState(null);
+  const [notifying,  setNotifying]  = useState(null); // index of dup being notified
   const [notifySnack, setNotifySnack] = useState('');
-  const [settling,   setSettling]   = useState(null);
-  const [empPoints,  setEmpPoints]  = useState([]);
-  const [employees,  setEmployees]  = useState([]);
-  const [tlList,     setTlList]     = useState([]);
+  const [settling,   setSettling]   = useState(null); // index of dup being settled
+  const [empPoints,  setEmpPoints]  = useState([]);   // [{_id, newJoinerName, pointsAdjustment}]
   const [editPtsOpen,  setEditPtsOpen]  = useState(false);
-  const [editPtsEmp,   setEditPtsEmp]   = useState(null);
+  const [editPtsEmp,   setEditPtsEmp]   = useState(null); // {empName, empData, autoPoints}
   const [editPtsValue, setEditPtsValue] = useState('');
-  const [editPtsReason, setEditPtsReason] = useState('');
   const [editPtsSaving,setEditPtsSaving]= useState(false);
-  const [productAdjustments, setProductAdjustments] = useState({});
-  const [adjHistory, setAdjHistory] = useState([]);
-  const [deleteAdjDialog, setDeleteAdjDialog] = useState(null); // { historyId, delta, reason }
-  const [deleteAdjReason, setDeleteAdjReason] = useState('');
-  const [deleteAdjSaving, setDeleteAdjSaving] = useState(false);
   // const [todayOnly, setTodayOnly] = useState(false);
   const [dateFilter, setDateFilter] = useState('all');
   const [toDate, setToDate]         = useState('');
   const [fromDate, setFromDate]     = useState('');
-  const [filterProduct, setFilterProduct] = useState(''); // product filter
   const [globalVerifyMap,  setGlobalVerifyMap]  = useState({});
   const [verifyKpiOpen,    setVerifyKpiOpen]    = useState(null); // 'Fully Verified' | 'Partially Done' | 'Not Found'
   const [drillProduct,     setDrillProduct]     = useState(null); // { product, status }
-  
-  // Manual Verification Modal
-  const [manualVerifyOpen, setManualVerifyOpen] = useState(false);
-  const [selectedForm, setSelectedForm] = useState(null);
-  const [verifyReason, setVerifyReason] = useState('');
-  const [verifyingManually, setVerifyingManually] = useState(false);
-  
-  // Employee Form Details Modal (for duplicate comparison)
-  const [employeeFormDetails, setEmployeeFormDetails] = useState(null); // { employeeName, form, duplicate }
-
-  // Syncing indicator state
-  const [isSyncing, setIsSyncing] = useState(false);
-
-  // Check if current time is during sync window (11:30-11:35 AM)
-  useEffect(() => {
-    const checkSyncTime = () => {
-      const now = new Date();
-      const hour = now.getHours();
-      const minute = now.getMinutes();
-      
-      // Sync window: 11:30 AM - 11:35 AM
-      if (hour === 11 && minute >= 30 && minute <= 35) {
-        setIsSyncing(true);
-      } else {
-        setIsSyncing(false);
-      }
-    };
-
-    checkSyncTime();
-    const interval = setInterval(checkSyncTime, 60000); // Check every minute
-
-    return () => clearInterval(interval);
-  }, []);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const [formsRes, dupRes, ptsRes, empRes, tlRes] = await Promise.all([
+      const [formsRes, dupRes, ptsRes] = await Promise.all([
         fetch(`${EMP_API}/forms/admin/all`),
         fetch(`${EMP_API}/forms/admin/duplicates`),
         fetch(`${EMP_API}/forms/admin/employee-points`),
-        fetch(`${EMP_API}/auth/all-employees`),
-        fetch(`${EMP_API}/tl/approved-list`),
       ]);
       if (!formsRes.ok) throw new Error('Failed to load merchant forms');
       setForms(await formsRes.json());
       setDuplicates(dupRes.ok ? await dupRes.json() : []);
       setEmpPoints(ptsRes.ok ? await ptsRes.json() : []);
-      setEmployees(empRes.ok ? await empRes.json() : []);
-      setTlList(tlRes.ok ? await tlRes.json() : []);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
-      setPageLoading(false);
-      if (onLoaded) onLoaded();
     }
   }, []);
 
@@ -1502,7 +645,8 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
     }
   }, []);
 
-  const handleEditPoints = useCallback(async (empName, empData, autoPoints, productBreakdown = {}) => {
+  const handleEditPoints = useCallback(async (empName, empData, autoPoints) => {
+    // If no points record exists yet, create one first
     let data = empData;
     if (!data?._id) {
       try {
@@ -1513,23 +657,14 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
         });
         if (res.ok) {
           data = await res.json();
+          // Refresh empPoints list
           const ptsRes = await fetch(`${EMP_API}/forms/admin/employee-points`);
           if (ptsRes.ok) setEmpPoints(await ptsRes.json());
         }
       } catch {}
     }
-    setEditPtsEmp({ empName, empData: data, autoPoints, productBreakdown });
+    setEditPtsEmp({ empName, empData: data, autoPoints });
     setEditPtsValue(data?.pointsAdjustment !== undefined ? String(data.pointsAdjustment) : '0');
-    setEditPtsReason('');
-    // Init per-product adjustments
-    const initAdj = {};
-    Object.keys(productBreakdown || {}).forEach(p => { initAdj[p] = { value: '0', reason: '' }; });
-    setProductAdjustments(initAdj);
-    // Fetch adjustment history
-    if (data?._id) {
-      fetch(`${EMP_API}/forms/admin/adjustment-history/${data._id}`)
-        .then(r => r.ok ? r.json() : []).then(setAdjHistory).catch(() => setAdjHistory([]));
-    }
     setEditPtsOpen(true);
   }, []);
 
@@ -1537,59 +672,18 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
     if (!editPtsEmp?.empData?._id) return;
     setEditPtsSaving(true);
     try {
+      // Calculate the delta: newAdjustment - currentAdjustment
       const newAdj     = parseFloat(editPtsValue) || 0;
       const currentAdj = editPtsEmp.empData.pointsAdjustment || 0;
       const delta      = newAdj - currentAdj;
-
-      // Calculate total per-product delta
-      const productEntries = Object.entries(productAdjustments).filter(([, v]) => parseFloat(v.value) !== 0);
-      const productDelta   = productEntries.reduce((sum, [, v]) => sum + (parseFloat(v.value) || 0), 0);
-      const totalDelta     = delta + productDelta;
-
       const res = await fetch(`${EMP_API}/forms/admin/adjust-points/${editPtsEmp.empData._id}`, {
         method:  'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ adjustment: totalDelta, reason: editPtsReason || 'Points adjusted by admin' }),
+        body:    JSON.stringify({ adjustment: delta }),
       });
       if (res.ok) {
-        const newTotal = Math.round(((editPtsEmp.autoPoints || 0) + newAdj + productDelta) * 10) / 10;
-
-        // Send one notification per product that has an adjustment + reason
-        const productNotifPromises = productEntries
-          .filter(([, v]) => v.reason.trim())
-          .map(([product, v]) =>
-            fetch(`${EMP_API}/requests/notify-points`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                employeeName: editPtsEmp.empName,
-                adjustment:   parseFloat(v.value),
-                newTotal,
-                reason: `${product}: ${parseFloat(v.value) >= 0 ? '+' : ''}${v.value} pts — ${v.reason}`,
-              }),
-            }).catch(() => {})
-          );
-
-        // Send overall notification if overall reason given
-        const overallNotif = editPtsReason.trim()
-          ? fetch(`${EMP_API}/requests/notify-points`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                employeeName: editPtsEmp.empName,
-                adjustment:   totalDelta,
-                newTotal,
-                reason: editPtsReason,
-              }),
-            }).catch(() => {})
-          : null;
-
-        await Promise.all([...productNotifPromises, overallNotif].filter(Boolean));
-
         setNotifySnack(`✓ Points updated for ${editPtsEmp.empName}`);
         setEditPtsOpen(false);
-        setEditPtsReason('');
-        setProductAdjustments({});
         load();
       } else {
         const d = await res.json();
@@ -1600,7 +694,7 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
     } finally {
       setEditPtsSaving(false);
     }
-  }, [editPtsEmp, editPtsValue, editPtsReason, load]);
+  }, [editPtsEmp, editPtsValue, load]);
 
   const handleNotify = useCallback(async (dup, idx) => {
     setNotifying(idx);
@@ -1626,122 +720,10 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const loadActivity = useCallback(async () => {
-    setActivityLoading(true);
-    try {
-      const res = await fetch(`${EMP_API}/requests/all-points-activity`);
-      if (res.ok) setPointsActivity(await res.json());
-    } catch { /* ignore */ } finally { setActivityLoading(false); }
-  }, []);
-
-  useEffect(() => { if (activeTab === 'activity') loadActivity(); }, [activeTab, loadActivity]);
-
-  // Manual Verification Handlers
-  const handleManualVerify = useCallback((form) => {
-    setSelectedForm(form);
-    setVerifyReason('');
-    setManualVerifyOpen(true);
-  }, []);
-
-  const handleRevertVerification = useCallback(async (form) => {
-    const confirmRevert = window.confirm(
-      `Are you sure you want to revert the manual verification for:\n\n` +
-      `Customer: ${form.customerName}\n` +
-      `Phone: ${form.customerNumber}\n` +
-      `Product: ${form.formFillingFor || form.tideProduct || form.brand || '–'}\n\n` +
-      `This will change the status back to "Not Found".`
-    );
-
-    if (!confirmRevert) return;
-
-    try {
-      const product = (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
-      const month = new Date(form.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' });
-
-      const checkRes = await fetch(
-        `${EMP_API}/manual-verification/check?phone=${encodeURIComponent(form.customerNumber)}&product=${encodeURIComponent(product)}&month=${encodeURIComponent(month)}`,
-        { headers: { 'Content-Type': 'application/json' } }
-      );
-
-      if (!checkRes.ok) throw new Error('Failed to check manual verification');
-
-      const checkData = await checkRes.json();
-
-      if (!checkData.exists || !checkData.verification) {
-        alert('❌ No manual verification found for this form');
-        return;
-      }
-
-      const deleteRes = await fetch(`${EMP_API}/manual-verification/${checkData.verification._id}`, {
-        method: 'DELETE',
-        headers: { 'Content-Type': 'application/json' }
-      });
-
-      if (!deleteRes.ok) {
-        const err = await deleteRes.json();
-        throw new Error(err.message || 'Failed to delete manual verification');
-      }
-
-      setNotifySnack(`✅ Manual verification reverted successfully!`);
-      load();
-
-    } catch (err) {
-      console.error('Failed to revert manual verification:', err);
-      setNotifySnack(`❌ Failed to revert verification: ${err.message}`);
-    }
-  }, [load]);
-
-  const handleSubmitManualVerification = useCallback(async () => {
-    if (!selectedForm) return;
-
-    setVerifyingManually(true);
-    try {
-      const adminEmail = localStorage.getItem('userEmail') || 'Admin';
-      const product = (selectedForm.formFillingFor || selectedForm.tideProduct || selectedForm.brand || '').toLowerCase().trim();
-      const month = new Date(selectedForm.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' });
-
-      const res = await fetch(`${EMP_API}/manual-verification/create`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phone: selectedForm.customerNumber,
-          product: product,
-          month: month,
-          status: 'Fully Verified',
-          verifiedBy: adminEmail,
-          reason: verifyReason || 'Manual verification by admin - No automated rules available',
-          formId: selectedForm._id
-        })
-      });
-
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || 'Failed to create manual verification');
-      }
-
-      setNotifySnack(`✅ Form manually verified successfully!`);
-      setManualVerifyOpen(false);
-      setSelectedForm(null);
-      setVerifyReason('');
-      load();
-
-    } catch (err) {
-      console.error('Failed to create manual verification:', err);
-      setNotifySnack(`❌ Failed to verify form: ${err.message}`);
-    } finally {
-      setVerifyingManually(false);
-    }
-  }, [selectedForm, verifyReason, load]);
-
-  // Set of phone+product combinations that are cross-employee duplicates
-  // Format: "phone__product" (e.g., "9415359558__tide")
-  const duplicatePhoneProducts = useMemo(() => {
+  // Set of phone numbers that are cross-employee duplicates
+  const duplicatePhones = useMemo(() => {
     const s = new Set();
-    duplicates.forEach(d => {
-      const product = (d._id.formFillingFor || d._id.tideProduct || '').toLowerCase().trim();
-      const key = `${d._id.customerNumber}__${product}`;
-      s.add(key);
-    });
+    duplicates.forEach(d => s.add(d._id.customerNumber));
     return s;
   }, [duplicates]);
 
@@ -1792,19 +774,12 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
       }
     }
 
-    // Product filter
-    if (filterProduct) {
-      const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
-      if (p !== filterProduct.toLowerCase().trim()) return false;
-    }
-
     return (
       !q ||
       (f.customerName   || '').toLowerCase().includes(q) ||
       (f.customerNumber || '').includes(q) ||
       (f.employeeName   || '').toLowerCase().includes(q) ||
-      (f.location       || '').toLowerCase().includes(q) ||
-      (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().includes(q)
+      (f.location       || '').toLowerCase().includes(q)
     );
   });
   const map = {};
@@ -1814,20 +789,7 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
     map[key].push(f);
   });
   return Object.entries(map).sort((a, b) => b[1].length - a[1].length);
-}, [forms, search, dateFilter, fromDate, toDate, filterProduct]);
-
-  // Auto-detect all products with counts from all forms
-  const productCounts = useMemo(() => {
-    const map = {};
-    forms.forEach(f => {
-      const p = (f.formFillingFor || f.tideProduct || f.brand || '').trim();
-      if (p) {
-        if (!map[p]) map[p] = 0;
-        map[p]++;
-      }
-    });
-    return Object.entries(map).sort((a, b) => b[1] - a[1]);
-  }, [forms]);
+}, [forms, search, dateFilter, fromDate, toDate]);
 
 
 
@@ -1842,17 +804,6 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
     return m;
   }, [empPoints]);
 
-  const empInfoMap = useMemo(() => {
-    // Build TL phone lookup by name
-    const tlPhoneMap = {};
-    tlList.forEach(t => { if (t.name) tlPhoneMap[t.name.toLowerCase().trim()] = t.phone || ''; });
-    const m = {};
-    employees.forEach(e => {
-      const tlPhone = e.reportingManager ? (tlPhoneMap[e.reportingManager.toLowerCase().trim()] || '') : '';
-      m[e.newJoinerName] = { reportingManager: e.reportingManager, phone: e.newJoinerPhone, tlPhone };
-    });
-    return m;
-  }, [employees, tlList]);
   // Fetch global verification for all filtered forms
   const getFormProduct = (f) => (f?.tideProduct || f?.formFillingFor || f?.brand || '').toLowerCase().trim();
   const getFormKey     = (f) => { const p = getFormProduct(f); return p ? `${f.customerNumber}__${p}` : f.customerNumber; };
@@ -1880,6 +831,7 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
     setGlobalVerifyMap(merged);
   });
 }, [grouped]); // eslint-disable-line
+ // eslint-disable-line
 
   // Compute verification KPI counts from global map
   const verifyKpiCounts = useMemo(() => {
@@ -1918,38 +870,8 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
   return (
     <Box sx={{ maxWidth: 1100, mx: 'auto', px: { xs: 2, md: 4 }, py: 4 }}>
 
-      {/* Syncing Indicator Banner */}
-      {isSyncing && (
-        <Alert severity="info" sx={{ mb: 2 }}>
-          ⏳ Daily sync in progress (11:30-11:35 AM). Verification status is updating. 
-          Please refresh after 11:35 AM for latest data.
-        </Alert>
-      )}
-
-      {/* Page Loader */}
-      {pageLoading && ReactDOM.createPortal(
-        <div style={{
-          position: 'fixed', inset: 0,
-          zIndex: 1099, background: '#f0f7f3',
-          display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center', gap: 16,
-        }}>
-          <style>{`@keyframes mfSpinner { to { transform: rotate(360deg); } }`}</style>
-          <div style={{
-            width: 56, height: 56, borderRadius: '50%',
-            border: '4px solid rgba(26,71,49,0.15)',
-            borderTop: '4px solid #1a4731',
-            animation: 'mfSpinner 0.9s linear infinite',
-          }} />
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#1a4731', letterSpacing: 3, textTransform: 'uppercase' }}>
-            Merchant Forms
-          </div>
-        </div>,
-        document.body
-      )}
-
       {/* Header */}
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3, flexWrap: 'wrap', gap: 2, visibility: pageLoading ? 'hidden' : 'visible' }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3, flexWrap: 'wrap', gap: 2 }}>
         <Box>
           <Typography variant="h5" sx={{ fontWeight: 800, color: BRAND.primary }}>Merchant Forms</Typography>
           <Typography variant="body2" color="text.secondary" sx={{ mt: 0.5 }}>
@@ -2015,148 +937,13 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
         </Box>
       </Box>
 
-      {/* Tab Switcher */}
-      <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
-        <Tabs value={activeTab} onChange={(_, v) => setActiveTab(v)}
-          sx={{ '& .MuiTab-root': { fontWeight: 700, fontSize: '0.82rem', color: '#555', opacity: 1 },
-               '& .MuiTabs-indicator': { bgcolor: BRAND.primary },
-               '& .MuiTab-root.Mui-selected': { color: BRAND.primary, fontWeight: 800 } }}>
-          <Tab value="forms" label="Merchant Forms" />
-          <Tab value="activity" label="Points Activity" />
-        </Tabs>
-      </Box>
-
-      {/* Points Activity Tab */}
-      {activeTab === 'activity' && (
-        <Box>
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
-            <Typography variant="h6" fontWeight={700} sx={{ color: BRAND.primary }}>Points Activity Log</Typography>
-            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-              {selectedActivity.length > 0 && (
-                <Button size="small" variant="contained" color="error"
-                  onClick={async () => {
-                    if (!window.confirm(`Delete ${selectedActivity.length} selected log(s)? FSE and TL notifications will NOT be affected.`)) return;
-                    try {
-                      const res = await fetch(`${EMP_API}/requests/delete-notifications-bulk`, {
-                        method: 'DELETE',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ ids: selectedActivity }),
-                      });
-                      if (res.ok) {
-                        setPointsActivity(prev => prev.filter(x => !selectedActivity.includes(x._id)));
-                        setSelectedActivity([]);
-                        setNotifySnack(`✓ ${selectedActivity.length} log(s) deleted from admin view`);
-                      }
-                    } catch { setNotifySnack('Failed to delete some entries'); }
-                  }}
-                  sx={{ fontWeight: 700 }}>
-                  🗑 Delete Selected ({selectedActivity.length})
-                </Button>
-              )}
-              <Button size="small" startIcon={<RefreshIcon />} onClick={loadActivity} variant="outlined"
-                sx={{ borderColor: BRAND.primary, color: BRAND.primary, fontWeight: 700 }}>
-                Refresh
-              </Button>
-            </Box>
-          </Box>
-          {activityLoading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}><CircularProgress sx={{ color: BRAND.primary }} /></Box>
-          ) : pointsActivity.length === 0 ? (
-            <Card sx={{ textAlign: 'center', py: 6, border: `1.5px dashed ${BRAND.primaryLight}` }}>
-              <Typography color="text.secondary">No points activity yet.</Typography>
-            </Card>
-          ) : (
-            <TableContainer component={Card} sx={{ borderRadius: 3 }}>
-              <Table size="small">
-                <TableHead>
-                  <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider', bgcolor: '#f9f9f9' } }}>
-                    <TableCell>FSE Name</TableCell>
-                    <TableCell>Change</TableCell>
-                    <TableCell>Before</TableCell>
-                    <TableCell>After</TableCell>
-                    <TableCell>Reason</TableCell>
-                    <TableCell>Date</TableCell>
-                    <TableCell>Action</TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {pointsActivity.map(a => {
-                    const adj = a.adjustment ?? a.profileChanges?.adjustment ?? 0;
-                    const before = a.beforeTotal ?? a.profileChanges?.beforeTotal;
-                    const after  = a.newTotal ?? a.profileChanges?.newTotal;
-                    const isAdd  = Number(adj) >= 0;
-                    return (
-                      <TableRow key={a._id} hover sx={{ '&:last-child td': { border: 0 } }}>
-                        <TableCell>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                            <Avatar sx={{ bgcolor: BRAND.primary, width: 28, height: 28, fontSize: 11, fontWeight: 700 }}>
-                              {(a.employeeName || '?').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
-                            </Avatar>
-                            <Typography variant="body2" fontWeight={700}>{a.employeeName}</Typography>
-                          </Box>
-                        </TableCell>
-                        <TableCell>
-                          <Chip label={`${isAdd ? '+' : ''}${adj} pts`} size="small"
-                            sx={{ bgcolor: isAdd ? '#e6f4ea' : '#fdecea', color: isAdd ? '#2e7d32' : '#c62828', fontWeight: 800, fontSize: 12 }} />
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="body2" color="text.secondary">{before !== undefined ? `${before} pts` : '–'}</Typography>
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="body2" fontWeight={700} sx={{ color: isAdd ? '#2e7d32' : '#c62828' }}>
-                            {after !== undefined ? `${after} pts` : '–'}
-                          </Typography>
-                        </TableCell>
-                        <TableCell sx={{ maxWidth: 260 }}>
-                          <Tooltip title={a.reason || '–'} placement="top">
-                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', cursor: 'help' }}>
-                              {a.reason || '–'}
-                            </Typography>
-                          </Tooltip>
-                        </TableCell>
-                        <TableCell>
-                          <Typography variant="caption" color="text.secondary">
-                            {new Date(a.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                          </Typography>
-                        </TableCell>
-                        <TableCell>
-                          <Tooltip title="Delete from admin log (FSE/TL notifications unaffected)">
-                            <IconButton size="small" color="error"
-                              onClick={async () => {
-                                if (!window.confirm('Delete from admin log? FSE and TL notifications will NOT be affected.')) return;
-                                try {
-                                  const res = await fetch(`${EMP_API}/requests/delete-notification/${a._id}`, { method: 'DELETE' });
-                                  if (res.ok) {
-                                    setPointsActivity(prev => prev.filter(x => x._id !== a._id));
-                                    setNotifySnack('✓ Removed from admin log');
-                                  }
-                                } catch { setNotifySnack('Failed to delete'); }
-                              }}
-                              sx={{ '&:hover': { bgcolor: '#fdecea' } }}>
-                              <DeleteIcon fontSize="small" />
-                            </IconButton>
-                          </Tooltip>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          )}
-        </Box>
-      )}
-
-      {/* Merchant Forms Tab */}
-      {activeTab === 'forms' && (<>
-
       {/* Summary KPIs */}
       {(() => {
         const filteredForms = grouped.flatMap(([, empForms]) => empForms);
         const filteredTotal = filteredForms.length;
         const filteredEmps  = grouped.length;
         return (
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(4, 1fr)' }, gap: 2, mb: 3 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 2, mb: 3 }}>
         {[
           { label: 'Total Submissions', value: filteredTotal, color: BRAND.primary, bg: '#e6f4ea', key: 'total' },
           { label: 'Employees',         value: filteredEmps,  color: '#1565c0',     bg: '#e3f2fd', key: 'emp' },
@@ -2203,7 +990,7 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
       )}
 
       {/* Verification KPI cards */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 2, mb: 3 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 2, mb: 3 }}>
         {[
           { label: 'Fully Verified',  key: 'Fully Verified',  color: '#2e7d32', bg: '#e6f4ea', icon: '✓' },
           { label: 'Partially Done',  key: 'Partially Done',  color: '#f57f17', bg: '#fff8e1', icon: '◑' },
@@ -2231,7 +1018,7 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
       {/* Verification KPI Breakdown Dialog */}
       <Dialog open={!!verifyKpiOpen} onClose={() => setVerifyKpiOpen(null)} maxWidth="sm" fullWidth>
         <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <Typography variant="h6" fontWeight={800} component="span">
+          <Typography variant="h6" fontWeight={800}>
             {verifyKpiOpen} — Product Breakdown
           </Typography>
           <IconButton onClick={() => setVerifyKpiOpen(null)} size="small"><CloseIcon /></IconButton>
@@ -2288,7 +1075,7 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
           <Dialog open={!!drillProduct} onClose={() => setDrillProduct(null)} maxWidth="md" fullWidth>
             <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <Box>
-                <Typography variant="h6" component="span" fontWeight={800}>
+                <Typography variant="h6" fontWeight={800}>
                   <ProductChip product={drillProduct.product} /> &nbsp; {drillProduct.status}
                 </Typography>
                 <Typography variant="caption" color="text.secondary">{drillForms.length} merchant{drillForms.length !== 1 ? 's' : ''}</Typography>
@@ -2308,25 +1095,13 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
                       <TableCell>Location</TableCell>
                       <TableCell>FSE</TableCell>
                       <TableCell>Date</TableCell>
-                      <TableCell>Action</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {drillForms.map((f, i) => {
-                      const isManualVerification = globalVerifyMap[getFormKey(f)]?.manualVerification;
-                      return (
+                    {drillForms.map((f, i) => (
                       <TableRow key={f._id} hover>
                         <TableCell sx={{ color: 'text.secondary', fontSize: 11 }}>{i + 1}</TableCell>
-                        <TableCell sx={{ fontWeight: 700 }}>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                            {f.customerName}
-                            {isManualVerification && (
-                              <Tooltip title={`Manually verified by ${globalVerifyMap[getFormKey(f)]?.verifiedBy || 'Admin'}`}>
-                                <Box component="span" sx={{ fontSize: 11, color: '#7c3aed', cursor: 'help' }}>👤</Box>
-                              </Tooltip>
-                            )}
-                          </Box>
-                        </TableCell>
+                        <TableCell sx={{ fontWeight: 700 }}>{f.customerName}</TableCell>
                         <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>{f.customerNumber}</TableCell>
                         <TableCell sx={{ color: 'text.secondary', fontSize: 12 }}>{f.location}</TableCell>
                         <TableCell>
@@ -2334,55 +1109,11 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
                             avatar={<Avatar sx={{ bgcolor: BRAND.primary, fontSize: 10 }}>{initials(f.employeeName)}</Avatar>}
                             sx={{ fontWeight: 600, fontSize: 11 }} />
                         </TableCell>
-                        <TableCell sx={{ fontSize: 11, color: 'text.secondary' }}>
-                          {new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}
-                        </TableCell>
-                        <TableCell>
-                          {drillProduct.status === 'Not Found' && !isManualVerification && (
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleManualVerify(f);
-                              }}
-                              sx={{
-                                fontSize: 10,
-                                textTransform: 'none',
-                                borderColor: '#7c3aed',
-                                color: '#7c3aed',
-                                px: 1,
-                                py: 0.3,
-                                minWidth: 'auto',
-                                '&:hover': { bgcolor: '#f3e8ff', borderColor: '#6d28d9' }
-                              }}>
-                              ✓ Verify
-                            </Button>
-                          )}
-                          {isManualVerification && (
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleRevertVerification(f);
-                              }}
-                              sx={{
-                                fontSize: 10,
-                                textTransform: 'none',
-                                borderColor: '#d32f2f',
-                                color: '#d32f2f',
-                                px: 1,
-                                py: 0.3,
-                                minWidth: 'auto',
-                                '&:hover': { bgcolor: '#ffebee', borderColor: '#c62828' }
-                              }}>
-                              ↺ Revert
-                            </Button>
-                          )}
+                        <TableCell sx={{ color: 'text.secondary', fontSize: 11 }}>
+                          {f.createdAt ? new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '–'}
                         </TableCell>
                       </TableRow>
-                    )})}
+                    ))}
                   </TableBody>
                 </Table>
               )}
@@ -2393,217 +1124,6 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
           </Dialog>
         );
       })()}
-
-      {/* Manual Verification Modal */}
-      {manualVerifyOpen && selectedForm && (
-        <Dialog open onClose={() => !verifyingManually && setManualVerifyOpen(false)} maxWidth="sm" fullWidth>
-          <DialogTitle sx={{ bgcolor: '#7c3aed', color: '#fff', fontWeight: 700 }}>
-            Manual Verification
-          </DialogTitle>
-          <DialogContent sx={{ mt: 2 }}>
-            <Box sx={{ mb: 2 }}>
-              <Typography variant="body2" color="text.secondary" gutterBottom>
-                You are about to manually verify this form:
-              </Typography>
-              <Box sx={{ mt: 2, p: 2, bgcolor: '#f5f5f5', borderRadius: 1 }}>
-                <Typography variant="body2" sx={{ mb: 0.5 }}>
-                  <strong>Customer:</strong> {selectedForm.customerName}
-                </Typography>
-                <Typography variant="body2" sx={{ mb: 0.5 }}>
-                  <strong>Phone:</strong> {selectedForm.customerNumber}
-                </Typography>
-                <Typography variant="body2" sx={{ mb: 0.5 }}>
-                  <strong>Product:</strong> {selectedForm.formFillingFor || selectedForm.tideProduct || selectedForm.brand || '–'}
-                </Typography>
-                <Typography variant="body2" sx={{ mb: 0.5 }}>
-                  <strong>Location:</strong> {selectedForm.location}
-                </Typography>
-                <Typography variant="body2">
-                  <strong>FSE:</strong> {selectedForm.employeeName}
-                </Typography>
-              </Box>
-            </Box>
-
-            <TextField
-              fullWidth
-              multiline
-              rows={3}
-              label="Reason for Manual Verification (Optional)"
-              placeholder="e.g., No automated rules available for this product, Verified through alternate channel, etc."
-              value={verifyReason}
-              onChange={(e) => setVerifyReason(e.target.value)}
-              disabled={verifyingManually}
-              sx={{ mt: 2 }}
-            />
-
-            <Alert severity="info" sx={{ mt: 2 }}>
-              This form will be marked as <strong>"Fully Verified"</strong> and will be visible across all panels (Admin, TL, Employee).
-            </Alert>
-          </DialogContent>
-          <DialogActions sx={{ px: 3, py: 2, gap: 1 }}>
-            <Button 
-              onClick={() => setManualVerifyOpen(false)} 
-              disabled={verifyingManually}
-              sx={{ fontWeight: 700 }}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSubmitManualVerification}
-              variant="contained"
-              disabled={verifyingManually}
-              sx={{ bgcolor: '#2e7d32', fontWeight: 700, '&:hover': { bgcolor: '#1b5e20' } }}>
-              {verifyingManually ? 'Verifying...' : '✓ Verify Form'}
-            </Button>
-          </DialogActions>
-        </Dialog>
-      )}
-
-      {/* Employee Form Details Modal (for duplicate comparison) */}
-      {employeeFormDetails && (
-        <Dialog 
-          open 
-          onClose={() => setEmployeeFormDetails(null)} 
-          maxWidth="md" 
-          fullWidth
-          PaperProps={{ sx: { maxHeight: '90vh' } }}>
-          <DialogTitle sx={{ bgcolor: BRAND.primary, color: '#fff', fontWeight: 700, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <Box>
-              <Typography variant="h6" component="span" fontWeight={800}>
-                Form Details - {employeeFormDetails.employeeName}
-              </Typography>
-              <Typography variant="caption" sx={{ opacity: 0.9 }}>
-                {employeeFormDetails.duplicate.customerNames[0]} ({employeeFormDetails.duplicate._id.customerNumber})
-              </Typography>
-            </Box>
-            <IconButton onClick={() => setEmployeeFormDetails(null)} size="small" sx={{ color: '#fff' }}>
-              <CloseIcon />
-            </IconButton>
-          </DialogTitle>
-          <DialogContent dividers sx={{ p: 3 }}>
-            <Box sx={{ mb: 3, p: 2, bgcolor: '#f5f5f5', borderRadius: 2 }}>
-              <Typography variant="subtitle2" fontWeight={700} gutterBottom sx={{ color: BRAND.primary }}>
-                Basic Information
-              </Typography>
-              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mt: 1 }}>
-                <Box>
-                  <Typography variant="caption" color="text.secondary">Customer Name</Typography>
-                  <Typography variant="body2" fontWeight={600}>{employeeFormDetails.form.customerName}</Typography>
-                </Box>
-                <Box>
-                  <Typography variant="caption" color="text.secondary">Customer Phone</Typography>
-                  <Typography variant="body2" fontWeight={600} sx={{ fontFamily: 'monospace' }}>
-                    {employeeFormDetails.form.customerNumber}
-                  </Typography>
-                </Box>
-                <Box>
-                  <Typography variant="caption" color="text.secondary">Location</Typography>
-                  <Typography variant="body2" fontWeight={600}>{employeeFormDetails.form.location}</Typography>
-                </Box>
-                <Box>
-                  <Typography variant="caption" color="text.secondary">Visit Status</Typography>
-                  <Typography variant="body2" fontWeight={600}>{employeeFormDetails.form.status}</Typography>
-                </Box>
-                <Box>
-                  <Typography variant="caption" color="text.secondary">Product</Typography>
-                  <Typography variant="body2" fontWeight={600}>
-                    {employeeFormDetails.form.formFillingFor || employeeFormDetails.form.tideProduct || employeeFormDetails.form.brand || '–'}
-                  </Typography>
-                </Box>
-                <Box>
-                  <Typography variant="caption" color="text.secondary">Submitted On</Typography>
-                  <Typography variant="body2" fontWeight={600}>
-                    {new Date(employeeFormDetails.form.createdAt).toLocaleString('en-IN', { 
-                      day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' 
-                    })}
-                  </Typography>
-                </Box>
-              </Box>
-            </Box>
-
-            {/* Product-Specific Fields */}
-            <Box sx={{ mb: 3, p: 2, bgcolor: '#fff8e1', borderRadius: 2 }}>
-              <Typography variant="subtitle2" fontWeight={700} gutterBottom sx={{ color: '#f57f17' }}>
-                Product-Specific Details
-              </Typography>
-              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2, mt: 1 }}>
-                {/* Tide Fields */}
-                {employeeFormDetails.form.tide_qrPosted && (
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">Tide QR Posted</Typography>
-                    <Typography variant="body2" fontWeight={600}>{employeeFormDetails.form.tide_qrPosted}</Typography>
-                  </Box>
-                )}
-                {employeeFormDetails.form.tide_upiTxnDone && (
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">Tide UPI Txn Done</Typography>
-                    <Typography variant="body2" fontWeight={600}>{employeeFormDetails.form.tide_upiTxnDone}</Typography>
-                  </Box>
-                )}
-                
-                {/* Insurance Fields */}
-                {employeeFormDetails.form.ins_vehicleNumber && (
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">Vehicle Number</Typography>
-                    <Typography variant="body2" fontWeight={600}>{employeeFormDetails.form.ins_vehicleNumber}</Typography>
-                  </Box>
-                )}
-                {employeeFormDetails.form.ins_vehicleType && (
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">Vehicle Type</Typography>
-                    <Typography variant="body2" fontWeight={600}>{employeeFormDetails.form.ins_vehicleType}</Typography>
-                  </Box>
-                )}
-                {employeeFormDetails.form.ins_insuranceType && (
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">Insurance Type</Typography>
-                    <Typography variant="body2" fontWeight={600}>{employeeFormDetails.form.ins_insuranceType}</Typography>
-                  </Box>
-                )}
-                
-                {/* PineLab Fields */}
-                {employeeFormDetails.form.pine_cardTxn && (
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">PineLab Card Txn</Typography>
-                    <Typography variant="body2" fontWeight={600}>{employeeFormDetails.form.pine_cardTxn}</Typography>
-                  </Box>
-                )}
-                {employeeFormDetails.form.pine_wifiConnected && (
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">PineLab WiFi Connected</Typography>
-                    <Typography variant="body2" fontWeight={600}>{employeeFormDetails.form.pine_wifiConnected}</Typography>
-                  </Box>
-                )}
-                
-                {/* Credit Card Fields */}
-                {employeeFormDetails.form.cc_cardName && (
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">Credit Card Name</Typography>
-                    <Typography variant="body2" fontWeight={600}>{employeeFormDetails.form.cc_cardName}</Typography>
-                  </Box>
-                )}
-                
-                {/* Tide Insurance Fields */}
-                {employeeFormDetails.form.tideIns_type && (
-                  <Box>
-                    <Typography variant="caption" color="text.secondary">Tide Insurance Type</Typography>
-                    <Typography variant="body2" fontWeight={600}>{employeeFormDetails.form.tideIns_type}</Typography>
-                  </Box>
-                )}
-              </Box>
-            </Box>
-
-            <Alert severity="info" sx={{ mt: 2 }}>
-              <strong>Tip:</strong> Click on another employee's name to open their form details in a new window for side-by-side comparison.
-            </Alert>
-          </DialogContent>
-          <DialogActions sx={{ px: 3, py: 2 }}>
-            <Button onClick={() => setEmployeeFormDetails(null)} sx={{ color: BRAND.primary, fontWeight: 700 }}>
-              Close
-            </Button>
-          </DialogActions>
-        </Dialog>
-      )}
-
       {/* Date Filter */}
 <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', mb: 2 }}>
   {['all', 'today', 'week', 'month'].map(f => (
@@ -2636,7 +1156,7 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
 
 
       {/* Search */}
-      <TextField fullWidth size="small" placeholder="Search by merchant name, phone, employee, location or product…"
+      <TextField fullWidth size="small" placeholder="Search by merchant name, phone, employee or location…"
         value={search} onChange={e => setSearch(e.target.value)}
         sx={{ mb: 3 }}
         InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon sx={{ color: 'text.secondary' }} /></InputAdornment> }} />
@@ -2644,33 +1164,8 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
       {error && <Alert severity="error" sx={{ mb: 3 }} action={<Button size="small" onClick={load}>Retry</Button>}>{error}</Alert>}
 
       {loading ? (
-        <Box>
-          {/* Search bar skeleton */}
-          <Skeleton variant="rectangular" height={40} sx={{ borderRadius: 2, mb: 3 }} />
-          {/* KPI cards skeleton */}
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(4, 1fr)' }, gap: 2, mb: 3 }}>
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Card key={i} variant="outlined" sx={{ borderRadius: 3 }}>
-                <CardContent>
-                  <Skeleton variant="text" width="60%" height={20} sx={{ mb: 1 }} />
-                  <Skeleton variant="text" width="40%" height={40} />
-                </CardContent>
-              </Card>
-            ))}
-          </Box>
-          {/* Employee group card skeletons */}
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Card key={i} sx={{ mb: 2, borderRadius: 2 }}>
-              <CardContent sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                <Skeleton variant="circular" width={40} height={40} />
-                <Box sx={{ flex: 1 }}>
-                  <Skeleton variant="text" width="30%" height={22} />
-                  <Skeleton variant="text" width="15%" height={16} />
-                </Box>
-                <Skeleton variant="rectangular" width={80} height={28} sx={{ borderRadius: 20 }} />
-              </CardContent>
-            </Card>
-          ))}
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
+          <CircularProgress sx={{ color: BRAND.primary }} />
         </Box>
       ) : grouped.length === 0 ? (
         <Card sx={{ textAlign: 'center', py: 6, border: `1.5px dashed ${BRAND.primaryLight}` }}>
@@ -2679,28 +1174,15 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
       ) : (
         grouped.map(([empName, empForms]) => (
           <EmployeeGroup key={empName} empName={empName} forms={empForms}
-            duplicatePhoneProducts={duplicatePhoneProducts}
+            duplicatePhones={duplicatePhones}
             empPointsData={empPointsMap[empName]}
-            empInfo={empInfoMap[empName]}
-            globalVerifyMap={globalVerifyMap}
-            onEditPoints={handleEditPoints}
-            onManualVerify={handleManualVerify}
-            onRevertVerification={handleRevertVerification}
-            onReload={load} />
+            onEditPoints={handleEditPoints} />
         ))
       )}
 
-      <DuplicatePanel 
-        duplicates={duplicates} 
-        open={dupOpen} 
-        onClose={() => setDupOpen(false)}
-        onNotify={handleNotify} 
-        notifying={notifying}
-        onSettle={handleSettle} 
-        settling={settling}
-        forms={forms}
-        onEmployeeClick={setEmployeeFormDetails}
-      />
+      <DuplicatePanel duplicates={duplicates} open={dupOpen} onClose={() => setDupOpen(false)}
+        onNotify={handleNotify} notifying={notifying}
+        onSettle={handleSettle} settling={settling} />
       {/* <Button
         variant={todayOnly ? 'contained' : 'outlined'}
         onClick={() => setTodayOnly(prev => !prev)}
@@ -2716,133 +1198,42 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
 
 
       {/* Edit Points Dialog */}
-      <EditPointsDialog
-        open={editPtsOpen}
-        empData={editPtsEmp}
-        adjHistory={adjHistory}
-        EMP_API={EMP_API}
-        BRAND={BRAND}
-        POINTS_MAP={POINTS_MAP}
-        onClose={() => { setEditPtsOpen(false); setEditPtsReason(''); setProductAdjustments({}); }}
-        onSave={async ({ empData: eData, empName, autoPoints, editPtsValue: val, editPtsReason: reason, productAdjustments: prodAdj, productSlabs: prodSlabs, manualDelta: manDelta, manualReason: manReason }) => {
-          try {
-            const currentAdj = eData?.pointsAdjustment || 0;
-            const productBreakdownData = editPtsEmp?.productBreakdown || {};
+      <Dialog open={editPtsOpen} onClose={() => setEditPtsOpen(false)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 800, color: BRAND.primary, pb: 1 }}>
+          ⭐ Edit Points — {editPtsEmp?.empName}
+        </DialogTitle>
+        <DialogContent>
+          <Box sx={{ mb: 2, p: 1.5, bgcolor: '#fff8e1', borderRadius: 2, border: '1px solid #f4a261' }}>
+            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 0.5 }}>Points criteria (Fully Verified only):</Typography>
+            {Object.entries(POINTS_MAP).map(([k, v]) => (
+              <Typography key={k} variant="caption" sx={{ display: 'block', color: '#e76f51', fontWeight: 600 }}>
+                {k}: {v} pts
+              </Typography>
+            ))}
+          </Box>
+          <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
+            Verified points (from employee dashboard, Fully Verified only): <strong style={{ color: '#e76f51' }}>{editPtsEmp?.autoPoints || 0}</strong>
+          </Typography>
+          <TextField fullWidth size="small" type="number" label="Manual Adjustment (+ or -)"
+            value={editPtsValue}
+            onChange={e => setEditPtsValue(e.target.value)}
+            helperText="Added on top of verified points. Use negative to subtract."
+            inputProps={{ step: 0.1 }} />
+          <Box sx={{ mt: 1.5, p: 1.5, bgcolor: '#e6f4ea', borderRadius: 2 }}>
+            <Typography variant="body2" fontWeight={700} sx={{ color: BRAND.primary }}>
+              Total: {editPtsEmp?.autoPoints || 0} + ({parseFloat(editPtsValue) >= 0 ? '+' : ''}{parseFloat(editPtsValue) || 0}) = {Math.round(((editPtsEmp?.autoPoints || 0) + (parseFloat(editPtsValue) || 0)) * 10) / 10} pts
+            </Typography>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setEditPtsOpen(false)} color="inherit">Cancel</Button>
+          <Button variant="contained" onClick={handleSavePoints} disabled={editPtsSaving}
+            sx={{ bgcolor: BRAND.primary, fontWeight: 700 }}>
+            {editPtsSaving ? 'Saving…' : 'Save Points'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
-            // Slab-based delta per product — ALL qualifying slabs add up (cumulative)
-            const slabEntries = [];
-            let contestDelta = 0;
-            Object.entries(prodSlabs || {}).forEach(([product, slabs]) => {
-              const count = productBreakdownData[product] || 0;
-              const pts   = POINTS_MAP[product] || 0;
-              const validSlabs = (slabs || []).filter(s => s.minForms !== '' && s.multiplier !== '');
-              validSlabs.forEach((slab, idx) => {
-                if (count < Number(slab.minForms)) return;
-                const mul = parseFloat(slab.multiplier);
-                if (isNaN(mul)) return;
-                const bonus = Math.round(count * pts * mul * 10000) / 10000;
-                contestDelta += bonus;
-                slabEntries.push({ product, count, pts, mul, bonus, slabIdx: idx + 1, reason: (prodAdj[product] || {}).reason || '' });
-              });
-            });
-
-            const manualCorrDelta = parseFloat(manDelta) || 0;
-            const totalDelta = contestDelta + manualCorrDelta;
-
-            if (totalDelta === 0) {
-              setNotifySnack('No changes to save — add slabs or manual correction.');
-              return;
-            }
-
-            const beforeTotal = Math.round(((autoPoints || 0) + currentAdj) * 10) / 10;
-            const newTotal    = Math.round(((autoPoints || 0) + currentAdj + totalDelta) * 10000) / 10000;
-
-            // Save each slab as a SEPARATE adjustment history entry — sequentially to avoid race conditions
-            let allOk = true;
-            for (const { bonus, product, slabIdx } of slabEntries) {
-              const r = await fetch(`${EMP_API}/forms/admin/adjust-points/${eData._id}`, {
-                method: 'PUT', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  adjustment: bonus,
-                  reason: `Contest Slab ${slabIdx}: ${product}`,
-                }),
-              });
-              if (!r.ok) { allOk = false; break; }
-            }
-            // Manual correction as separate entry
-            if (allOk && manualCorrDelta !== 0) {
-              const r = await fetch(`${EMP_API}/forms/admin/adjust-points/${eData._id}`, {
-                method: 'PUT', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  adjustment: manualCorrDelta,
-                  reason: manReason || 'Manual correction',
-                }),
-              });
-              if (!r.ok) allOk = false;
-            }
-            if (allOk) {
-              const notifs = [];
-              let runningTotal = beforeTotal;
-
-              // Slab notifications per product — progressive before/after
-              slabEntries.forEach(({ product, count, pts, mul, bonus, slabIdx, reason: pReason }) => {
-                const slabBefore = Math.round(runningTotal * 10000) / 10000;
-                const slabAfter  = Math.round((runningTotal + bonus) * 10000) / 10000;
-                runningTotal = slabAfter;
-                notifs.push(fetch(`${EMP_API}/requests/notify-points`, {
-                  method: 'POST', headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    employeeName: empName,
-                    adjustment: bonus,
-                    beforeTotal: slabBefore,
-                    newTotal: slabAfter,
-                    reason: `🏆 Contest Slab ${slabIdx}: ${product} — ${count} × ${pts} × ${mul} = ${bonus} pts${pReason ? ` — ${pReason}` : ''}`,
-                  }),
-                }).catch(() => {}));
-              });
-
-              // Manual correction notification
-              if (manualCorrDelta !== 0 && manReason?.trim()) {
-                const manBefore = Math.round(runningTotal * 10000) / 10000;
-                const manAfter  = Math.round((runningTotal + manualCorrDelta) * 10000) / 10000;
-                notifs.push(fetch(`${EMP_API}/requests/notify-points`, {
-                  method: 'POST', headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    employeeName: empName,
-                    adjustment: manualCorrDelta,
-                    beforeTotal: manBefore,
-                    newTotal: manAfter,
-                    reason: `🔧 Manual correction: ${manualCorrDelta > 0 ? '+' : ''}${manualCorrDelta} pts — ${manReason}`,
-                  }),
-                }).catch(() => {}));
-              }
-
-              await Promise.all(notifs);
-              setNotifySnack(`✓ Points updated for ${empName}`);
-              setEditPtsOpen(false); setEditPtsReason(''); setProductAdjustments({});
-              load();
-            } else {
-              setNotifySnack('Error: Some slab points failed to save. Please try again.');
-            }
-          } catch { setNotifySnack('Failed to update points.'); }
-        }}
-        onDeleteAdj={async (empId, historyId, deleteReason) => {
-          try {
-            const res = await fetch(`${EMP_API}/forms/admin/adjust-points/${empId}/history/${historyId}`,
-              { method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ deleteReason, autoPoints: editPtsEmp?.autoPoints || 0 }) });
-            if (res.ok) {
-              setNotifySnack(`✓ Adjustment deleted for ${editPtsEmp?.empName}`);
-              fetch(`${EMP_API}/forms/admin/adjustment-history/${empId}`)
-                .then(r => r.ok ? r.json() : []).then(setAdjHistory).catch(() => {});
-              load();
-            } else {
-              const d = await res.json();
-              setNotifySnack(`Error: ${d.message}`);
-            }
-          } catch { setNotifySnack('Failed to delete adjustment.'); }
-        }}
-      />
       {/* Settled Duplicates Dialog */}
       <Dialog open={settledOpen} onClose={() => setSettledOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: BRAND.primary, fontWeight: 800 }}>
@@ -2899,7 +1290,6 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
           {notifySnack}
         </Alert>
       </Snackbar>
-      </>)}
     </Box>
   );
 }
