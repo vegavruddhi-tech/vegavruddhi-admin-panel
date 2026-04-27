@@ -452,7 +452,7 @@ function VerifyChip({ status, onClick }) {
 }
 
 // ── Employee Group Row ────────────────────────────────────────
-function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditPoints, onManualVerify, onRevertVerification, onReload, globalVerifyMap: parentVerifyMap }) {
+function EmployeeGroup({ empName, forms, duplicatePhoneProducts, empPointsData, onEditPoints, onManualVerify, onRevertVerification, onReload, globalVerifyMap: parentVerifyMap }) {
 
   const getProduct = (f) =>
     (f?.tideProduct || f?.formFillingFor || f?.brand || '').toLowerCase().trim();
@@ -474,7 +474,8 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditP
   // Use parent globalVerifyMap if available, otherwise fall back to local fetch
   const verifyMap = Object.keys(parentVerifyMap || {}).length > 0 ? (parentVerifyMap || {}) : localVerifyMap;
 
-  const dupCount = forms.filter(f => duplicatePhones.has(f.customerNumber)).length;
+  // Count duplicates by checking phone+product combination
+  const dupCount = forms.filter(f => duplicatePhoneProducts.has(getKey(f))).length;
 
   const fetchVerification = useCallback(async () => {
     // Skip if parent already has data
@@ -669,7 +670,7 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, onEditP
         <Table size="small">
           <TableBody>
             {forms.map(f => {
-              const isDup = duplicatePhones.has(f.customerNumber);
+              const isDup = duplicatePhoneProducts.has(getKey(f));
               const date  = f.createdAt ? new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '–';
 
               return (
@@ -1714,10 +1715,15 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
     }
   }, [selectedForm, verifyReason, load]);
 
-  // Set of phone numbers that are cross-employee duplicates
-  const duplicatePhones = useMemo(() => {
+  // Set of phone+product combinations that are cross-employee duplicates
+  // Format: "phone__product" (e.g., "9415359558__tide")
+  const duplicatePhoneProducts = useMemo(() => {
     const s = new Set();
-    duplicates.forEach(d => s.add(d._id.customerNumber));
+    duplicates.forEach(d => {
+      const product = (d._id.formFillingFor || d._id.tideProduct || '').toLowerCase().trim();
+      const key = `${d._id.customerNumber}__${product}`;
+      s.add(key);
+    });
     return s;
   }, [duplicates]);
 
@@ -2644,7 +2650,7 @@ export default function MerchantForms({ firstLoad = true, onLoaded }) {
       ) : (
         grouped.map(([empName, empForms]) => (
           <EmployeeGroup key={empName} empName={empName} forms={empForms}
-            duplicatePhones={duplicatePhones}
+            duplicatePhoneProducts={duplicatePhoneProducts}
             empPointsData={empPointsMap[empName]}
             globalVerifyMap={globalVerifyMap}
             onEditPoints={handleEditPoints}
