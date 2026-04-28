@@ -508,10 +508,49 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, empData
     return Math.round(sum * 10) / 10;
   })();
 
+  // ✅ Calculate slab-based points if slabs exist
+  const slabPoints = (() => {
+    if (!empPointsData) {
+      console.log(`[${empName}] ❌ No empPointsData at all`);
+      return 0;
+    }
+    
+    if (!empPointsData.productSlabs) {
+      console.log(`[${empName}] ℹ️ No productSlabs in empPointsData (using automatic points)`);
+      return 0;
+    }
+    
+    let sum = 0;
+    const slabsData = empPointsData.productSlabs;  // Already a plain object
+    
+    console.log(`[${empName}] 📊 Processing slabs:`, JSON.stringify(slabsData, null, 2));
+    
+    Object.entries(slabsData).forEach(([product, slabs]) => {
+      if (Array.isArray(slabs)) {
+        slabs.forEach(slab => {
+          const points = (slab.forms || 0) * (slab.multiplier || 0);
+          console.log(`[${empName}] ✓ ${product}: ${slab.forms} × ${slab.multiplier} = ${points} pts`);
+          sum += points;
+        });
+      } else {
+        console.warn(`[${empName}] ⚠️ Slabs for ${product} is not an array:`, slabs);
+      }
+    });
+    
+    console.log(`[${empName}] 💰 Total slab points: ${sum}`);
+    return Math.round(sum * 10) / 10;
+  })();
+
+  // ✅ Use slab points if they exist, otherwise use automatic points
+  const hasSlabs = empPointsData?.productSlabs && Object.keys(empPointsData.productSlabs).length > 0;
+  
+  console.log(`[${empName}] hasSlabs: ${hasSlabs}, slabPoints: ${slabPoints}, autoPoints: ${autoPoints}`);
+  
   const adjustment  = empPointsData?.pointsAdjustment || 0;
-  // Only fall back to saved verifiedPoints if verifyMap hasn't been loaded yet
-  const verified    = Object.keys(verifyMap).length > 0 ? autoPoints : (empPointsData?.verifiedPoints || 0);
+  const verified    = hasSlabs ? slabPoints : autoPoints;
   const totalPoints = Math.round((verified + adjustment) * 10) / 10;
+  
+  console.log(`[${empName}] Final: verified=${verified}, adjustment=${adjustment}, total=${totalPoints}`);
 
   const handleSaveEdit = async () => {
     if (!editForm?._id) return;
@@ -629,7 +668,7 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, empData
 
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
           <Chip
-            label={`⭐ ${totalPoints}`}
+            label={`⭐ ${totalPoints}${hasSlabs ? ' (Custom)' : ''}`}
             onClick={e => {
               e.stopPropagation();
               
@@ -654,7 +693,13 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, empData
               
               onEditPoints(empName, empPointsData, autoPoints, productBreakdown);
             }}
-            sx={{ cursor: 'pointer', fontWeight: 700 }}
+            sx={{ 
+              cursor: 'pointer', 
+              fontWeight: 700,
+              bgcolor: hasSlabs ? '#e3f2fd' : undefined,
+              color: hasSlabs ? '#1565c0' : undefined,
+              border: hasSlabs ? '1px solid #1565c0' : undefined
+            }}
           />
 
           {dupCount > 0 && (
@@ -940,6 +985,10 @@ export default function MerchantForms() {
   const [editPtsEmp,   setEditPtsEmp]   = useState(null); // {empName, empData, autoPoints}
   const [editPtsValue, setEditPtsValue] = useState('');
   const [editPtsSaving,setEditPtsSaving]= useState(false);
+  const [productSlabs, setProductSlabs] = useState({}); // {productName: [{forms, multiplier}]}
+  const [mainTab, setMainTab] = useState('forms'); // 'forms' or 'activity'
+  const [pointsActivity, setPointsActivity] = useState([]);
+  const [activityLoading, setActivityLoading] = useState(false);
   // const [todayOnly, setTodayOnly] = useState(false);
   const [dateFilter, setDateFilter] = useState('all');
   const [toDate, setToDate]         = useState('');
@@ -976,6 +1025,21 @@ export default function MerchantForms() {
     }
   }, []);
 
+  const loadPointsActivity = useCallback(async () => {
+    setActivityLoading(true);
+    try {
+      const res = await fetch(`${EMP_API}/points-activity/all?limit=100`);
+      if (res.ok) {
+        const data = await res.json();
+        setPointsActivity(data.activities || []);
+      }
+    } catch (err) {
+      console.error('Error loading points activity:', err);
+    } finally {
+      setActivityLoading(false);
+    }
+  }, []);
+
   const handleSettle = useCallback(async (dup, idx, note) => {    setSettling(idx);
     try {
       const res = await fetch(`${EMP_API}/forms/admin/settle-duplicate`, {
@@ -1003,10 +1067,13 @@ export default function MerchantForms() {
     }
   }, []);
 
-  const handleEditPoints = useCallback(async (empName, empData, autoPoints) => {
+  const handleEditPoints = useCallback(async (empName, empData, autoPoints, productBreakdown = {}) => {
+    console.log('🔧 handleEditPoints called:', { empName, empData: empData?._id, autoPoints, productBreakdown });
+    
     // If no points record exists yet, create one first
     let data = empData;
     if (!data?._id) {
+      console.log('📝 No EmployeePoints record exists, creating one...');
       try {
         const res = await fetch(`${EMP_API}/forms/admin/init-employee-points`, {
           method: 'POST',
@@ -1015,14 +1082,53 @@ export default function MerchantForms() {
         });
         if (res.ok) {
           data = await res.json();
+          console.log('✅ Created EmployeePoints record:', data);
           // Refresh empPoints list
           const ptsRes = await fetch(`${EMP_API}/forms/admin/employee-points`);
           if (ptsRes.ok) setEmpPoints(await ptsRes.json());
         }
-      } catch {}
+      } catch (err) {
+        console.error('❌ Error creating EmployeePoints:', err);
+      }
     }
-    setEditPtsEmp({ empName, empData: data, autoPoints });
+    
+    // ✅ Load ALL existing slabs from database (not just for products with verified forms)
+    const initialSlabs = {};
+    if (data?.productSlabs) {
+      const slabsData = data.productSlabs;  // Already a plain object
+      
+      console.log('📊 Loading existing slabs from database:', JSON.stringify(slabsData, null, 2));
+      
+      // Load ALL saved slabs (including products without verified forms)
+      Object.entries(slabsData).forEach(([product, slabs]) => {
+        if (Array.isArray(slabs) && slabs.length > 0) {
+          initialSlabs[product] = slabs;
+          console.log(`✓ Loaded ${slabs.length} slab(s) for ${product}`);
+        }
+      });
+      
+      // Also ensure products with verified forms are in the breakdown
+      Object.keys(initialSlabs).forEach(product => {
+        if (!productBreakdown[product]) {
+          productBreakdown[product] = 0; // Add with 0 count so it shows in the dialog
+          console.log(`ℹ️ Added ${product} to breakdown with 0 count (has slabs but no verified forms)`);
+        }
+      });
+    } else {
+      console.log('ℹ️ No existing slabs found in database');
+    }
+    
+    console.log('🎯 Opening edit points dialog with:', { 
+      empName, 
+      autoPoints, 
+      productBreakdown, 
+      initialSlabs,
+      empDataId: data?._id
+    });
+    
+    setEditPtsEmp({ empName, empData: data, autoPoints, productBreakdown });
     setEditPtsValue(data?.pointsAdjustment !== undefined ? String(data.pointsAdjustment) : '0');
+    setProductSlabs(initialSlabs);
     setEditPtsOpen(true);
   }, []);
 
@@ -1034,25 +1140,129 @@ export default function MerchantForms() {
       const newAdj     = parseFloat(editPtsValue) || 0;
       const currentAdj = editPtsEmp.empData.pointsAdjustment || 0;
       const delta      = newAdj - currentAdj;
+      
+      console.log('💾 Saving points:', { 
+        empName: editPtsEmp.empName, 
+        empDataId: editPtsEmp.empData._id,
+        delta, 
+        productSlabs: JSON.stringify(productSlabs, null, 2)
+      });
+      
+      // ✅ Step 1: Save slabs with reasons to EmployeePoints
       const res = await fetch(`${EMP_API}/forms/admin/adjust-points/${editPtsEmp.empData._id}`, {
         method:  'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ adjustment: delta }),
+        body:    JSON.stringify({ 
+          adjustment: delta,
+          productSlabs: productSlabs  // Includes reasons now
+        }),
       });
-      if (res.ok) {
-        setNotifySnack(`✓ Points updated for ${editPtsEmp.empName}`);
-        setEditPtsOpen(false);
-        load();
-      } else {
+      
+      if (!res.ok) {
         const d = await res.json();
-        setNotifySnack(`Error: ${d.message}`);
+        console.error('❌ Error response from adjust-points:', d);
+        setNotifySnack(`Error: ${d.message || 'Failed to update points'}`);
+        setEditPtsSaving(false);
+        return;
       }
-    } catch {
-      setNotifySnack('Failed to update points.');
+      
+      const savedData = await res.json();
+      console.log('✅ Points saved successfully:', savedData);
+      console.log('✅ Saved productSlabs:', JSON.stringify(savedData.doc?.productSlabs, null, 2));
+      
+      // ✅ Verify slabs were actually saved
+      if (Object.keys(productSlabs).length > 0 && !savedData.doc?.productSlabs) {
+        console.error('⚠️ WARNING: Slabs were sent but not returned in response!');
+        setNotifySnack('⚠️ Points saved but slabs may not have persisted. Please check.');
+        setEditPtsSaving(false);
+        return;
+      }
+      
+      // ✅ Step 2: Create points activity records for each slab (with notifications)
+      const activities = [];
+      Object.entries(productSlabs).forEach(([product, slabs]) => {
+        slabs.forEach(slab => {
+          activities.push({
+            product,
+            slabDetails: {
+              forms: slab.forms,
+              multiplier: slab.multiplier
+            },
+            reason: slab.reason || '',
+            actionType: 'added'  // or 'modified' based on whether it existed before
+          });
+        });
+      });
+      
+      if (activities.length > 0) {
+        console.log('📢 Creating activities:', { employeeName: editPtsEmp.empName, activities });
+        
+        // Send bulk activity creation (creates notifications automatically)
+        const activityRes = await fetch(`${EMP_API}/points-activity/bulk-create`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            employeeName: editPtsEmp.empName,
+            employeeId: editPtsEmp.empData.employeeId || null,
+            activities
+          })
+        });
+        
+        if (!activityRes.ok) {
+          const activityError = await activityRes.json();
+          console.error('❌ Error creating activities:', activityError);
+          // Don't fail the whole operation, just log it
+          setNotifySnack(`✓ Points updated for ${editPtsEmp.empName}, but notifications may have failed.`);
+        } else {
+          const activityData = await activityRes.json();
+          console.log('✅ Activities created:', activityData);
+          setNotifySnack(`✓ Points updated for ${editPtsEmp.empName}. ${activities.length} notifications sent.`);
+        }
+      } else {
+        setNotifySnack(`✓ Points updated for ${editPtsEmp.empName}.`);
+      }
+      
+      // ✅ Close dialog BEFORE reload to prevent stale data display
+      setEditPtsOpen(false);
+      
+      // ✅ Step 3: Force complete reload with cache bypass
+      console.log('🔄 Reloading employee points data...');
+      const ptsRes = await fetch(`${EMP_API}/forms/admin/employee-points?t=${Date.now()}`, {
+        headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+      });
+      
+      if (ptsRes.ok) {
+        const freshData = await ptsRes.json();
+        console.log('📊 Fresh employee points data loaded, count:', freshData.length);
+        
+        // Find the updated employee's data
+        const updatedEmp = freshData.find(e => e._id === editPtsEmp.empData._id);
+        if (updatedEmp) {
+          console.log('✅ Updated employee data:', {
+            name: updatedEmp.newJoinerName,
+            productSlabs: JSON.stringify(updatedEmp.productSlabs, null, 2)
+          });
+        } else {
+          console.warn('⚠️ Could not find updated employee in fresh data');
+        }
+        
+        setEmpPoints(freshData);
+      } else {
+        console.error('❌ Failed to reload employee points');
+      }
+      
+      // ✅ Reload forms data
+      await load();
+      
+      console.log('✅ All data reloaded successfully');
+      
+    } catch (err) {
+      console.error('❌ Error saving points:', err);
+      setNotifySnack(`Failed to update points: ${err.message}`);
     } finally {
       setEditPtsSaving(false);
     }
-  }, [editPtsEmp, editPtsValue, load]);
+  }, [editPtsEmp, editPtsValue, productSlabs, load]);
 
   const handleManualVerify = useCallback(async (form) => {
     // Open manual verification dialog or directly create
@@ -1338,6 +1548,24 @@ export default function MerchantForms() {
               </IconButton>
             </Badge>
           </Tooltip>
+
+          {/* Points Activity Button */}
+          <Button
+            variant="outlined"
+            onClick={() => {
+              setMainTab(mainTab === 'activity' ? 'forms' : 'activity');
+              if (mainTab !== 'activity') loadPointsActivity();
+            }}
+            sx={{ 
+              borderColor: BRAND.primary, 
+              color: mainTab === 'activity' ? '#fff' : BRAND.primary,
+              bgcolor: mainTab === 'activity' ? BRAND.primary : 'transparent',
+              fontWeight: 700,
+              '&:hover': { bgcolor: mainTab === 'activity' ? '#0f3320' : BRAND.primaryLight }
+            }}
+          >
+            {mainTab === 'activity' ? '← Back to Forms' : '📊 Points Activity'}
+          </Button>
   {/* <Button
   variant={todayOnly ? 'contained' : 'outlined'}
   onClick={() => setTodayOnly(prev => !prev)}
@@ -1681,33 +1909,38 @@ export default function MerchantForms() {
 
       {error && <Alert severity="error" sx={{ mb: 3 }} action={<Button size="small" onClick={load}>Retry</Button>}>{error}</Alert>}
 
-      {loading ? (
-        <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-          <CircularProgress sx={{ color: BRAND.primary }} />
-        </Box>
-      ) : grouped.length === 0 ? (
-        <Card sx={{ textAlign: 'center', py: 6, border: `1.5px dashed ${BRAND.primaryLight}` }}>
-          <Typography color="text.secondary">No merchant forms found.</Typography>
-        </Card>
-      ) : (
-        grouped.map(([empName, empForms]) => (
-          <EmployeeGroup 
-            key={empName} 
-            empName={empName} 
-            forms={empForms}
-            duplicatePhones={duplicatePhones}
-            empPointsData={empPointsMap[empName]}
-            empData={empDataMap[empName]}
-            tlData={tlDataMap[(empDataMap[empName]?.reportingManager || '').toLowerCase().trim()]}
-            filterProduct={filterProduct}
-            setFilterProduct={setFilterProduct}
-            onEditPoints={handleEditPoints}
-            onManualVerify={handleManualVerify}
-            onRevertVerification={handleRevertVerification}
-            onReload={load}
-            globalVerifyMap={globalVerifyMap}
-          />
-        ))
+      {/* Forms List - Only show when mainTab is 'forms' */}
+      {mainTab === 'forms' && (
+        <>
+          {loading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
+              <CircularProgress sx={{ color: BRAND.primary }} />
+            </Box>
+          ) : grouped.length === 0 ? (
+            <Card sx={{ textAlign: 'center', py: 6, border: `1.5px dashed ${BRAND.primaryLight}` }}>
+              <Typography color="text.secondary">No merchant forms found.</Typography>
+            </Card>
+          ) : (
+            grouped.map(([empName, empForms]) => (
+              <EmployeeGroup 
+                key={empName} 
+                empName={empName} 
+                forms={empForms}
+                duplicatePhones={duplicatePhones}
+                empPointsData={empPointsMap[empName]}
+                empData={empDataMap[empName]}
+                tlData={tlDataMap[(empDataMap[empName]?.reportingManager || '').toLowerCase().trim()]}
+                filterProduct={filterProduct}
+                setFilterProduct={setFilterProduct}
+                onEditPoints={handleEditPoints}
+                onManualVerify={handleManualVerify}
+                onRevertVerification={handleRevertVerification}
+                onReload={load}
+                globalVerifyMap={globalVerifyMap}
+              />
+            ))
+          )}
+        </>
       )}
 
       <DuplicatePanel duplicates={duplicates} open={dupOpen} onClose={() => setDupOpen(false)}
@@ -1728,7 +1961,7 @@ export default function MerchantForms() {
 
 
       {/* Edit Points Dialog */}
-      <Dialog open={editPtsOpen} onClose={() => setEditPtsOpen(false)} maxWidth="xs" fullWidth>
+      <Dialog open={editPtsOpen} onClose={() => setEditPtsOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle sx={{ fontWeight: 800, color: BRAND.primary, pb: 1 }}>
           ⭐ Edit Points — {editPtsEmp?.empName}
         </DialogTitle>
@@ -1741,8 +1974,198 @@ export default function MerchantForms() {
               </Typography>
             ))}
           </Box>
+          
+          {/* Product Points - Automatic + Optional Slabs */}
+          {editPtsEmp?.productBreakdown && Object.keys(editPtsEmp.productBreakdown).length > 0 && (
+            <Box sx={{ mb: 2 }}>
+              <Typography variant="body2" fontWeight={700} sx={{ mb: 1.5, color: BRAND.primary }}>
+                Product Points:
+              </Typography>
+              
+              {Object.entries(editPtsEmp.productBreakdown)
+                .sort(([, a], [, b]) => b - a)
+                .map(([product, totalCount]) => {
+                  const slabs = productSlabs[product] || [];
+                  // ✅ FIXED: Simply check if slabs exist (any slabs = custom mode)
+                  const hasCustomSlabs = slabs.length > 0;
+                  
+                  // Calculate automatic points
+                  const pointsKey = Object.keys(POINTS_MAP).find(k => k.toLowerCase().trim() === product.toLowerCase().trim());
+                  const pointsPerItem = pointsKey ? POINTS_MAP[pointsKey] : 0;
+                  const autoPoints = totalCount * pointsPerItem;
+                  
+                  // Calculate slab points
+                  const slabTotal = slabs.reduce((sum, slab) => sum + (slab.forms * slab.multiplier), 0);
+                  
+                  // Use slab points if custom slabs exist, otherwise use automatic
+                  const finalPoints = hasCustomSlabs ? slabTotal : autoPoints;
+                  
+                  return (
+                    <Box key={product} sx={{ mb: 2, p: 1.5, bgcolor: '#e3f2fd', borderRadius: 2, border: '1px solid #1565c0' }}>
+                      <Typography variant="body2" fontWeight={700} sx={{ color: '#1565c0', mb: 1 }}>
+                        {product} ({totalCount} verified forms)
+                      </Typography>
+                      
+                      {/* Automatic Points */}
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1, p: 1, bgcolor: hasCustomSlabs ? '#f5f5f5' : '#fff', borderRadius: 1, border: '1px dashed #1565c0' }}>
+                        <Typography variant="caption" sx={{ color: hasCustomSlabs ? '#888' : '#1565c0', textDecoration: hasCustomSlabs ? 'line-through' : 'none', fontWeight: 600 }}>
+                          Automatic: {totalCount} × {pointsPerItem} = {Math.round(autoPoints * 10) / 10} pts
+                        </Typography>
+                        {hasCustomSlabs && (
+                          <Chip 
+                            label={`→ New: ${Math.round(slabTotal * 10) / 10} pts`} 
+                            size="small" 
+                            sx={{ bgcolor: '#4caf50', color: '#fff', fontWeight: 700, fontSize: 10 }} 
+                          />
+                        )}
+                      </Box>
+                      
+                      {/* Custom Slabs Section */}
+                      {hasCustomSlabs ? (
+                        <Box sx={{ mb: 1 }}>
+                          <Typography variant="caption" fontWeight={700} sx={{ display: 'block', color: '#1565c0', mb: 0.5 }}>
+                            Custom Slabs:
+                          </Typography>
+                          {slabs.map((slab, idx) => (
+                            <Box key={idx} sx={{ mb: 1.5 }}>
+                              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 0.5 }}>
+                                <TextField
+                                  size="small"
+                                  type="number"
+                                  label="Forms"
+                                  value={slab.forms}
+                                  onChange={(e) => {
+                                    const newSlabs = { ...productSlabs };
+                                    newSlabs[product][idx].forms = parseFloat(e.target.value) || 0;
+                                    setProductSlabs(newSlabs);
+                                  }}
+                                  sx={{ width: 100 }}
+                                  inputProps={{ min: 0, step: 1 }}
+                                />
+                                <Typography variant="body2" sx={{ color: '#1565c0' }}>×</Typography>
+                                <TextField
+                                  size="small"
+                                  type="number"
+                                  label="Multiplier"
+                                  value={slab.multiplier}
+                                  onChange={(e) => {
+                                    const newSlabs = { ...productSlabs };
+                                    newSlabs[product][idx].multiplier = parseFloat(e.target.value) || 0;
+                                    setProductSlabs(newSlabs);
+                                  }}
+                                  sx={{ width: 120 }}
+                                  inputProps={{ min: 0, step: 0.1 }}
+                                />
+                                <Typography variant="body2" sx={{ color: '#1565c0', fontWeight: 600, minWidth: 80 }}>
+                                  = {Math.round((slab.forms * slab.multiplier) * 10) / 10} pts
+                                </Typography>
+                                <IconButton
+                                  size="small"
+                                  onClick={() => {
+                                    const newSlabs = { ...productSlabs };
+                                    newSlabs[product].splice(idx, 1);
+                                    // If no slabs left, reset to automatic
+                                    if (newSlabs[product].length === 0) {
+                                      delete newSlabs[product];
+                                    }
+                                    setProductSlabs(newSlabs);
+                                  }}
+                                  sx={{ color: '#c62828' }}
+                                >
+                                  <DeleteIcon fontSize="small" />
+                                </IconButton>
+                              </Box>
+                              {/* Reason Field */}
+                              <TextField
+                                fullWidth
+                                size="small"
+                                label="Reason (optional)"
+                                placeholder="Why are you adding this slab?"
+                                value={slab.reason || ''}
+                                onChange={(e) => {
+                                  const newSlabs = { ...productSlabs };
+                                  newSlabs[product][idx].reason = e.target.value;
+                                  setProductSlabs(newSlabs);
+                                }}
+                                sx={{ '& .MuiOutlinedInput-root': { fontSize: 12 } }}
+                              />
+                            </Box>
+                          ))}
+                          
+                          <Box sx={{ display: 'flex', gap: 1 }}>
+                            <Button
+                              size="small"
+                              onClick={() => {
+                                const newSlabs = { ...productSlabs };
+                                if (!newSlabs[product]) newSlabs[product] = [];
+                                newSlabs[product].push({ forms: 0, multiplier: 1.0, reason: '' });
+                                setProductSlabs(newSlabs);
+                              }}
+                              sx={{ color: '#1565c0', fontWeight: 600, fontSize: 11 }}
+                            >
+                              + Add Slab
+                            </Button>
+                            <Button
+                              size="small"
+                              onClick={() => {
+                                const newSlabs = { ...productSlabs };
+                                delete newSlabs[product];
+                                setProductSlabs(newSlabs);
+                              }}
+                              sx={{ color: '#c62828', fontWeight: 600, fontSize: 11 }}
+                            >
+                              ✗ Remove All Slabs (Use Automatic)
+                            </Button>
+                          </Box>
+                        </Box>
+                      ) : (
+                        <Button
+                          size="small"
+                          variant="outlined"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            const newSlabs = { ...productSlabs };
+                            newSlabs[product] = [{ forms: totalCount, multiplier: 1.0, reason: '' }];
+                            setProductSlabs(newSlabs);
+                            console.log('Added custom slabs for', product, newSlabs);
+                          }}
+                          sx={{ color: '#1565c0', borderColor: '#1565c0', fontWeight: 600, fontSize: 11, mt: 0.5 }}
+                        >
+                          + Add Custom Slabs
+                        </Button>
+                      )}
+                      
+                      <Box sx={{ mt: 1, pt: 1, borderTop: '1px solid #1565c030' }}>
+                        <Typography variant="caption" fontWeight={700} sx={{ color: '#1565c0' }}>
+                          Subtotal: {Math.round(finalPoints * 10) / 10} pts {hasCustomSlabs ? '(custom)' : '(automatic)'}
+                        </Typography>
+                      </Box>
+                    </Box>
+                  );
+                })}
+              
+              <Box sx={{ p: 1.5, bgcolor: '#e6f4ea', borderRadius: 2, border: '1px solid ' + BRAND.primary }}>
+                <Typography variant="body2" fontWeight={700} sx={{ color: BRAND.primary }}>
+                  Total Verified Points: {Math.round(Object.entries(editPtsEmp.productBreakdown).reduce((sum, [product, count]) => {
+                    const slabs = productSlabs[product] || [];
+                    const hasCustomSlabs = slabs.length > 0;  // ✅ FIXED: Simplified
+                    
+                    if (hasCustomSlabs) {
+                      return sum + slabs.reduce((s, slab) => s + (slab.forms * slab.multiplier), 0);
+                    } else {
+                      const pointsKey = Object.keys(POINTS_MAP).find(k => k.toLowerCase().trim() === product.toLowerCase().trim());
+                      const pointsPerItem = pointsKey ? POINTS_MAP[pointsKey] : 0;
+                      return sum + (count * pointsPerItem);
+                    }
+                  }, 0) * 10) / 10} pts
+                </Typography>
+              </Box>
+            </Box>
+          )}
+          
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
-            Verified points (from employee dashboard, Fully Verified only): <strong style={{ color: '#e76f51' }}>{editPtsEmp?.autoPoints || 0}</strong>
+            Manual Adjustment (+ or -):
           </Typography>
           <TextField fullWidth size="small" type="number" label="Manual Adjustment (+ or -)"
             value={editPtsValue}
@@ -1751,7 +2174,29 @@ export default function MerchantForms() {
             inputProps={{ step: 0.1 }} />
           <Box sx={{ mt: 1.5, p: 1.5, bgcolor: '#e6f4ea', borderRadius: 2 }}>
             <Typography variant="body2" fontWeight={700} sx={{ color: BRAND.primary }}>
-              Total: {editPtsEmp?.autoPoints || 0} + ({parseFloat(editPtsValue) >= 0 ? '+' : ''}{parseFloat(editPtsValue) || 0}) = {Math.round(((editPtsEmp?.autoPoints || 0) + (parseFloat(editPtsValue) || 0)) * 10) / 10} pts
+              Final Total: {Math.round(Object.entries(editPtsEmp?.productBreakdown || {}).reduce((sum, [product, count]) => {
+                const slabs = productSlabs[product] || [];
+                const hasCustomSlabs = slabs.length > 0;  // ✅ FIXED: Simplified
+                
+                if (hasCustomSlabs) {
+                  return sum + slabs.reduce((s, slab) => s + (slab.forms * slab.multiplier), 0);
+                } else {
+                  const pointsKey = Object.keys(POINTS_MAP).find(k => k.toLowerCase().trim() === product.toLowerCase().trim());
+                  const pointsPerItem = pointsKey ? POINTS_MAP[pointsKey] : 0;
+                  return sum + (count * pointsPerItem);
+                }
+              }, 0) * 10) / 10} + ({parseFloat(editPtsValue) >= 0 ? '+' : ''}{parseFloat(editPtsValue) || 0}) = {Math.round((Object.entries(editPtsEmp?.productBreakdown || {}).reduce((sum, [product, count]) => {
+                const slabs = productSlabs[product] || [];
+                const hasCustomSlabs = slabs.length > 0;  // ✅ FIXED: Simplified
+                
+                if (hasCustomSlabs) {
+                  return sum + slabs.reduce((s, slab) => s + (slab.forms * slab.multiplier), 0);
+                } else {
+                  const pointsKey = Object.keys(POINTS_MAP).find(k => k.toLowerCase().trim() === product.toLowerCase().trim());
+                  const pointsPerItem = pointsKey ? POINTS_MAP[pointsKey] : 0;
+                  return sum + (count * pointsPerItem);
+                }
+              }, 0) + (parseFloat(editPtsValue) || 0)) * 10) / 10} pts
             </Typography>
           </Box>
         </DialogContent>
@@ -1812,6 +2257,85 @@ export default function MerchantForms() {
           <Button onClick={() => setSettledOpen(false)} sx={{ color: BRAND.primary, fontWeight: 700 }}>Close</Button>
         </DialogActions>
       </Dialog>
+
+      {/* Points Activity Section */}
+      {mainTab === 'activity' && (
+        <Box sx={{ mt: 3 }}>
+          <Typography variant="h6" sx={{ fontWeight: 700, color: BRAND.primary, mb: 2 }}>
+            Points Activity History
+          </Typography>
+          
+          {activityLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 6 }}>
+              <CircularProgress sx={{ color: BRAND.primary }} />
+            </Box>
+          ) : pointsActivity.length === 0 ? (
+            <Card sx={{ textAlign: 'center', py: 6, border: `1.5px dashed ${BRAND.primaryLight}` }}>
+              <Typography color="text.secondary">No points activity yet.</Typography>
+            </Card>
+          ) : (
+            <TableContainer component={Card} sx={{ border: `1.5px solid ${BRAND.primaryLight}` }}>
+              <Table>
+                <TableHead sx={{ bgcolor: BRAND.primaryLight }}>
+                  <TableRow>
+                    <TableCell sx={{ fontWeight: 700 }}>Date</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>FSE Name</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Product</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Slab Details</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Reason</TableCell>
+                    <TableCell sx={{ fontWeight: 700 }}>Action</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {pointsActivity.map((activity, idx) => (
+                    <TableRow key={idx} hover>
+                      <TableCell>
+                        {new Date(activity.createdAt).toLocaleDateString('en-IN', { 
+                          day: 'numeric', 
+                          month: 'short', 
+                          year: 'numeric',
+                          hour: '2-digit',
+                          minute: '2-digit'
+                        })}
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" fontWeight={600}>
+                          {activity.employeeName}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <ProductChip product={activity.product} />
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" sx={{ fontFamily: 'monospace', color: BRAND.primary, fontWeight: 600 }}>
+                          {activity.slabDetails.forms} × {activity.slabDetails.multiplier} = {activity.slabDetails.points} pts
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2" color="text.secondary">
+                          {activity.reason || '—'}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Chip 
+                          label={activity.actionType} 
+                          size="small"
+                          sx={{ 
+                            bgcolor: activity.actionType === 'added' ? '#e6f4ea' : activity.actionType === 'modified' ? '#fff8e1' : '#fdecea',
+                            color: activity.actionType === 'added' ? '#2e7d32' : activity.actionType === 'modified' ? '#f57f17' : '#c62828',
+                            fontWeight: 700,
+                            textTransform: 'capitalize'
+                          }}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </Box>
+      )}
 
       <Snackbar open={!!notifySnack} autoHideDuration={4000} onClose={() => setNotifySnack('')}
         anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
