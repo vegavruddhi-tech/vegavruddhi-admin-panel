@@ -448,7 +448,12 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, empData
   // Use parent globalVerifyMap if available, otherwise fall back to local fetch
   const verifyMap = Object.keys(parentVerifyMap || {}).length > 0 ? (parentVerifyMap || {}) : localVerifyMap;
 
-  const dupCount = forms.filter(f => duplicatePhones.has(f.customerNumber)).length;
+  // ✅ FIXED: Check duplicates by phone+product combination, not just phone
+  const dupCount = forms.filter(f => {
+    const product = getProduct(f);
+    const key = product ? `${f.customerNumber}__${product}` : f.customerNumber;
+    return duplicatePhones.has(key);
+  }).length;
 
   // ✅ FIXED: consistent product usage
   const fetchVerification = useCallback(async () => {
@@ -790,7 +795,10 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, empData
                 return product === filterProduct;
               })
               .map(f => {
-              const isDup = duplicatePhones.has(f.customerNumber);
+              // ✅ FIXED: Check duplicate by phone+product combination
+              const product = getProduct(f);
+              const dupKey = product ? `${f.customerNumber}__${product}` : f.customerNumber;
+              const isDup = duplicatePhones.has(dupKey);
               const date  = f.createdAt ? new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '–';
 
               return (
@@ -1354,10 +1362,15 @@ export default function MerchantForms() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Set of phone numbers that are cross-employee duplicates
+  // Set of phone+product combinations that are cross-employee duplicates
   const duplicatePhones = useMemo(() => {
     const s = new Set();
-    duplicates.forEach(d => s.add(d._id.customerNumber));
+    duplicates.forEach(d => {
+      const phone = d._id.customerNumber;
+      const product = (d._id.formFillingFor || '').toLowerCase().trim();
+      // Store as "phone__product" to match the key format used elsewhere
+      s.add(product ? `${phone}__${product}` : phone);
+    });
     return s;
   }, [duplicates]);
 
