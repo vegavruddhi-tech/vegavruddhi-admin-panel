@@ -27,8 +27,30 @@ scope = [
     'https://spreadsheets.google.com/feeds',
     'https://www.googleapis.com/auth/drive'
 ]
-creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
-gc    = gspread.authorize(creds)
+
+# Try to load credentials from environment variable first (for Vercel deployment)
+creds_json = os.getenv('GOOGLE_CREDENTIALS_JSON')
+if creds_json:
+    logging.info("📝 Loading Google credentials from environment variable")
+    try:
+        creds_dict = json.loads(creds_json)
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        logging.info("✅ Google credentials loaded from environment variable")
+    except json.JSONDecodeError as e:
+        logging.error(f"❌ Failed to parse GOOGLE_CREDENTIALS_JSON: {e}")
+        raise ValueError("Invalid GOOGLE_CREDENTIALS_JSON format")
+else:
+    # Fallback to file (for local development)
+    logging.info("📝 Loading Google credentials from file (local development)")
+    if not os.path.exists(CREDENTIALS_FILE):
+        raise FileNotFoundError(
+            f"Google credentials file not found at {CREDENTIALS_FILE}. "
+            "Please set GOOGLE_CREDENTIALS_JSON environment variable or create the credentials file."
+        )
+    creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_FILE, scope)
+    logging.info("✅ Google credentials loaded from file")
+
+gc = gspread.authorize(creds)
 
 # ================= HELPERS =================
 

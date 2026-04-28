@@ -272,9 +272,9 @@ def cron_sync():
         # Step 2: Pre-compute verification cache
         # Use localhost since .env is not loading properly
         api_url = 'http://localhost:4000'
-        precompute_url = f'{api_url}/api/verify/precompute-all'
+        precompute_url = f'{api_url}/api/verify/precompute-all?force=true'  # Force full refresh
         
-        print(f"\nStep 2: Pre-computing verification cache")
+        print(f"\nStep 2: Pre-computing verification cache (FORCE REFRESH)")
         print(f"Calling: {precompute_url}")
         
         try:
