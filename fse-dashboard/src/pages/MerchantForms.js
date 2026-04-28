@@ -426,9 +426,9 @@ function VerifyChip({ status, onClick }) {
 // ── Employee Group Row ────────────────────────────────────────
 function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, empData, tlData, filterProduct, setFilterProduct, onEditPoints, onManualVerify, onRevertVerification, onReload, globalVerifyMap: parentVerifyMap }) {
 
-  // ✅ FIXED: consistent + safe product
+  // ✅ FIXED: Use same priority order as backend (formFillingFor first)
   const getProduct = (f) =>
-    (f?.tideProduct || f?.formFillingFor || f?.brand || '').toLowerCase().trim();
+    (f?.formFillingFor || f?.tideProduct || f?.brand || '').toLowerCase().trim();
 
   // ✅ FIXED: unique key
   const getKey = (f) => {
@@ -682,7 +682,8 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, empData
                 
                 // Only count if this specific form is Fully Verified
                 if (verificationStatus === 'Fully Verified') {
-                  const rawProduct = form.tideProduct || form.formFillingFor || form.brand || 'Other';
+                  // ✅ FIXED: Use same priority order as backend
+                  const rawProduct = form.formFillingFor || form.tideProduct || form.brand || 'Other';
                   const product = rawProduct.toLowerCase() === 'msme' ? 'Tide MSME' : rawProduct;
                   
                   // Count every verified form (no deduplication)
@@ -727,7 +728,8 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, empData
               const verificationStatus = verifyMap[formKey]?.status;
               
               if (verificationStatus === 'Fully Verified') {
-                const rawProduct = form.tideProduct || form.formFillingFor || form.brand || 'Other';
+                // ✅ FIXED: Use same priority order as backend
+                const rawProduct = form.formFillingFor || form.tideProduct || form.brand || 'Other';
                 const product = rawProduct.toLowerCase() === 'msme' ? 'Tide MSME' : rawProduct;
                 
                 // Count every verified form (no deduplication)
@@ -782,7 +784,8 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, empData
               .filter(f => {
                 // Filter by selected product chip
                 if (!filterProduct) return true; // Show all if no filter
-                const rawProduct = f.tideProduct || f.formFillingFor || f.brand || 'Other';
+                // ✅ FIXED: Use same priority order as backend
+                const rawProduct = f.formFillingFor || f.tideProduct || f.brand || 'Other';
                 const product = rawProduct.toLowerCase() === 'msme' ? 'Tide MSME' : rawProduct;
                 return product === filterProduct;
               })
@@ -1462,7 +1465,8 @@ export default function MerchantForms() {
   }, [teamLeaders]);
 
   // Fetch global verification for all filtered forms
-  const getFormProduct = (f) => (f?.tideProduct || f?.formFillingFor || f?.brand || '').toLowerCase().trim();
+  // ✅ FIXED: Use same priority order as backend (formFillingFor first)
+  const getFormProduct = (f) => (f?.formFillingFor || f?.tideProduct || f?.brand || '').toLowerCase().trim();
   const getFormKey     = (f) => { const p = getFormProduct(f); return p ? `${f.customerNumber}__${p}` : f.customerNumber; };
 
   useEffect(() => {
