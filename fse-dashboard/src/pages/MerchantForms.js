@@ -22,6 +22,80 @@ import DeleteIcon         from '@mui/icons-material/Delete';
 import * as XLSX          from 'xlsx';
 import { BRAND }          from '../theme';
 
+// ── SlabTierRow: name + forms + multiplier all in one row ──
+const SlabTierRow = React.memo(function SlabTierRow({ tier, idx, onCommit, onDelete }) {
+  const [name, setName]             = useState(tier.name ?? '');
+  const [forms, setForms]           = useState(tier.forms === '' || tier.forms == null ? '' : String(tier.forms));
+  const [multiplier, setMultiplier] = useState(tier.multiplier === '' || tier.multiplier == null ? '' : String(tier.multiplier));
+  const [reason, setReason]         = useState(tier.reason ?? '');
+
+  useEffect(() => {
+    setName(tier.name ?? '');
+    setForms(tier.forms === '' || tier.forms == null ? '' : String(tier.forms));
+    setMultiplier(tier.multiplier === '' || tier.multiplier == null ? '' : String(tier.multiplier));
+    setReason(tier.reason ?? '');
+  }, [tier.name, tier.forms, tier.multiplier, tier.reason]);
+  const fNum = parseFloat(forms) || 0;
+  const mNum = parseFloat(multiplier) || 0;
+  const pts  = Math.round(fNum * mNum * 10) / 10;
+
+  const handleFormsChange = useCallback((raw) => {
+    setForms(raw);
+    const v = parseFloat(raw);
+    if (!isNaN(v)) {
+      const m = parseFloat(multiplier) || 0;
+      onCommit(idx, name, v, m, reason);
+    }
+  }, [idx, name, multiplier, reason, onCommit]);
+
+  const handleMultiplierChange = useCallback((raw) => {
+    setMultiplier(raw);
+    const v = parseFloat(raw);
+    if (!isNaN(v)) {
+      const f = parseFloat(forms) || 0;
+      onCommit(idx, name, f, v, reason);
+    }
+  }, [idx, name, forms, reason, onCommit]);
+
+  return (
+    <Box sx={{ mb: 1.5, p: 1, bgcolor: '#f1f8e9', borderRadius: 1, border: '1px solid #aed581' }}>
+      <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', mb: 0.5 }}>
+        <TextField
+          size="small" label="Slab Name"
+          value={name}
+          onChange={(e) => { setName(e.target.value); onCommit(idx, e.target.value, fNum, mNum, reason); }}
+          sx={{ width: 110 }}
+          placeholder="e.g. Slab 1"
+        />
+        <TextField
+          size="small" type="number" label="Forms"
+          value={forms}
+          onChange={(e) => handleFormsChange(e.target.value)}
+          sx={{ width: 90 }} inputProps={{ min: 0, step: 1 }}
+        />
+        <Typography variant="body2" sx={{ color: '#1565c0' }}>×</Typography>
+        <TextField
+          size="small" type="number" label="Multiplier"
+          value={multiplier}
+          onChange={(e) => handleMultiplierChange(e.target.value)}
+          sx={{ width: 100 }} inputProps={{ min: 0, step: 0.1 }}
+        />
+        <Typography variant="body2" sx={{ color: '#1565c0', fontWeight: 700, minWidth: 60 }}>
+          = {pts} pts
+        </Typography>
+      </Box>
+      <TextField
+        fullWidth size="small"
+        label="Reason *"
+        placeholder="Why are you adding/changing this slab?"
+        value={reason}
+        onChange={(e) => { setReason(e.target.value); onCommit(idx, name, fNum, mNum, e.target.value); }}
+        sx={{ '& .MuiOutlinedInput-root': { fontSize: 12 } }}
+      />
+    </Box>
+  );
+});
+
 // ── Flatten a form record into a flat row for export ─────────
 function flattenForm(f, empMap = {}, tlMap = {}, verifyMap = {}) {
   const emp = empMap[f.employeeName] || {};
@@ -530,15 +604,18 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, empData
     
     console.log(`[${empName}] 📊 Processing slabs:`, JSON.stringify(slabsData, null, 2));
     
-    Object.entries(slabsData).forEach(([product, slabs]) => {
-      if (Array.isArray(slabs)) {
-        slabs.forEach(slab => {
-          const points = (slab.forms || 0) * (slab.multiplier || 0);
-          console.log(`[${empName}] ✓ ${product}: ${slab.forms} × ${slab.multiplier} = ${points} pts`);
+    Object.entries(slabsData).forEach(([product, ps]) => {
+      // New tier format: { slabTiers: [{name, forms, multiplier}] }
+      if (ps?.slabTiers && Array.isArray(ps.slabTiers)) {
+        ps.slabTiers.forEach(t => {
+          const points = (parseFloat(t.forms) || 0) * (parseFloat(t.multiplier) || 0);
           sum += points;
         });
-      } else {
-        console.warn(`[${empName}] ⚠️ Slabs for ${product} is not an array:`, slabs);
+      // Legacy flat array format: [{forms, multiplier}]
+      } else if (Array.isArray(ps)) {
+        ps.forEach(slab => {
+          sum += (slab.forms || 0) * (slab.multiplier || 0);
+        });
       }
     });
     
@@ -552,7 +629,8 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, empData
   console.log(`[${empName}] hasSlabs: ${hasSlabs}, slabPoints: ${slabPoints}, autoPoints: ${autoPoints}`);
   
   const adjustment  = empPointsData?.pointsAdjustment || 0;
-  const verified    = hasSlabs ? slabPoints : autoPoints;
+  // Slab points are a BONUS on top of automatic points
+  const verified    = Math.round((autoPoints + (hasSlabs ? slabPoints : 0)) * 10) / 10;
   const totalPoints = Math.round((verified + adjustment) * 10) / 10;
   
   console.log(`[${empName}] Final: verified=${verified}, adjustment=${adjustment}, total=${totalPoints}`);
@@ -995,8 +1073,107 @@ export default function MerchantForms() {
   const [editPtsOpen,  setEditPtsOpen]  = useState(false);
   const [editPtsEmp,   setEditPtsEmp]   = useState(null); // {empName, empData, autoPoints}
   const [editPtsValue, setEditPtsValue] = useState('');
+  const [editPtsReason, setEditPtsReason] = useState('');
+  const [deletingSlabKey, setDeletingSlabKey] = useState(null); // `${product}__${tidx}`
+  const [deleteReason, setDeleteReason]       = useState('');
   const [editPtsSaving,setEditPtsSaving]= useState(false);
-  const [productSlabs, setProductSlabs] = useState({}); // {productName: [{forms, multiplier}]}
+  const [productSlabs, setProductSlabs] = useState({}); // {productName: {slabTiers:[{name,multiplier}], assignments:[{tierIdx,forms,reason}]}}
+
+  // ── Tier handlers ─────────────────────────────────────────────────────────
+  const handleTierCommit = useCallback((product, idx, name, forms, multiplier, reason) => {
+    setProductSlabs(prev => ({
+      ...prev,
+      [product]: {
+        ...prev[product],
+        slabTiers: prev[product].slabTiers.map((t, i) => i === idx ? { name, forms, multiplier, reason } : t)
+      }
+    }));
+  }, []);
+
+  const handleTierDelete = useCallback((product, idx) => {
+    setProductSlabs(prev => {
+      const tiers = prev[product].slabTiers.filter((_, i) => i !== idx);
+      if (tiers.length === 0) { const n = { ...prev }; delete n[product]; return n; }
+      return { ...prev, [product]: { slabTiers: tiers } };
+    });
+  }, []);
+
+  const handleTierAdd = useCallback((product) => {
+    setProductSlabs(prev => ({
+      ...prev,
+      [product]: {
+        ...prev[product],
+        slabTiers: [...(prev[product]?.slabTiers || []), { name: '', forms: '', multiplier: '' }]
+      }
+    }));
+  }, []);
+
+  // ── Assignment handlers — no longer needed (forms now in tier row) ────────
+  const handleAssignCommit = useCallback(() => {}, []);
+  const handleAssignDelete = useCallback(() => {}, []);
+  const handleAssignAdd    = useCallback(() => {}, []);
+
+  // ── Memoised slab handlers — prevent re-creating on every render ──────────
+  const handleSlabFieldChange = useCallback((product, idx, forms, multiplier, reason) => {
+    setProductSlabs(prev => ({
+      ...prev,
+      [product]: prev[product].map((s, i) =>
+        i === idx ? { ...s, forms, multiplier, reason } : s
+      )
+    }));
+  }, []);
+
+  const handleSlabDelete = useCallback((product, idx) => {
+    setProductSlabs(prev => {
+      const updated = prev[product].filter((_, i) => i !== idx);
+      if (updated.length === 0) { const n = { ...prev }; delete n[product]; return n; }
+      return { ...prev, [product]: updated };
+    });
+  }, []);
+
+  const handleSlabAdd = useCallback((product, totalCount) => {
+    setProductSlabs(prev => ({
+      ...prev,
+      [product]: [...(prev[product] || []), { forms: totalCount, multiplier: 1.0, reason: '' }]
+    }));
+  }, []);
+
+  const handleSlabRemoveAll = useCallback((product) => {
+    setProductSlabs(prev => { const n = { ...prev }; delete n[product]; return n; });
+  }, []);
+  // ── Memoised total so it doesn't recalculate 3× per render ───────────────
+  const editPtsVerifiedTotal = useMemo(() => {
+    if (!editPtsEmp?.productBreakdown) return 0;
+    return Object.entries(editPtsEmp.productBreakdown).reduce((sum, [product, count]) => {
+      const pk = Object.keys(POINTS_MAP).find(k => k.toLowerCase().trim() === product.toLowerCase().trim());
+      const auto = count * (pk ? POINTS_MAP[pk] : 0);
+      const ps = productSlabs[product];
+      const bonus = ps?.slabTiers?.length > 0
+        ? ps.slabTiers.reduce((s, t) => s + ((t.forms ?? 0) * t.multiplier), 0)
+        : Array.isArray(ps) && ps.length > 0 ? ps.reduce((s, sl) => s + (sl.forms * sl.multiplier), 0) : 0;
+      return sum + auto + bonus;
+    }, 0);
+  }, [editPtsEmp, productSlabs]);
+
+  // ── Breakdown: automatic vs slab bonus ────────────────────────────────────
+  const editPtsAutoTotal = useMemo(() => {
+    if (!editPtsEmp?.productBreakdown) return 0;
+    return Object.entries(editPtsEmp.productBreakdown).reduce((sum, [product, count]) => {
+      const pk = Object.keys(POINTS_MAP).find(k => k.toLowerCase().trim() === product.toLowerCase().trim());
+      return sum + (count * (pk ? POINTS_MAP[pk] : 0));
+    }, 0);
+  }, [editPtsEmp]);
+
+  const editPtsSlabBonus = useMemo(() => {
+    if (!editPtsEmp?.productBreakdown) return 0;
+    return Object.entries(editPtsEmp.productBreakdown).reduce((sum, [product]) => {
+      const ps = productSlabs[product];
+      const bonus = ps?.slabTiers?.length > 0
+        ? ps.slabTiers.reduce((s, t) => s + ((t.forms ?? 0) * t.multiplier), 0)
+        : Array.isArray(ps) && ps.length > 0 ? ps.reduce((s, sl) => s + (sl.forms * sl.multiplier), 0) : 0;
+      return sum + bonus;
+    }, 0);
+  }, [editPtsEmp, productSlabs]);
   const [mainTab, setMainTab] = useState('forms'); // 'forms' or 'activity'
   const [pointsActivity, setPointsActivity] = useState([]);
   const [activityLoading, setActivityLoading] = useState(false);
@@ -1106,15 +1283,32 @@ export default function MerchantForms() {
     // ✅ Load ALL existing slabs from database (not just for products with verified forms)
     const initialSlabs = {};
     if (data?.productSlabs) {
-      const slabsData = data.productSlabs;  // Already a plain object
-      
+      const slabsData = data.productSlabs;
       console.log('📊 Loading existing slabs from database:', JSON.stringify(slabsData, null, 2));
-      
-      // Load ALL saved slabs (including products without verified forms)
-      Object.entries(slabsData).forEach(([product, slabs]) => {
-        if (Array.isArray(slabs) && slabs.length > 0) {
-          initialSlabs[product] = slabs;
-          console.log(`✓ Loaded ${slabs.length} slab(s) for ${product}`);
+
+      Object.entries(slabsData).forEach(([product, val]) => {
+        if (!val) return;
+        // New tier format
+        if (val.slabTiers && val.assignments) {
+          // migrate old format that had separate assignments — flatten into tiers
+          initialSlabs[product] = {
+            slabTiers: val.slabTiers.map((t, i) => ({
+              name: t.name,
+              forms: val.assignments?.[i]?.forms ?? t.forms ?? 0,
+              multiplier: t.multiplier
+            }))
+          };
+          console.log(`✓ Loaded tier-based slabs for ${product}`);
+        // New clean format
+        } else if (val.slabTiers) {
+          initialSlabs[product] = val;
+          console.log(`✓ Loaded slabs for ${product}`);
+        // Legacy flat array — migrate to new format on load
+        } else if (Array.isArray(val) && val.length > 0) {
+          initialSlabs[product] = {
+            slabTiers: val.map((s, i) => ({ name: `Slab ${i + 1}`, forms: s.forms, multiplier: s.multiplier }))
+          };
+          console.log(`✓ Migrated legacy slabs for ${product}`);
         }
       });
       
@@ -1139,7 +1333,8 @@ export default function MerchantForms() {
     
     setEditPtsEmp({ empName, empData: data, autoPoints, productBreakdown });
     setEditPtsValue(data?.pointsAdjustment !== undefined ? String(data.pointsAdjustment) : '0');
-    setProductSlabs(initialSlabs);
+    setEditPtsReason('');
+    setProductSlabs({});  // Always start blank — saved slabs shown in Adjustment History only
     setEditPtsOpen(true);
   }, []);
 
@@ -1165,7 +1360,8 @@ export default function MerchantForms() {
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({ 
           adjustment: delta,
-          productSlabs: productSlabs  // Includes reasons now
+          reason: editPtsReason || '',
+          productSlabs: productSlabs
         }),
       });
       
@@ -1191,18 +1387,26 @@ export default function MerchantForms() {
       
       // ✅ Step 2: Create points activity records for each slab (with notifications)
       const activities = [];
-      Object.entries(productSlabs).forEach(([product, slabs]) => {
-        slabs.forEach(slab => {
-          activities.push({
-            product,
-            slabDetails: {
-              forms: slab.forms,
-              multiplier: slab.multiplier
-            },
-            reason: slab.reason || '',
-            actionType: 'added'  // or 'modified' based on whether it existed before
+      Object.entries(productSlabs).forEach(([product, ps]) => {
+        if (ps?.slabTiers) {
+          ps.slabTiers.forEach(t => {
+            activities.push({
+              product,
+              slabDetails: { forms: t.forms ?? 0, multiplier: t.multiplier },
+              reason: `${t.name || ''}${t.reason ? ': ' + t.reason : ''}`.trim(),
+              actionType: 'added'
+            });
           });
-        });
+        } else if (Array.isArray(ps)) {
+          ps.forEach(slab => {
+            activities.push({
+              product,
+              slabDetails: { forms: slab.forms, multiplier: slab.multiplier },
+              reason: slab.reason || '',
+              actionType: 'added'
+            });
+          });
+        }
       });
       
       if (activities.length > 0) {
@@ -1235,6 +1439,12 @@ export default function MerchantForms() {
       
       // ✅ Close dialog BEFORE reload to prevent stale data display
       setEditPtsOpen(false);
+      setProductSlabs({});
+      setEditPtsEmp(null);
+      setEditPtsValue('');
+      setEditPtsReason('');
+      setDeletingSlabKey(null);
+      setDeleteReason('');
       
       // ✅ Step 3: Force complete reload with cache bypass
       console.log('🔄 Reloading employee points data...');
@@ -1273,7 +1483,7 @@ export default function MerchantForms() {
     } finally {
       setEditPtsSaving(false);
     }
-  }, [editPtsEmp, editPtsValue, productSlabs, load]);
+  }, [editPtsEmp, editPtsValue, editPtsReason, productSlabs, load]);
 
   const handleManualVerify = useCallback(async (form) => {
     // Open manual verification dialog or directly create
@@ -1459,7 +1669,15 @@ export default function MerchantForms() {
   // Map empName → points data
   const empPointsMap = useMemo(() => {
     const m = {};
-    empPoints.forEach(e => { m[e.newJoinerName] = e; });
+    empPoints.forEach(e => {
+      const existing = m[e.newJoinerName];
+      // Prefer the record that has productSlabs over an empty one
+      const hasSlabs = e.productSlabs && Object.keys(e.productSlabs).length > 0;
+      const existingHasSlabs = existing?.productSlabs && Object.keys(existing.productSlabs).length > 0;
+      if (!existing || (hasSlabs && !existingHasSlabs)) {
+        m[e.newJoinerName] = e;
+      }
+    });
     return m;
   }, [empPoints]);
 
@@ -1978,7 +2196,7 @@ export default function MerchantForms() {
 
 
       {/* Edit Points Dialog */}
-      <Dialog open={editPtsOpen} onClose={() => setEditPtsOpen(false)} maxWidth="md" fullWidth>
+      <Dialog open={editPtsOpen} onClose={() => { setEditPtsOpen(false); setProductSlabs({}); setEditPtsEmp(null); setEditPtsValue(''); setEditPtsReason(''); }} maxWidth="md" fullWidth>
         <DialogTitle sx={{ fontWeight: 800, color: BRAND.primary, pb: 1 }}>
           ⭐ Edit Points — {editPtsEmp?.empName}
         </DialogTitle>
@@ -2002,20 +2220,21 @@ export default function MerchantForms() {
               {Object.entries(editPtsEmp.productBreakdown)
                 .sort(([, a], [, b]) => b - a)
                 .map(([product, totalCount]) => {
-                  const slabs = productSlabs[product] || [];
-                  // ✅ FIXED: Simply check if slabs exist (any slabs = custom mode)
-                  const hasCustomSlabs = slabs.length > 0;
-                  
+                  const ps = productSlabs[product];
+                  const hasCustomSlabs = !!(ps?.slabTiers?.length > 0 || (Array.isArray(ps) && ps.length > 0));
+
                   // Calculate automatic points
                   const pointsKey = Object.keys(POINTS_MAP).find(k => k.toLowerCase().trim() === product.toLowerCase().trim());
                   const pointsPerItem = pointsKey ? POINTS_MAP[pointsKey] : 0;
                   const autoPoints = totalCount * pointsPerItem;
-                  
-                  // Calculate slab points
-                  const slabTotal = slabs.reduce((sum, slab) => sum + (slab.forms * slab.multiplier), 0);
-                  
-                  // Use slab points if custom slabs exist, otherwise use automatic
-                  const finalPoints = hasCustomSlabs ? slabTotal : autoPoints;
+
+                  // Slab bonus (always ADDED on top of automatic)
+                  const slabTotal = ps?.slabTiers?.length > 0
+                    ? ps.slabTiers.reduce((sum, t) => sum + ((t.forms ?? 0) * t.multiplier), 0)
+                    : Array.isArray(ps) ? ps.reduce((sum, s) => sum + (s.forms * s.multiplier), 0) : 0;
+
+                  // Final = automatic + slab bonus
+                  const finalPoints = autoPoints + slabTotal;
                   
                   return (
                     <Box key={product} sx={{ mb: 2, p: 1.5, bgcolor: '#e3f2fd', borderRadius: 2, border: '1px solid #1565c0' }}>
@@ -2024,13 +2243,13 @@ export default function MerchantForms() {
                       </Typography>
                       
                       {/* Automatic Points */}
-                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1, p: 1, bgcolor: hasCustomSlabs ? '#f5f5f5' : '#fff', borderRadius: 1, border: '1px dashed #1565c0' }}>
-                        <Typography variant="caption" sx={{ color: hasCustomSlabs ? '#888' : '#1565c0', textDecoration: hasCustomSlabs ? 'line-through' : 'none', fontWeight: 600 }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1, p: 1, bgcolor: '#fff', borderRadius: 1, border: '1px dashed #1565c0' }}>
+                        <Typography variant="caption" sx={{ color: '#1565c0', fontWeight: 600 }}>
                           Automatic: {totalCount} × {pointsPerItem} = {Math.round(autoPoints * 10) / 10} pts
                         </Typography>
-                        {hasCustomSlabs && (
+                        {hasCustomSlabs && slabTotal > 0 && (
                           <Chip 
-                            label={`→ New: ${Math.round(slabTotal * 10) / 10} pts`} 
+                            label={`+ Bonus: ${Math.round(slabTotal * 10) / 10} pts`} 
                             size="small" 
                             sx={{ bgcolor: '#4caf50', color: '#fff', fontWeight: 700, fontSize: 10 }} 
                           />
@@ -2040,100 +2259,28 @@ export default function MerchantForms() {
                       {/* Custom Slabs Section */}
                       {hasCustomSlabs ? (
                         <Box sx={{ mb: 1 }}>
-                          <Typography variant="caption" fontWeight={700} sx={{ display: 'block', color: '#1565c0', mb: 0.5 }}>
-                            Custom Slabs:
-                          </Typography>
-                          {slabs.map((slab, idx) => (
-                            <Box key={idx} sx={{ mb: 1.5 }}>
-                              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', mb: 0.5 }}>
-                                <TextField
-                                  size="small"
-                                  type="number"
-                                  label="Forms"
-                                  value={slab.forms}
-                                  onChange={(e) => {
-                                    const newSlabs = { ...productSlabs };
-                                    newSlabs[product][idx].forms = parseFloat(e.target.value) || 0;
-                                    setProductSlabs(newSlabs);
-                                  }}
-                                  sx={{ width: 100 }}
-                                  inputProps={{ min: 0, step: 1 }}
-                                />
-                                <Typography variant="body2" sx={{ color: '#1565c0' }}>×</Typography>
-                                <TextField
-                                  size="small"
-                                  type="number"
-                                  label="Multiplier"
-                                  value={slab.multiplier}
-                                  onChange={(e) => {
-                                    const newSlabs = { ...productSlabs };
-                                    newSlabs[product][idx].multiplier = parseFloat(e.target.value) || 0;
-                                    setProductSlabs(newSlabs);
-                                  }}
-                                  sx={{ width: 120 }}
-                                  inputProps={{ min: 0, step: 0.1 }}
-                                />
-                                <Typography variant="body2" sx={{ color: '#1565c0', fontWeight: 600, minWidth: 80 }}>
-                                  = {Math.round((slab.forms * slab.multiplier) * 10) / 10} pts
-                                </Typography>
-                                <IconButton
-                                  size="small"
-                                  onClick={() => {
-                                    const newSlabs = { ...productSlabs };
-                                    newSlabs[product].splice(idx, 1);
-                                    // If no slabs left, reset to automatic
-                                    if (newSlabs[product].length === 0) {
-                                      delete newSlabs[product];
-                                    }
-                                    setProductSlabs(newSlabs);
-                                  }}
-                                  sx={{ color: '#c62828' }}
-                                >
-                                  <DeleteIcon fontSize="small" />
-                                </IconButton>
-                              </Box>
-                              {/* Reason Field */}
-                              <TextField
-                                fullWidth
-                                size="small"
-                                label="Reason (optional)"
-                                placeholder="Why are you adding this slab?"
-                                value={slab.reason || ''}
-                                onChange={(e) => {
-                                  const newSlabs = { ...productSlabs };
-                                  newSlabs[product][idx].reason = e.target.value;
-                                  setProductSlabs(newSlabs);
-                                }}
-                                sx={{ '& .MuiOutlinedInput-root': { fontSize: 12 } }}
+                          <Box sx={{ mb: 1, p: 1, bgcolor: '#e8f5e9', borderRadius: 1, border: '1px solid #66bb6a' }}>
+                            <Typography variant="caption" fontWeight={700} sx={{ display: 'block', color: '#2e7d32', mb: 0.5 }}>
+                              Custom Slabs — Name · Forms · Multiplier:
+                            </Typography>
+                            {(productSlabs[product]?.slabTiers || []).map((tier, tidx) => (
+                              <SlabTierRow
+                                key={tidx}
+                                tier={tier}
+                                idx={tidx}
+                                onCommit={(i, name, forms, mult, reason) => handleTierCommit(product, i, name, forms, mult, reason)}
+                                onDelete={(i) => handleTierDelete(product, i)}
                               />
-                            </Box>
-                          ))}
-                          
-                          <Box sx={{ display: 'flex', gap: 1 }}>
-                            <Button
-                              size="small"
-                              onClick={() => {
-                                const newSlabs = { ...productSlabs };
-                                if (!newSlabs[product]) newSlabs[product] = [];
-                                newSlabs[product].push({ forms: 0, multiplier: 1.0, reason: '' });
-                                setProductSlabs(newSlabs);
-                              }}
-                              sx={{ color: '#1565c0', fontWeight: 600, fontSize: 11 }}
-                            >
+                            ))}
+                            <Button size="small" onClick={() => handleTierAdd(product)}
+                              sx={{ color: '#2e7d32', fontWeight: 600, fontSize: 11, mt: 0.5 }}>
                               + Add Slab
                             </Button>
-                            <Button
-                              size="small"
-                              onClick={() => {
-                                const newSlabs = { ...productSlabs };
-                                delete newSlabs[product];
-                                setProductSlabs(newSlabs);
-                              }}
-                              sx={{ color: '#c62828', fontWeight: 600, fontSize: 11 }}
-                            >
-                              ✗ Remove All Slabs (Use Automatic)
-                            </Button>
                           </Box>
+                          <Button size="small" onClick={() => handleSlabRemoveAll(product)}
+                            sx={{ color: '#c62828', fontWeight: 600, fontSize: 11 }}>
+                            ✗ Remove All Slabs (Use Automatic)
+                          </Button>
                         </Box>
                       ) : (
                         <Button
@@ -2142,20 +2289,21 @@ export default function MerchantForms() {
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            const newSlabs = { ...productSlabs };
-                            newSlabs[product] = [{ forms: totalCount, multiplier: 1.0, reason: '' }];
-                            setProductSlabs(newSlabs);
-                            console.log('Added custom slabs for', product, newSlabs);
-                          }}
+                            setProductSlabs(prev => ({
+                              ...prev,
+                              [product]: {
+                                slabTiers: [{ name: '', forms: '', multiplier: '' }]
+                              }
+                            }));                          }}
                           sx={{ color: '#1565c0', borderColor: '#1565c0', fontWeight: 600, fontSize: 11, mt: 0.5 }}
                         >
-                          + Add Custom Slabs
+                          + ADD CUSTOM SLABS
                         </Button>
                       )}
                       
                       <Box sx={{ mt: 1, pt: 1, borderTop: '1px solid #1565c030' }}>
                         <Typography variant="caption" fontWeight={700} sx={{ color: '#1565c0' }}>
-                          Subtotal: {Math.round(finalPoints * 10) / 10} pts {hasCustomSlabs ? '(custom)' : '(automatic)'}
+                          Subtotal: {Math.round(autoPoints * 10) / 10}{hasCustomSlabs && slabTotal > 0 ? ` + ${Math.round(slabTotal * 10) / 10}` : ''} = {Math.round(finalPoints * 10) / 10} pts
                         </Typography>
                       </Box>
                     </Box>
@@ -2164,23 +2312,140 @@ export default function MerchantForms() {
               
               <Box sx={{ p: 1.5, bgcolor: '#e6f4ea', borderRadius: 2, border: '1px solid ' + BRAND.primary }}>
                 <Typography variant="body2" fontWeight={700} sx={{ color: BRAND.primary }}>
-                  Total Verified Points: {Math.round(Object.entries(editPtsEmp.productBreakdown).reduce((sum, [product, count]) => {
-                    const slabs = productSlabs[product] || [];
-                    const hasCustomSlabs = slabs.length > 0;  // ✅ FIXED: Simplified
-                    
-                    if (hasCustomSlabs) {
-                      return sum + slabs.reduce((s, slab) => s + (slab.forms * slab.multiplier), 0);
-                    } else {
-                      const pointsKey = Object.keys(POINTS_MAP).find(k => k.toLowerCase().trim() === product.toLowerCase().trim());
-                      const pointsPerItem = pointsKey ? POINTS_MAP[pointsKey] : 0;
-                      return sum + (count * pointsPerItem);
-                    }
-                  }, 0) * 10) / 10} pts
+                  Total Verified Points:{' '}
+                  {Math.round(editPtsAutoTotal * 10) / 10}
+                  {editPtsSlabBonus > 0 && <> + <span style={{ color: '#2e7d32' }}>{Math.round(editPtsSlabBonus * 10) / 10}</span></>}
+                  {' '}= {Math.round(editPtsVerifiedTotal * 10) / 10} pts
                 </Typography>
               </Box>
             </Box>
           )}
           
+          {/* ── Adjustment History ── */}
+          {(() => {
+            const savedSlabs = editPtsEmp?.empData?.productSlabs;
+            if (!savedSlabs) return null;
+            const entries = [];
+            Object.entries(savedSlabs).forEach(([product, ps]) => {
+              const tiers = ps?.slabTiers || (Array.isArray(ps) ? ps.map((s, i) => ({ name: `Slab ${i+1}`, forms: s.forms, multiplier: s.multiplier, reason: s.reason || '' })) : []);
+              tiers.forEach((t, tidx) => {
+                const pts = Math.round((t.forms ?? 0) * (t.multiplier ?? 0) * 10) / 10;
+                entries.push({ product, tidx, tier: t, pts });
+              });
+            });
+            if (entries.length === 0) return null;
+            return (
+              <Box sx={{ mb: 2 }}>
+                <Typography variant="body2" fontWeight={700} sx={{ mb: 1, color: BRAND.primary }}>
+                  Adjustment History
+                </Typography>
+                {entries.map(({ product, tidx, tier, pts }, i) => {
+                  const key = `${product}__${tidx}`;
+                  const isDeleting = deletingSlabKey === key;
+                  return (
+                    <Box key={i} sx={{ mb: 0.8, bgcolor: '#f9fbe7', borderRadius: 2, border: `1px solid ${isDeleting ? '#e53935' : '#c5e1a5'}`, overflow: 'hidden' }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 1.2 }}>
+                        <Box>
+                          <Typography variant="body2" fontWeight={700} sx={{ color: '#2e7d32' }}>
+                            +{pts} pts &nbsp;
+                            <span style={{ fontWeight: 400, color: '#555' }}>
+                              {product} — {tier.name || `Slab ${tidx + 1}`} ({tier.forms} × {tier.multiplier})
+                            </span>
+                          </Typography>
+                          {tier.reason && (
+                            <Typography variant="caption" sx={{ color: '#777' }}>{tier.reason}</Typography>
+                          )}
+                        </Box>
+                        <IconButton size="small" sx={{ color: '#c62828' }}
+                          onClick={() => { setDeletingSlabKey(key); setDeleteReason(''); }}>
+                          <DeleteIcon fontSize="small" />
+                        </IconButton>
+                      </Box>
+                      {isDeleting && (
+                        <Box sx={{ px: 1.5, pb: 1.5, borderTop: '1px solid #ffcdd2', bgcolor: '#fff5f5' }}>
+                          <Typography variant="caption" sx={{ color: '#c62828', fontWeight: 700, display: 'block', mb: 0.5, mt: 0.8 }}>
+                            Reason for deletion *
+                          </Typography>
+                          <TextField
+                            fullWidth size="small"
+                            placeholder="Why are you deleting this slab?"
+                            value={deleteReason}
+                            onChange={e => setDeleteReason(e.target.value)}
+                            sx={{ mb: 1, '& .MuiOutlinedInput-root': { fontSize: 12 } }}
+                            autoFocus
+                          />
+                          <Box sx={{ display: 'flex', gap: 1 }}>
+                            <Button size="small" variant="contained"
+                              disabled={!deleteReason.trim()}
+                              sx={{ bgcolor: '#c62828', fontSize: 11, fontWeight: 700, '&:hover': { bgcolor: '#b71c1c' } }}
+                              onClick={async () => {
+                                const pts = Math.round((parseFloat(tier.forms) || 0) * (parseFloat(tier.multiplier) || 0) * 100) / 100;
+                                try {
+                                  const res = await fetch(`${EMP_API}/forms/admin/delete-slab`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                      empPointsId: editPtsEmp.empData._id,
+                                      product, tierIdx: tidx,
+                                      deleteReason: deleteReason.trim()
+                                    })
+                                  });
+                                  if (!res.ok) { const d = await res.json(); setNotifySnack(`Error: ${d.message}`); return; }
+                                } catch (err) { setNotifySnack(`Error: ${err.message}`); return; }
+
+                                // ── Send FSE + TL notification directly via bulk-create ──
+                                try {
+                                  const fNum = parseFloat(tier.forms) || 0;
+                                  const mNum = parseFloat(tier.multiplier) || 0;
+                                  const deletedPts = Math.round(fNum * mNum * 100) / 100;
+                                  await fetch(`${EMP_API}/points-activity/bulk-create`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                      employeeName: editPtsEmp.empName,
+                                      activities: [{
+                                        product,
+                                        slabDetails: { forms: fNum, multiplier: mNum },
+                                        reason: `${tier.name || `Slab ${tidx + 1}`} DELETED — ${deleteReason.trim()}`,
+                                        actionType: 'removed'
+                                      }]
+                                    })
+                                  });
+                                } catch (_) {}
+
+                                setNotifySnack(`✓ Slab deleted. FSE & TL notified.`);
+                                setDeletingSlabKey(null); setDeleteReason('');
+                                setProductSlabs(prev => {
+                                  const ps = prev[product] || editPtsEmp.empData.productSlabs[product];
+                                  if (!ps?.slabTiers) return prev;
+                                  const updated = ps.slabTiers.filter((_, i) => i !== tidx);
+                                  if (updated.length === 0) { const n = { ...prev }; delete n[product]; return n; }
+                                  return { ...prev, [product]: { slabTiers: updated } };
+                                });
+                                const saved = editPtsEmp.empData.productSlabs?.[product];
+                                if (saved?.slabTiers) {
+                                  const updated = saved.slabTiers.filter((_, i) => i !== tidx);
+                                  setEditPtsEmp(prev => ({
+                                    ...prev,
+                                    empData: { ...prev.empData, productSlabs: { ...prev.empData.productSlabs, [product]: updated.length > 0 ? { slabTiers: updated } : undefined } }
+                                  }));
+                                }
+                              }}>
+                              Confirm Delete
+                            </Button>
+                            <Button size="small" onClick={() => { setDeletingSlabKey(null); setDeleteReason(''); }} sx={{ fontSize: 11 }}>
+                              Cancel
+                            </Button>
+                          </Box>
+                        </Box>
+                      )}
+                    </Box>
+                  );
+                })}
+              </Box>
+            );
+          })()}
+
           <Typography variant="body2" color="text.secondary" sx={{ mb: 1.5 }}>
             Manual Adjustment (+ or -):
           </Typography>
@@ -2189,36 +2454,23 @@ export default function MerchantForms() {
             onChange={e => setEditPtsValue(e.target.value)}
             helperText="Added on top of verified points. Use negative to subtract."
             inputProps={{ step: 0.1 }} />
+          <TextField fullWidth size="small" label="Reason for adjustment *"
+            placeholder="Why are you adding/subtracting these points?"
+            value={editPtsReason}
+            onChange={e => setEditPtsReason(e.target.value)}
+            sx={{ mt: 1.5, '& .MuiOutlinedInput-root': { fontSize: 13 } }} />
           <Box sx={{ mt: 1.5, p: 1.5, bgcolor: '#e6f4ea', borderRadius: 2 }}>
             <Typography variant="body2" fontWeight={700} sx={{ color: BRAND.primary }}>
-              Final Total: {Math.round(Object.entries(editPtsEmp?.productBreakdown || {}).reduce((sum, [product, count]) => {
-                const slabs = productSlabs[product] || [];
-                const hasCustomSlabs = slabs.length > 0;  // ✅ FIXED: Simplified
-                
-                if (hasCustomSlabs) {
-                  return sum + slabs.reduce((s, slab) => s + (slab.forms * slab.multiplier), 0);
-                } else {
-                  const pointsKey = Object.keys(POINTS_MAP).find(k => k.toLowerCase().trim() === product.toLowerCase().trim());
-                  const pointsPerItem = pointsKey ? POINTS_MAP[pointsKey] : 0;
-                  return sum + (count * pointsPerItem);
-                }
-              }, 0) * 10) / 10} + ({parseFloat(editPtsValue) >= 0 ? '+' : ''}{parseFloat(editPtsValue) || 0}) = {Math.round((Object.entries(editPtsEmp?.productBreakdown || {}).reduce((sum, [product, count]) => {
-                const slabs = productSlabs[product] || [];
-                const hasCustomSlabs = slabs.length > 0;  // ✅ FIXED: Simplified
-                
-                if (hasCustomSlabs) {
-                  return sum + slabs.reduce((s, slab) => s + (slab.forms * slab.multiplier), 0);
-                } else {
-                  const pointsKey = Object.keys(POINTS_MAP).find(k => k.toLowerCase().trim() === product.toLowerCase().trim());
-                  const pointsPerItem = pointsKey ? POINTS_MAP[pointsKey] : 0;
-                  return sum + (count * pointsPerItem);
-                }
-              }, 0) + (parseFloat(editPtsValue) || 0)) * 10) / 10} pts
+              Final Total:{' '}
+              {Math.round(editPtsAutoTotal * 10) / 10} (auto)
+              {editPtsSlabBonus > 0 && <> + <span style={{ color: '#2e7d32' }}>{Math.round(editPtsSlabBonus * 10) / 10} (slab bonus)</span></>}
+              {' '}+ ({parseFloat(editPtsValue) >= 0 ? '+' : ''}{parseFloat(editPtsValue) || 0}) (manual)
+              {' '}= {Math.round((editPtsVerifiedTotal + (parseFloat(editPtsValue) || 0)) * 10) / 10} pts
             </Typography>
           </Box>
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
-          <Button onClick={() => setEditPtsOpen(false)} color="inherit">Cancel</Button>
+          <Button onClick={() => { setEditPtsOpen(false); setProductSlabs({}); setEditPtsEmp(null); setEditPtsValue(''); setEditPtsReason(''); }} color="inherit">Cancel</Button>
           <Button variant="contained" onClick={handleSavePoints} disabled={editPtsSaving}
             sx={{ bgcolor: BRAND.primary, fontWeight: 700 }}>
             {editPtsSaving ? 'Saving…' : 'Save Points'}
