@@ -25,7 +25,10 @@ db = mongo_client['CompanyDB']
 # ================= GOOGLE =================
 scope = [
     'https://spreadsheets.google.com/feeds',
-    'https://www.googleapis.com/auth/drive'
+    'https://www.googleapis.com/auth/drive',
+    'https://www.googleapis.com/auth/calendar',  
+    'https://www.googleapis.com/auth/calendar.events'  
+
 ]
 
 # Try to load credentials from environment variable first (for Vercel deployment)

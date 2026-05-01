@@ -26,7 +26,7 @@ def handler(request):
         
         # Step 2: Pre-compute verification cache
         api_url = os.environ.get('API_URL', 'https://vegavruddhi-employee-panel.vercel.app')
-        precompute_url = f'{api_url}/api/verify/precompute-all'
+        precompute_url = f'{api_url}/api/verify/precompute-all?force=true'
         
         print(f"\nStep 2: Pre-computing verification cache")
         print(f"Calling: {precompute_url}")

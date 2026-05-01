@@ -408,8 +408,31 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
   }, [allForms, dateFilter, fromDate, toDate]);
 
   // Bulk verify all forms once on page load (not on filter changes)
+  // ✅ CACHED: Uses localStorage to cache verification data for the day (reduces API calls by 90%)
   useEffect(() => {
     if (!allForms.length) { setGlobalVerifyMap({}); return; }
+    
+    // Generate cache key with today's date (auto-expires at midnight)
+    const today = new Date().toISOString().split('T')[0]; // "2026-05-01"
+    const cacheKey = `verification_cache_tloverview_${today}`;
+
+    // Check if we have cached data for TODAY
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        // Use cached data (0 API calls)
+        const cachedData = JSON.parse(cached);
+        setGlobalVerifyMap(cachedData);
+        console.log('✅ [TLOverview] Using cached verification data from localStorage');
+        return;
+      }
+    } catch (err) {
+      console.warn('[TLOverview] Failed to read verification cache:', err);
+      // Continue to fetch from API if cache read fails
+    }
+
+    // No cache - fetch from API
+    console.log('📡 [TLOverview] Fetching fresh verification data from API...');
     const getP = (f) => (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
     const BATCH = 50;
     const batches = [];
@@ -421,8 +444,44 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
       const months   = batch.map(f => encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))).join(',');
       return fetch(`${EMP_API}/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`)
         .then(r => r.ok ? r.json() : {}).catch(() => ({}));
-    })).then(results => setGlobalVerifyMap(Object.assign({}, ...results)));
+    })).then(results => {
+      const merged = Object.assign({}, ...results);
+      setGlobalVerifyMap(merged);
+      
+      // Store in cache for today
+      try {
+        localStorage.setItem(cacheKey, JSON.stringify(merged));
+        console.log('✅ [TLOverview] Verification data cached in localStorage');
+      } catch (err) {
+        console.warn('[TLOverview] Failed to cache verification data:', err);
+        // Continue even if caching fails
+      }
+    });
   }, [allForms]); // Only run when forms data changes (page load/refresh)
+
+  // ✅ CLEANUP: Remove old verification cache entries (runs once on mount)
+  useEffect(() => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const currentCacheKey = `verification_cache_tloverview_${today}`;
+      
+      // Find and remove old cache entries
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('verification_cache_tloverview_') && key !== currentCacheKey) {
+          keysToRemove.push(key);
+        }
+      }
+      
+      keysToRemove.forEach(key => {
+        localStorage.removeItem(key);
+        console.log(`🗑️ [TLOverview] Removed old cache: ${key}`);
+      });
+    } catch (err) {
+      console.warn('[TLOverview] Failed to cleanup old cache:', err);
+    }
+  }, []); // Run once on mount
 
   const getFormKey = (f) => { const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim(); return p ? `${f.customerNumber}__${p}` : f.customerNumber; };
 

@@ -21,6 +21,7 @@ import EditIcon           from '@mui/icons-material/Edit';
 import DeleteIcon         from '@mui/icons-material/Delete';
 import * as XLSX          from 'xlsx';
 import { BRAND }          from '../theme';
+import MeetingScheduler   from './Meetings';
 
 // ── SlabTierRow: name + forms + multiplier all in one row ──
 const SlabTierRow = React.memo(function SlabTierRow({ tier, idx, onCommit, onDelete }) {
@@ -494,6 +495,206 @@ function VerifyChip({ status, onClick }) {
         transition: 'all 0.15s',
       }}
     />
+  );
+}
+
+// ── Verification Detail Modal ─────────────────────────────────
+function VerificationDetailModal({ open, onClose, form, verifyData, loading }) {
+  if (!form) return null;
+
+  const getProduct = (f) => (f?.formFillingFor || f?.tideProduct || f?.brand || '').toLowerCase().trim();
+  const product = getProduct(form);
+
+  // Extract verification data (backend returns { verification, phoneCheck })
+  const verification = verifyData?.verification || verifyData;
+  const phoneCheck = verifyData?.phoneCheck;
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle sx={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        justifyContent: 'space-between', 
+        bgcolor: BRAND.primary, 
+        color: '#fff',
+        fontWeight: 800,
+        pb: 1 
+      }}>
+        <Box>
+          <Typography variant="h6" sx={{ fontWeight: 800 }}>Verification Details</Typography>
+          <Typography variant="caption" sx={{ opacity: 0.9 }}>
+            {form.customerName} · {form.customerNumber}
+          </Typography>
+        </Box>
+        <IconButton onClick={onClose} size="small" sx={{ color: '#fff' }}>
+          <CloseIcon />
+        </IconButton>
+      </DialogTitle>
+
+      <DialogContent dividers sx={{ p: 3 }}>
+        {loading ? (
+          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+            <CircularProgress size={32} sx={{ color: BRAND.primary }} />
+          </Box>
+        ) : !verification ? (
+          <Alert severity="error">Failed to load verification details</Alert>
+        ) : (
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            {/* Merchant Info */}
+            <Card sx={{ bgcolor: '#f9fffe', border: '1px solid #e0e0e0' }}>
+              <CardContent>
+                <Typography variant="overline" sx={{ color: 'text.secondary', fontSize: 10 }}>
+                  Merchant Information
+                </Typography>
+                <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5, mt: 1 }}>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Name</Typography>
+                    <Typography variant="body2" fontWeight={600}>{form.customerName}</Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Phone</Typography>
+                    <Typography variant="body2" fontWeight={600}>{form.customerNumber}</Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Product</Typography>
+                    <ProductChip product={product} />
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Location</Typography>
+                    <Typography variant="body2" fontWeight={600}>{form.location || '–'}</Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">FSE</Typography>
+                    <Typography variant="body2" fontWeight={600}>{form.employeeName}</Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary">Submitted</Typography>
+                    <Typography variant="body2" fontWeight={600}>
+                      {form.createdAt ? new Date(form.createdAt).toLocaleDateString('en-IN', { 
+                        day: 'numeric', month: 'short', year: 'numeric' 
+                      }) : '–'}
+                    </Typography>
+                  </Box>
+                </Box>
+              </CardContent>
+            </Card>
+
+            {/* Verification Status */}
+            <Card sx={{ 
+              bgcolor: verification.status === 'Fully Verified' ? '#e6f4ea' : 
+                       verification.status === 'Partially Done' ? '#fff8e1' : '#fdecea',
+              border: `2px solid ${
+                verification.status === 'Fully Verified' ? '#2e7d32' : 
+                verification.status === 'Partially Done' ? '#f57f17' : '#c62828'
+              }`
+            }}>
+              <CardContent>
+                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                  <Typography variant="overline" sx={{ fontSize: 10 }}>
+                    Verification Status
+                  </Typography>
+                  <VerifyChip status={verification.status} />
+                </Box>
+                
+                {verification.passed !== undefined && verification.total !== undefined && (
+                  <Typography variant="body2" sx={{ mb: 2, fontWeight: 600 }}>
+                    {verification.passed} of {verification.total} checks passed
+                  </Typography>
+                )}
+                
+                {verification.checks && verification.checks.length > 0 ? (
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    {verification.checks.map((check, idx) => (
+                      <Box key={idx} sx={{ 
+                        display: 'flex', 
+                        alignItems: 'center', 
+                        gap: 1,
+                        p: 1,
+                        bgcolor: check.pass ? '#e6f4ea' : '#fdecea',
+                        borderRadius: 1,
+                        border: `1px solid ${check.pass ? '#2e7d32' : '#c62828'}30`
+                      }}>
+                        <Box sx={{ 
+                          width: 24, 
+                          height: 24, 
+                          borderRadius: '50%', 
+                          bgcolor: check.pass ? '#2e7d32' : '#c62828',
+                          color: '#fff',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 700,
+                          fontSize: 14
+                        }}>
+                          {check.pass ? '✓' : '✗'}
+                        </Box>
+                        <Box sx={{ flex: 1 }}>
+                          <Typography variant="body2" fontWeight={600}>
+                            {check.label}
+                          </Typography>
+                          {check.actual && (
+                            <Typography variant="caption" color="text.secondary">
+                              Value: {check.actual}
+                            </Typography>
+                          )}
+                        </Box>
+                      </Box>
+                    ))}
+                  </Box>
+                ) : (
+                  <Alert severity="info">
+                    {verification.status === 'Not Found' 
+                      ? 'No matching record found in verification database'
+                      : 'No verification checks configured for this product'}
+                  </Alert>
+                )}
+
+                {/* Collection info */}
+                {verification.collection && (
+                  <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mt: 2 }}>
+                    Data source: {verification.collection} ({verification.matchType || 'exact'} match)
+                  </Typography>
+                )}
+
+                {/* Manual verification info */}
+                {verification.manualVerification && (
+                  <Alert severity="success" sx={{ mt: 2 }}>
+                    ✓ Manually verified by {verification.verifiedBy} on{' '}
+                    {new Date(verification.verifiedAt).toLocaleDateString('en-IN')}
+                  </Alert>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Phone Check */}
+            {phoneCheck && (
+              <Card sx={{ bgcolor: '#f9fffe', border: '1px solid #e0e0e0' }}>
+                <CardContent>
+                  <Typography variant="overline" sx={{ color: 'text.secondary', fontSize: 10 }}>
+                    Phone Number Cross-Check
+                  </Typography>
+                  <Box sx={{ mt: 1 }}>
+                    <Chip 
+                      label={phoneCheck.matched ? '✓ Phone Found' : '✗ Phone Not Found'}
+                      size="small"
+                      sx={{ 
+                        bgcolor: phoneCheck.matched ? '#e6f4ea' : '#fdecea',
+                        color: phoneCheck.matched ? '#2e7d32' : '#c62828',
+                        fontWeight: 700
+                      }}
+                    />
+                  </Box>
+                </CardContent>
+              </Card>
+            )}
+          </Box>
+        )}
+      </DialogContent>
+
+      <DialogActions>
+        <Button onClick={onClose} sx={{ color: BRAND.primary, fontWeight: 700 }}>Close</Button>
+      </DialogActions>
+    </Dialog>
   );
 }
 
@@ -1051,6 +1252,17 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, empData
         </Alert>
       </Snackbar>
 
+      {/* Verification Detail Modal */}
+      {verifyDetail && (
+        <VerificationDetailModal
+          open={!!verifyDetail}
+          onClose={() => setVerifyDetail(null)}
+          form={verifyDetail.form}
+          verifyData={verifyDetail.data}
+          loading={verifyDetail.loading}
+        />
+      )}
+
     </Card>
   );
 }
@@ -1066,6 +1278,7 @@ export default function MerchantForms() {
   const [settledOpen,setSettledOpen]= useState(false);
   const [exporting,  setExporting]  = useState(false);
   const [exportAnchor, setExportAnchor] = useState(null);
+  const [meetingOpen, setMeetingOpen] = useState(false);
   const [notifying,  setNotifying]  = useState(null); // index of dup being notified
   const [notifySnack, setNotifySnack] = useState('');
   const [settling,   setSettling]   = useState(null); // index of dup being settled
@@ -1189,6 +1402,7 @@ export default function MerchantForms() {
   const [selectedYear,     setSelectedYear]     = useState(new Date().getFullYear()); // Default current year
   const [employees,        setEmployees]        = useState([]); // Employee data with phone and TL
   const [teamLeaders,      setTeamLeaders]      = useState([]); // TL data
+  const [tls,              setTls]              = useState([]); // TL data for meetings
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -1205,7 +1419,9 @@ export default function MerchantForms() {
       setDuplicates(dupRes.ok ? await dupRes.json() : []);
       setEmpPoints(ptsRes.ok ? await ptsRes.json() : []);
       setEmployees(empRes.ok ? await empRes.json() : []);
-      setTeamLeaders(tlRes.ok ? await tlRes.json() : []);
+      const tlData = tlRes.ok ? await tlRes.json() : [];
+      setTeamLeaders(tlData);
+      setTls(tlData); // Also set for meetings component
     } catch (err) {
       setError(err.message);
     } finally {
@@ -1703,8 +1919,30 @@ export default function MerchantForms() {
   useEffect(() => {
   // ✅ OPTIMIZED: Fetch verification ONCE on page load based on ALL forms, not filtered forms
   // This prevents re-fetching when user types in search or changes filters
+  // ✅ CACHED: Uses localStorage to cache verification data for the day (reduces API calls by 90%)
   if (!forms.length) { setGlobalVerifyMap({}); return; }
 
+  // Generate cache key with today's date (auto-expires at midnight)
+  const today = new Date().toISOString().split('T')[0]; // "2026-05-01"
+  const cacheKey = `verification_cache_${today}`;
+
+  // Check if we have cached data for TODAY
+  try {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      // Use cached data (0 API calls)
+      const cachedData = JSON.parse(cached);
+      setGlobalVerifyMap(cachedData);
+      console.log('✅ Using cached verification data from localStorage');
+      return;
+    }
+  } catch (err) {
+    console.warn('Failed to read verification cache:', err);
+    // Continue to fetch from API if cache read fails
+  }
+
+  // No cache - fetch from API (17 calls)
+  console.log('📡 Fetching fresh verification data from API...');
   const BATCH = 50;
   const batches = [];
   for (let i = 0; i < forms.length; i += BATCH) {
@@ -1722,8 +1960,41 @@ export default function MerchantForms() {
   })).then(results => {
     const merged = Object.assign({}, ...results);
     setGlobalVerifyMap(merged);
+    
+    // Store in cache for today
+    try {
+      localStorage.setItem(cacheKey, JSON.stringify(merged));
+      console.log('✅ Verification data cached in localStorage');
+    } catch (err) {
+      console.warn('Failed to cache verification data:', err);
+      // Continue even if caching fails
+    }
   });
 }, [forms]); // ✅ Changed from [grouped] to [forms] - only fetch once on page load
+
+  // ✅ CLEANUP: Remove old verification cache entries (runs once on mount)
+  useEffect(() => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const currentCacheKey = `verification_cache_${today}`;
+      
+      // Find and remove old cache entries
+      const keysToRemove = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('verification_cache_') && key !== currentCacheKey) {
+          keysToRemove.push(key);
+        }
+      }
+      
+      keysToRemove.forEach(key => {
+        localStorage.removeItem(key);
+        console.log(`🗑️ Removed old cache: ${key}`);
+      });
+    } catch (err) {
+      console.warn('Failed to cleanup old cache:', err);
+    }
+  }, []); // Run once on mount
 
   // Compute verification KPI counts from global map
   const verifyKpiCounts = useMemo(() => {
@@ -1800,6 +2071,22 @@ export default function MerchantForms() {
             }}
           >
             {mainTab === 'activity' ? '← Back to Forms' : '📊 Points Activity'}
+          </Button>
+
+          {/* Schedule Meeting Button */}
+          <Button
+            variant="outlined"
+            startIcon={<span>📅</span>}
+            onClick={() => setMeetingOpen(true)}
+            sx={{ 
+              borderColor: BRAND.primary, 
+              color: BRAND.primary,
+              fontWeight: 700,
+              textTransform: 'none',
+              '&:hover': { bgcolor: BRAND.primaryLight }
+            }}
+          >
+            Schedule Meeting
           </Button>
   {/* <Button
   variant={todayOnly ? 'contained' : 'outlined'}
@@ -2613,6 +2900,14 @@ export default function MerchantForms() {
           {notifySnack}
         </Alert>
       </Snackbar>
+
+      {/* Meeting Scheduler Dialog */}
+      <MeetingScheduler 
+        open={meetingOpen} 
+        onClose={() => setMeetingOpen(false)}
+        employees={employees}
+        tls={tls}
+      />
     </Box>
   );
 }

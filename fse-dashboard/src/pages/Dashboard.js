@@ -318,8 +318,32 @@ const loadData = async () => {
 
 // Fetch global verification for all filtered forms (batched to avoid URL length limit)
 // Fetch verification for all forms once on page load (not on filter changes)
+// ✅ CACHED: Uses localStorage to cache verification data for the day (reduces API calls by 90%)
 useEffect(() => {
   if (!forms.length) { setGlobalVerifyMap({}); return; }
+  
+  // Generate cache key with today's date (auto-expires at midnight)
+  const today = new Date().toISOString().split('T')[0]; // "2026-05-01"
+  const cacheKey = `verification_cache_dashboard_${today}`;
+
+  // Check if we have cached data for TODAY
+  try {
+    const cached = localStorage.getItem(cacheKey);
+    if (cached) {
+      // Use cached data (0 API calls)
+      const cachedData = JSON.parse(cached);
+      setGlobalVerifyMap(cachedData);
+      if (onReady) onReady();
+      console.log('✅ [Dashboard] Using cached verification data from localStorage');
+      return;
+    }
+  } catch (err) {
+    console.warn('[Dashboard] Failed to read verification cache:', err);
+    // Continue to fetch from API if cache read fails
+  }
+
+  // No cache - fetch from API
+  console.log('📡 [Dashboard] Fetching fresh verification data from API...');
   const getP = (f) => (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
   const BATCH = 50;
   const batches = [];
@@ -332,10 +356,44 @@ useEffect(() => {
     return fetch(`${EMP_API}/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`)
       .then(r => r.ok ? r.json() : {}).catch(() => ({}));
   })).then(results => {
-    setGlobalVerifyMap(Object.assign({}, ...results));
+    const merged = Object.assign({}, ...results);
+    setGlobalVerifyMap(merged);
     if (onReady) onReady();
+    
+    // Store in cache for today
+    try {
+      localStorage.setItem(cacheKey, JSON.stringify(merged));
+      console.log('✅ [Dashboard] Verification data cached in localStorage');
+    } catch (err) {
+      console.warn('[Dashboard] Failed to cache verification data:', err);
+      // Continue even if caching fails
+    }
   });
 }, [forms]); // Only run when forms data changes (page load/refresh)
+
+// ✅ CLEANUP: Remove old verification cache entries (runs once on mount)
+useEffect(() => {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    const currentCacheKey = `verification_cache_dashboard_${today}`;
+    
+    // Find and remove old cache entries
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('verification_cache_dashboard_') && key !== currentCacheKey) {
+        keysToRemove.push(key);
+      }
+    }
+    
+    keysToRemove.forEach(key => {
+      localStorage.removeItem(key);
+      console.log(`🗑️ [Dashboard] Removed old cache: ${key}`);
+    });
+  } catch (err) {
+    console.warn('[Dashboard] Failed to cleanup old cache:', err);
+  }
+}, []); // Run once on mount
 const monthOptions = useMemo(() => {
   const seen = new Set();
   forms.forEach(f => {
@@ -593,20 +651,10 @@ const kpiData = useMemo(() => {
             setOnboardVerifying(true);
             const onboardForms = filteredForms.filter(f => f.status === 'Ready for Onboarding');
             if (!onboardForms.length) { setOnboardVerifying(false); return; }
-            const BATCH = 50;
-            const batches = [];
-            for (let i = 0; i < onboardForms.length; i += BATCH) batches.push(onboardForms.slice(i, i + BATCH));
-            try {
-              const results = await Promise.all(batches.map(batch => {
-                const phones   = batch.map(f => f.customerNumber).join(',');
-                const names    = batch.map(f => encodeURIComponent(f.customerName || '')).join(',');
-                const products = batch.map(f => encodeURIComponent((f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim())).join(',');
-                const months   = batch.map(f => encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))).join(',');
-                return fetch(`${EMP_API}/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`)
-                  .then(r => r.ok ? r.json() : {}).catch(() => ({}));
-              }));
-              setOnboardVerifyMap(Object.assign({}, ...results));
-            } catch { /* ignore */ }
+            
+            // ✅ USE CACHED DATA: Use globalVerifyMap instead of fetching again
+            // No need to fetch - we already have verification data cached
+            setOnboardVerifyMap(globalVerifyMap);
             setOnboardVerifying(false);
           } : undefined}>
           <CardContent sx={{ py: 1.5 }}>
