@@ -699,7 +699,7 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading }) {
 }
 
 // ── Employee Group Row ────────────────────────────────────────
-function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, empData, tlData, filterProduct, setFilterProduct, onEditPoints, onManualVerify, onRevertVerification, onReload, globalVerifyMap: parentVerifyMap }) {
+function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPointsData, empData, tlData, filterProduct, setFilterProduct, onEditPoints, onManualVerify, onRevertVerification, onReload, globalVerifyMap: parentVerifyMap }) {
 
   // ✅ FIXED: Use same priority order as backend (formFillingFor first)
   const getProduct = (f) =>
@@ -959,11 +959,10 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, empData
             onClick={e => {
               e.stopPropagation();
               
-              // Build per-product verified breakdown (count ALL verified forms directly)
+              // Build per-product verified breakdown using ALL forms (not month-filtered)
               const productBreakdown = {};
-              
-              // Count each form that is verified (don't rely on verifyMap keys)
-              forms.forEach(form => {
+              const allForms4Emp = allEmpForms || forms;
+              allForms4Emp.forEach(form => {
                 const formKey = getKey(form);
                 const verificationStatus = verifyMap[formKey]?.status;
                 
@@ -1006,11 +1005,10 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, empData
             Verified by Product:
           </Typography>
           {(() => {
-            // Calculate product breakdown for this employee (count ALL verified forms directly)
+            // Calculate product breakdown using ALL forms (not month-filtered)
             const productBreakdown = {};
-            
-            // Count each form that is verified
-            forms.forEach(form => {
+            const allForms4Emp = allEmpForms || forms;
+            allForms4Emp.forEach(form => {
               const formKey = getKey(form);
               const verificationStatus = verifyMap[formKey]?.status;
               
@@ -2451,6 +2449,7 @@ export default function MerchantForms() {
                 key={empName} 
                 empName={empName} 
                 forms={empForms}
+                allEmpForms={forms.filter(f => f.employeeName === empName)}
                 duplicatePhones={duplicatePhones}
                 empPointsData={empPointsMap[empName.trim()]}
                 empData={empDataMap[empName]}
