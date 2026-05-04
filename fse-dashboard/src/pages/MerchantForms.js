@@ -830,8 +830,9 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, empData
   console.log(`[${empName}] hasSlabs: ${hasSlabs}, slabPoints: ${slabPoints}, autoPoints: ${autoPoints}`);
   
   const adjustment  = empPointsData?.pointsAdjustment || 0;
-  // Use DB verifiedPoints as fallback when local verification hasn't loaded yet
-  const basePoints  = autoPoints > 0 ? autoPoints : (empPointsData?.verifiedPoints || 0);
+  // ✅ FIXED: Always use autoPoints calculated from filtered forms, never fall back to database total
+  // This ensures points match the selected month filter
+  const basePoints  = autoPoints;
   // Slab points are a BONUS on top of automatic points
   const verified    = Math.round((basePoints + (hasSlabs ? slabPoints : 0)) * 10) / 10;
   const totalPoints = Math.round((verified + adjustment) * 10) / 10;

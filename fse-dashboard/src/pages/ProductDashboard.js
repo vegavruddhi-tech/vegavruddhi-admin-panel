@@ -270,19 +270,8 @@ function TideKPI({ rows, tideColumns, ct, openDrill, onboardCol }) {
     color: KPI_COLORS[i % KPI_COLORS.length],
   }));
 
-  const allAppliedIdx = kpis.findIndex((k) => k.label === "Tide (All applied cases)");
-  const onboardIdx    = kpis.findIndex((k) => k.label === onboardCol);
-  if (allAppliedIdx !== -1 && onboardIdx !== -1) {
-    const applied = kpis[allAppliedIdx]?.value || 0;
-    const ob      = kpis[onboardIdx]?.value    || 0;
-    kpis.splice(onboardIdx + 1, 0, {
-      label: "Pending (Not Onboarded)", col: null,
-      value: Math.max(0, applied - ob), color: "#ef4444"
-    });
-  }
-
-  const totalPoints = rows.reduce((s, r) => s + (Number(r["Total_Points"]) || 0), 0);
-  kpis.push({ label: "Total Points (All Products)", col: "Total_Points", value: Math.round(totalPoints * 10) / 10, color: "#6366f1" });
+  // No sheet-only KPIs here: only show actual product counts from the backend.
+  // The ProductDashboard will now be driven from dynamic MongoDB product columns.
 
   const openKpiModal = (k) => {
     if (!k.col) return; // Pending is computed, no raw col
@@ -422,25 +411,23 @@ function ChartCard({ title, subtitle, children }) {
 }
 
 // ── Other Products KPI strip ────────────────────────────────────────────────
-const OTHER_PRODUCT_COLS = [
-  { col: "Vehicle Insurance",    label: "Vehicle Insurance",    color: "#10b981" },
-  { col: "Vehicle Points Earned",label: "Vehicle Points Earned",color: "#3b82f6" },
-  // { col: "Aditya Birla",         label: "Aditya Birla",         color: "#f59e0b" },
-  // { col: "Airtel Payments Bank", label: "Airtel Payments Bank", color: "#ec4899" },
-  // { col: "Hero FinCorp",         label: "Hero FinCorp",         color: "#7c3aed" },
-];
-
-function OtherProductKPI({ rows, openDrill }) {
+function OtherProductKPI({ rows, productGroups, openDrill }) {
   const [kpiModal, setKpiModal] = useState(null);
 
-  const kpis = OTHER_PRODUCT_COLS.map((k) => ({
+  const otherCols = useMemo(() => {
+    const groups = Object.entries(productGroups || {}).filter(([group]) => group.toLowerCase() !== "tide");
+    return groups.flatMap(([group, meta], gi) => {
+      const color = COLORS[gi % COLORS.length];
+      return (meta.columns || []).map((col) => ({ col, label: col, group, color }));
+    });
+  }, [productGroups]);
+
+  const kpis = otherCols.map((k) => ({
     ...k,
     value: rows.reduce((s, r) => s + (Number(r[k.col]) || 0), 0),
-  }));
-  const visibleKpis = kpis.filter(k => k.value > 0);
+  })).filter((k) => k.value > 0);
 
   const openKpiModal = (k) => {
-    if (k.value === 0) return;
     const chartData = rows
       .filter((r) => r["Email ID"] && r["Email ID"].trim() !== "" && (Number(r[k.col]) || 0) > 0)
       .reduce((acc, r) => {
@@ -1418,13 +1405,15 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
       .slice(0, 15);
   }, [rows]);
 
-  // ── CHART 9 data: All Tide product columns — count + % of All Applied Cases ──
+  // ── CHART 9 data: All Tide product columns — count + % share of all Tide products ──
   // Fully dynamic — uses tideColumns detected by backend, no hardcoding needed
   const allProductsData = useMemo(() => {
-    const totalApplied = rows.reduce((s, r) => s + (Number(r["Tide (All applied cases)"]) || 0), 0);
+    const totalSales = rows.reduce((s, r) => {
+      return s + tideColumns.reduce((ss, col) => ss + (Number(r[col]) || 0), 0);
+    }, 0);
     return tideColumns.map((col) => {
       const sales = rows.reduce((s, r) => s + (Number(r[col]) || 0), 0);
-      const pct   = totalApplied > 0 ? Math.round((sales / totalApplied) * 100) : 0;
+      const pct   = totalSales > 0 ? Math.round((sales / totalSales) * 100) : 0;
       // Short label: strip "Tide " prefix for readability on X-axis
       const product = col.replace(/^Tide\s*/i, "").trim() || col;
       return { product, col, sales, pct };
@@ -1433,33 +1422,7 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
 
   // ── Points Breakdown data — contribution per product to Total_Points ────
   // Uses exact same formula as feature_engineering.py points_formula
-  const POINTS_FORMULA = [
-    { col: "Tide OB with PP",       weight: 2,   label: "Tide OB with PP",       color: "#7c3aed" },
-    { col: "Tide Insurance",         weight: 1,   label: "Tide Insurance",         color: "#f59e0b" },
-    { col: "Tide MSME",              weight: 0.3, label: "Tide MSME (×0.3)",       color: "#3b82f6" },
-    { col: "Vehicle Points Earned",  weight: 1,   label: "Vehicle Points Earned",  color: "#10b981" },
-    { col: "Aditya Birla",           weight: 1,   label: "Aditya Birla",           color: "#ec4899" },
-    { col: "Airtel Payments Bank",   weight: 1,   label: "Airtel Payments Bank",   color: "#0ea5e9" },
-    { col: "Tide",                   weight: 1,   label: "Tide (base)",            color: "#14b8a6" },
-    { col: "Hero FinCorp",           weight: 1,   label: "Hero FinCorp",           color: "#f97316" },
-  ];
-
-  const pointsBreakdownData = useMemo(() => {
-    return POINTS_FORMULA
-      .map(({ col, weight, label, color }) => {
-        const units  = rows.reduce((s, r) => s + (Number(r[col]) || 0), 0);
-        const points = Math.round(units * weight * 10) / 10;
-        const pct    = 0; // filled below
-        return { label, col, weight, units, points, color };
-      })
-      .filter((d) => d.units > 0)
-      .sort((a, b) => b.points - a.points)
-      .map((d, _, arr) => {
-        const total = arr.reduce((s, x) => s + x.points, 0);
-        return { ...d, pct: total > 0 ? Math.round((d.points / total) * 100) : 0 };
-      });
-  }, [rows]); // eslint-disable-line react-hooks/exhaustive-deps
-
+  // Points breakdown and sheet-specific points logic are removed for the MongoDB-driven product page.
   const conversionByMonthData = useMemo(() => {
     const map = {};
     (Array.isArray(raw) ? raw : []).forEach((r) => {

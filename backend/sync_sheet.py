@@ -17,7 +17,10 @@ SHEET_ID_1 = os.getenv("GOOGLE_SHEET_ID")
 
 if not MONGO_URI or not SHEET_ID_1:
     raise ValueError("Missing ENV variables")
+if not MONGO_URI or not SHEET_ID_1:
+    raise ValueError("Missing ENV variables")
 
+# ================= DB =================
 # ================= DB =================
 mongo_client = MongoClient(MONGO_URI, tlsCAFile=certifi.where())
 db = mongo_client['CompanyDB']
