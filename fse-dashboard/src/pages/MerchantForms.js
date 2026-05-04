@@ -830,8 +830,10 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, empData
   console.log(`[${empName}] hasSlabs: ${hasSlabs}, slabPoints: ${slabPoints}, autoPoints: ${autoPoints}`);
   
   const adjustment  = empPointsData?.pointsAdjustment || 0;
+  // Use DB verifiedPoints as fallback when local verification hasn't loaded yet
+  const basePoints  = autoPoints > 0 ? autoPoints : (empPointsData?.verifiedPoints || 0);
   // Slab points are a BONUS on top of automatic points
-  const verified    = Math.round((autoPoints + (hasSlabs ? slabPoints : 0)) * 10) / 10;
+  const verified    = Math.round((basePoints + (hasSlabs ? slabPoints : 0)) * 10) / 10;
   const totalPoints = Math.round((verified + adjustment) * 10) / 10;
   
   console.log(`[${empName}] Final: verified=${verified}, adjustment=${adjustment}, total=${totalPoints}`);
@@ -986,7 +988,7 @@ function EmployeeGroup({ empName, forms, duplicatePhones, empPointsData, empData
               border: hasSlabs ? '1px solid #1565c0' : undefined
             }}
           />
-
+ 
           {dupCount > 0 && (
             <Chip label={`${dupCount} dup`} color="error" />
           )}
@@ -1289,6 +1291,8 @@ export default function MerchantForms() {
   const [editPtsReason, setEditPtsReason] = useState('');
   const [deletingSlabKey, setDeletingSlabKey] = useState(null); // `${product}__${tidx}`
   const [deleteReason, setDeleteReason]       = useState('');
+  const [deletingAdjKey, setDeletingAdjKey]   = useState(null); // historyId
+  const [deleteAdjReason, setDeleteAdjReason] = useState('');
   const [editPtsSaving,setEditPtsSaving]= useState(false);
   const [productSlabs, setProductSlabs] = useState({}); // {productName: {slabTiers:[{name,multiplier}], assignments:[{tierIdx,forms,reason}]}}
 
@@ -1548,7 +1552,7 @@ export default function MerchantForms() {
     });
     
     setEditPtsEmp({ empName, empData: data, autoPoints, productBreakdown });
-    setEditPtsValue(data?.pointsAdjustment !== undefined ? String(data.pointsAdjustment) : '0');
+    setEditPtsValue('0');
     setEditPtsReason('');
     setProductSlabs({});  // Always start blank — saved slabs shown in Adjustment History only
     setEditPtsOpen(true);
@@ -1558,10 +1562,9 @@ export default function MerchantForms() {
     if (!editPtsEmp?.empData?._id) return;
     setEditPtsSaving(true);
     try {
-      // Calculate the delta: newAdjustment - currentAdjustment
-      const newAdj     = parseFloat(editPtsValue) || 0;
-      const currentAdj = editPtsEmp.empData.pointsAdjustment || 0;
-      const delta      = newAdj - currentAdj;
+      const delta = parseFloat(editPtsValue) || 0;
+      // Capture total BEFORE this save (auto + existing slab + existing manual adj)
+      const preSaveTotal = Math.round((editPtsVerifiedTotal + (editPtsEmp.empData.pointsAdjustment || 0)) * 100) / 100;
       
       console.log('💾 Saving points:', { 
         empName: editPtsEmp.empName, 
@@ -1601,7 +1604,7 @@ export default function MerchantForms() {
         return;
       }
       
-      // ✅ Step 2: Create points activity records for each slab (with notifications)
+      // ✅ Step 2: Send one notification per slab (separate before/after for each)
       const activities = [];
       Object.entries(productSlabs).forEach(([product, ps]) => {
         if (ps?.slabTiers) {
@@ -1624,31 +1627,28 @@ export default function MerchantForms() {
           });
         }
       });
-      
+
       if (activities.length > 0) {
-        console.log('📢 Creating activities:', { employeeName: editPtsEmp.empName, activities });
-        
-        // Send bulk activity creation (creates notifications automatically)
-        const activityRes = await fetch(`${EMP_API}/points-activity/bulk-create`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            employeeName: editPtsEmp.empName,
-            employeeId: editPtsEmp.empData.employeeId || null,
-            activities
-          })
-        });
-        
-        if (!activityRes.ok) {
-          const activityError = await activityRes.json();
-          console.error('❌ Error creating activities:', activityError);
-          // Don't fail the whole operation, just log it
-          setNotifySnack(`✓ Points updated for ${editPtsEmp.empName}, but notifications may have failed.`);
-        } else {
-          const activityData = await activityRes.json();
-          console.log('✅ Activities created:', activityData);
-          setNotifySnack(`✓ Points updated for ${editPtsEmp.empName}. ${activities.length} notifications sent.`);
+        // Send each slab as a separate notification with correct before/after
+        let runningTotal = preSaveTotal;
+        for (const activity of activities) {
+          const slabPts = Math.round(
+            (parseFloat(activity.slabDetails.forms) || 0) *
+            (parseFloat(activity.slabDetails.multiplier) || 0) * 100
+          ) / 100;
+          await fetch(`${EMP_API}/points-activity/bulk-create`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              employeeName: editPtsEmp.empName,
+              employeeId:   editPtsEmp.empData.employeeId || null,
+              preSaveTotal: runningTotal,
+              activities:   [activity]
+            })
+          });
+          runningTotal = Math.round((runningTotal + slabPts) * 100) / 100;
         }
+        setNotifySnack(`✓ Points updated for ${editPtsEmp.empName}. ${activities.length} notification(s) sent.`);
       } else {
         setNotifySnack(`✓ Points updated for ${editPtsEmp.empName}.`);
       }
@@ -1661,6 +1661,8 @@ export default function MerchantForms() {
       setEditPtsReason('');
       setDeletingSlabKey(null);
       setDeleteReason('');
+      setDeletingAdjKey(null);
+      setDeleteAdjReason('');
       
       // ✅ Step 3: Force complete reload with cache bypass
       console.log('🔄 Reloading employee points data...');
@@ -1886,12 +1888,12 @@ export default function MerchantForms() {
   const empPointsMap = useMemo(() => {
     const m = {};
     empPoints.forEach(e => {
-      const existing = m[e.newJoinerName];
-      // Prefer the record that has productSlabs over an empty one
+      const key = (e.newJoinerName || '').trim();
+      const existing = m[key];
       const hasSlabs = e.productSlabs && Object.keys(e.productSlabs).length > 0;
       const existingHasSlabs = existing?.productSlabs && Object.keys(existing.productSlabs).length > 0;
       if (!existing || (hasSlabs && !existingHasSlabs)) {
-        m[e.newJoinerName] = e;
+        m[key] = e;
       }
     });
     return m;
@@ -2323,7 +2325,7 @@ export default function MerchantForms() {
       })()}
       {/* Date Filter */}
 <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', mb: 2 }}>
-  {['all', 'today', 'week', 'month'].map(f => (
+  {['all', 'today', 'week'].map(f => (
     <Button key={f} size="small"
       variant={dateFilter === f ? 'contained' : 'outlined'}
       onClick={() => { setDateFilter(f); setFromDate(''); setToDate(''); }}
@@ -2332,7 +2334,7 @@ export default function MerchantForms() {
         borderColor: BRAND.primary, color: dateFilter === f ? '#fff' : BRAND.primary,
         '&:hover': { bgcolor: dateFilter === f ? '#0f3320' : BRAND.primaryLight }
       }}>
-      {f === 'all' ? 'All' : f === 'today' ? 'Today' : f === 'week' ? 'This Week' : 'This Month'}
+      {f === 'all' ? 'All' : f === 'today' ? 'Today' : 'This Week'}
     </Button>
   ))}
   <TextField size="small" type="date" label="From" value={fromDate}
@@ -2449,7 +2451,7 @@ export default function MerchantForms() {
                 empName={empName} 
                 forms={empForms}
                 duplicatePhones={duplicatePhones}
-                empPointsData={empPointsMap[empName]}
+                empPointsData={empPointsMap[empName.trim()]}
                 empData={empDataMap[empName]}
                 tlData={tlDataMap[(empDataMap[empName]?.reportingManager || '').toLowerCase().trim()]}
                 filterProduct={filterProduct}
@@ -2746,12 +2748,89 @@ export default function MerchantForms() {
             value={editPtsReason}
             onChange={e => setEditPtsReason(e.target.value)}
             sx={{ mt: 1.5, '& .MuiOutlinedInput-root': { fontSize: 13 } }} />
+
+          {/* ── Manual Adjustment History ── */}
+          {editPtsEmp?.empData?.adjustmentHistory?.filter(h => h.delta !== 0).length > 0 && (
+            <Box sx={{ mt: 2, mb: 1 }}>
+              <Typography variant="body2" fontWeight={700} sx={{ mb: 1, color: BRAND.primary }}>
+                Manual Adjustment History
+              </Typography>
+              {[...editPtsEmp.empData.adjustmentHistory].filter(h => h.delta !== 0).reverse().map((h, i) => {
+                const hid = h._id?.toString() || String(i);
+                const isDeleting = deletingAdjKey === hid;
+                return (
+                  <Box key={hid} sx={{ mb: 0.8, bgcolor: h.delta >= 0 ? '#f0fdf4' : '#fff5f5', borderRadius: 2, border: `1px solid ${isDeleting ? '#e53935' : (h.delta >= 0 ? '#c5e1a5' : '#ffcdd2')}`, overflow: 'hidden' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', p: 1.2 }}>
+                      <Box>
+                        <Typography variant="body2" fontWeight={700} sx={{ color: h.delta >= 0 ? '#2e7d32' : '#c62828' }}>
+                          {h.delta >= 0 ? '+' : ''}{h.delta} pts
+                          {h.reason && <span style={{ fontWeight: 400, color: '#555', marginLeft: 8 }}>{h.reason}</span>}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: '#999' }}>
+                          {new Date(h.updatedAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                        </Typography>
+                      </Box>
+                      <IconButton size="small" sx={{ color: '#c62828' }}
+                        onClick={() => { setDeletingAdjKey(hid); setDeleteAdjReason(''); }}>
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </Box>
+                    {isDeleting && (
+                      <Box sx={{ px: 1.5, pb: 1.5, borderTop: '1px solid #ffcdd2', bgcolor: '#fff5f5' }}>
+                        <Typography variant="caption" sx={{ color: '#c62828', fontWeight: 700, display: 'block', mb: 0.5, mt: 0.8 }}>
+                          Reason for deletion *
+                        </Typography>
+                        <TextField fullWidth size="small"
+                          placeholder="Why are you removing this adjustment?"
+                          value={deleteAdjReason}
+                          onChange={e => setDeleteAdjReason(e.target.value)}
+                          sx={{ mb: 1, '& .MuiOutlinedInput-root': { fontSize: 12 } }}
+                          autoFocus
+                        />
+                        <Box sx={{ display: 'flex', gap: 1 }}>
+                          <Button size="small" variant="contained"
+                            disabled={!deleteAdjReason.trim()}
+                            sx={{ bgcolor: '#c62828', fontSize: 11, fontWeight: 700, '&:hover': { bgcolor: '#b71c1c' } }}
+                            onClick={async () => {
+                              try {
+                                const empId = editPtsEmp.empData.employeeId || editPtsEmp.empData._id;
+                                const res = await fetch(`${EMP_API}/forms/admin/adjust-points/${empId}/history/${hid}`, {
+                                  method: 'DELETE',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ deleteReason: deleteAdjReason.trim() })
+                                });
+                                if (!res.ok) { const d = await res.json(); setNotifySnack(`Error: ${d.message}`); return; }
+                                setNotifySnack(`✓ Adjustment deleted. FSE & TL notified.`);
+                                setDeletingAdjKey(null); setDeleteAdjReason('');
+                                // Remove from local empData
+                                setEditPtsEmp(prev => ({
+                                  ...prev,
+                                  empData: {
+                                    ...prev.empData,
+                                    adjustmentHistory: prev.empData.adjustmentHistory.filter(x => x._id?.toString() !== hid)
+                                  }
+                                }));
+                              } catch (err) { setNotifySnack(`Error: ${err.message}`); }
+                            }}>
+                            Confirm Delete
+                          </Button>
+                          <Button size="small" onClick={() => { setDeletingAdjKey(null); setDeleteAdjReason(''); }} sx={{ fontSize: 11 }}>
+                            Cancel
+                          </Button>
+                        </Box>
+                      </Box>
+                    )}
+                  </Box>
+                );
+              })}
+            </Box>
+          )}
           <Box sx={{ mt: 1.5, p: 1.5, bgcolor: '#e6f4ea', borderRadius: 2 }}>
             <Typography variant="body2" fontWeight={700} sx={{ color: BRAND.primary }}>
               Final Total:{' '}
               {Math.round(editPtsAutoTotal * 10) / 10} (auto)
               {editPtsSlabBonus > 0 && <> + <span style={{ color: '#2e7d32' }}>{Math.round(editPtsSlabBonus * 10) / 10} (slab bonus)</span></>}
-              {' '}+ ({parseFloat(editPtsValue) >= 0 ? '+' : ''}{parseFloat(editPtsValue) || 0}) (manual)
+              {(parseFloat(editPtsValue) || 0) !== 0 && <> + ({parseFloat(editPtsValue) >= 0 ? '+' : ''}{parseFloat(editPtsValue) || 0}) (manual)</>}
               {' '}= {Math.round((editPtsVerifiedTotal + (parseFloat(editPtsValue) || 0)) * 10) / 10} pts
             </Typography>
           </Box>

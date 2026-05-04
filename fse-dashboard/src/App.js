@@ -6,6 +6,7 @@ import VerificationRules from "./pages/VerificationRules";
 import EmployeeApprovals from "./pages/EmployeeApprovals";
 import MerchantForms from "./pages/MerchantForms";
 import TLOverview from './pages/TLOverview';
+import ManagerOverview from './pages/ManagerOverview';
 
 import { ThemeProvider, createTheme, useTheme } from "@mui/material/styles";
 import useMediaQuery from "@mui/material/useMediaQuery";
@@ -38,6 +39,7 @@ const NAV_ITEMS = [
   { value: "products",      label: "Products" },
   { value: "merchants",     label: "Merchant Forms" },
   { value: "tl",            label: "TL Overview" },
+  { value: "manager",       label: "Manager View" },
   { value: "verification",  label: "Verification Rules" },
   { value: "approvals",     label: "Approvals" },
 ];
@@ -525,7 +527,8 @@ function App() {
              page === "merchants"    ? <MerchantForms /> :
              page === "verification" ? <VerificationRules token={user?.token} /> :
              page === "approvals"    ? <EmployeeApprovals /> :
-             page === "tl"           ? <TLOverview /> : null}
+             page === "tl"           ? <TLOverview /> :
+             page === "manager"      ? <ManagerOverview /> : null}
           </Box>
         </>
       )}

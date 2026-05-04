@@ -3,7 +3,7 @@ import ReactDOM from 'react-dom';
 import {
   Box, Typography, Card, CardContent, Chip, CircularProgress,
   Alert, Button, Avatar, Table, TableBody, TableCell, TableContainer,
-  TableHead, TableRow, Collapse, TextField, InputAdornment, Tooltip,
+  TableHead, TableRow, Collapse, TextField, InputAdornment, Tooltip, MenuItem,
   Dialog, DialogTitle, DialogContent, DialogActions, IconButton, Autocomplete, Skeleton,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
@@ -297,6 +297,8 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
   const [fromDate,   setFromDate]   = useState('');
   const [toDate,     setToDate]     = useState('');
   const [dateFilter, setDateFilter] = useState('all');
+  const [selectedYear,  setSelectedYear]  = useState(new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState('');
   
   // Assign Task Modal
   const [assignTaskOpen, setAssignTaskOpen] = useState(false);
@@ -403,9 +405,12 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
         if (fromDate && d < new Date(fromDate))              return false;
         if (toDate   && d > new Date(toDate + 'T23:59:59')) return false;
       }
+      // Year / Month filter
+      if (selectedYear  && d.getFullYear() !== parseInt(selectedYear))  return false;
+      if (selectedMonth && d.toLocaleString('en-US', { month: 'long' }) !== selectedMonth) return false;
       return true;
     });
-  }, [allForms, dateFilter, fromDate, toDate]);
+  }, [allForms, dateFilter, fromDate, toDate, selectedYear, selectedMonth]);
 
   // Bulk verify all forms once on page load (not on filter changes)
   // ✅ CACHED: Uses localStorage to cache verification data for the day (reduces API calls by 90%)
@@ -812,7 +817,7 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
 
       {/* Date Filter Bar */}
       <Box sx={{ display: 'flex', gap: 1, mb: 3, flexWrap: 'wrap', alignItems: 'center' }}>
-        {['all', 'today', 'week', 'month'].map(f => (
+        {['all', 'today', 'month'].map(f => (
           <Button key={f} size="small"
             variant={dateFilter === f ? 'contained' : 'outlined'}
             onClick={() => { setDateFilter(f); setFromDate(''); setToDate(''); }}
@@ -820,7 +825,7 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
               bgcolor: dateFilter === f ? BRAND.primary : 'transparent',
               borderColor: BRAND.primary, color: dateFilter === f ? '#fff' : BRAND.primary,
               '&:hover': { bgcolor: dateFilter === f ? '#0f3320' : '#e6f4ea' } }}>
-            {f === 'all' ? 'All' : f === 'today' ? 'Today' : f === 'week' ? 'This Week' : 'This Month'}
+            {f === 'all' ? 'All' : f === 'today' ? 'Today' : 'This Month'}
           </Button>
         ))}
         <TextField size="small" type="date" label="From" value={fromDate}
@@ -834,6 +839,32 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
             onClick={() => { setDateFilter('all'); setFromDate(''); setToDate(''); }}
             sx={{ fontWeight: 700 }}>Reset</Button>
         )}
+        {/* Year Filter */}
+        <TextField
+          select size="small" label="Year"
+          value={selectedYear}
+          onChange={e => setSelectedYear(e.target.value)}
+          sx={{ minWidth: 120 }}
+        >
+          {(() => {
+            const cur = new Date().getFullYear();
+            const yrs = [];
+            for (let y = cur; y >= cur - 5; y--) yrs.push(y);
+            return yrs.map(y => <MenuItem key={y} value={y}>{y}</MenuItem>);
+          })()}
+        </TextField>
+        {/* Month Filter */}
+        <TextField
+          select size="small" label="Month"
+          value={selectedMonth}
+          onChange={e => setSelectedMonth(e.target.value)}
+          sx={{ minWidth: 150 }}
+        >
+          <MenuItem value="">All Months</MenuItem>
+          {['January','February','March','April','May','June','July','August','September','October','November','December'].map(m => (
+            <MenuItem key={m} value={m}>{m}</MenuItem>
+          ))}
+        </TextField>
       </Box>
 
       {/* Summary KPIs */}
