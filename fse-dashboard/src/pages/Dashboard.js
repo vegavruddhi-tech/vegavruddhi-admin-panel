@@ -12,6 +12,7 @@ import {
   BarChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid,
   ResponsiveContainer, ComposedChart, Line, Cell, LabelList
 } from "recharts";
+import TideMerchantTimeline from "../components/TideMerchantTimeline";
 
 const COLORS = ["#7c3aed","#10b981","#3b82f6","#f59e0b","#14b8a6","#ec4899","#0ea5e9","#ef4444"];
 

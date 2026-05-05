@@ -22,6 +22,8 @@ import DeleteIcon         from '@mui/icons-material/Delete';
 import * as XLSX          from 'xlsx';
 import { BRAND }          from '../theme';
 import MeetingScheduler   from './Meetings';
+import TideMerchantTimeline from '../components/TideMerchantTimeline';
+import PriorityPassTracking from '../components/PriorityPassTracking';
 
 // ── SlabTierRow: name + forms + multiplier all in one row ──
 const SlabTierRow = React.memo(function SlabTierRow({ tier, idx, onCommit, onDelete }) {
@@ -1109,6 +1111,17 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
                     {isDup && <WarningAmberIcon color="error" />}
                   </TableCell>
 
+                  {/* Timeline Button - Only for Tide product */}
+                  <TableCell>
+                    {getProduct(f) === 'tide' && (
+                      <TideMerchantTimeline
+                        phone={f.customerNumber}
+                        customerName={f.customerName}
+                        inline={true}
+                      />
+                    )}
+                  </TableCell>
+
                   {/* Edit + Delete */}
                   <TableCell>
                     <Box sx={{ display: 'flex', gap: 0.5 }}>
@@ -1280,6 +1293,7 @@ export default function MerchantForms() {
   const [exporting,  setExporting]  = useState(false);
   const [exportAnchor, setExportAnchor] = useState(null);
   const [meetingOpen, setMeetingOpen] = useState(false);
+  const [priorityPassOpen, setPriorityPassOpen] = useState(false); // Priority Pass tracking modal
   const [notifying,  setNotifying]  = useState(null); // index of dup being notified
   const [notifySnack, setNotifySnack] = useState('');
   const [settling,   setSettling]   = useState(null); // index of dup being settled
@@ -2140,35 +2154,57 @@ export default function MerchantForms() {
         const filteredForms = grouped.flatMap(([, empForms]) => empForms);
         const filteredTotal = filteredForms.length;
         const filteredEmps  = grouped.length;
+        
+        // Calculate Priority Pass Active count (Tide merchants verified in selected month with active Priority Pass in future months)
+        // This requires checking future months, so we'll use a simpler approach for now
+        // Count Tide merchants fully verified in the selected month
+        const priorityPassActive = filteredForms.filter(f => {
+          // Only Tide product
+          const product = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+          if (product !== 'tide') return false;
+          
+          // Only fully verified
+          const key = `${f.customerNumber}__tide`;
+          return globalVerifyMap[key]?.status === 'Fully Verified';
+        }).length;
+        
         return (
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 2, mb: 3 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 2, mb: 3 }}>
         {[
           { label: 'Total Submissions', value: filteredTotal, color: BRAND.primary, bg: '#e6f4ea', key: 'total' },
           { label: 'Employees',         value: filteredEmps,  color: '#1565c0',     bg: '#e3f2fd', key: 'emp' },
+          { label: 'Priority Pass Active', value: priorityPassActive, color: '#7c3aed', bg: '#f3e5f5', key: 'priority' },
           { label: 'Cross Duplicates',  value: activeCount,   color: '#c62828',     bg: '#fdecea', key: 'dup' },
           { label: 'Settled Duplicates',value: settledCount,  color: '#2e7d32',     bg: '#e6f4ea', key: 'settled' },
         ].map(k => (
           <Card key={k.label}
             onClick={
-              k.key === 'dup'     && activeCount   > 0 ? () => setDupOpen(true)     :
-              k.key === 'settled' && settledCount  > 0 ? () => setSettledOpen(true) :
+              k.key === 'dup'      && activeCount   > 0 ? () => setDupOpen(true)     :
+              k.key === 'settled'  && settledCount  > 0 ? () => setSettledOpen(true) :
+              k.key === 'priority' && priorityPassActive > 0 ? () => setPriorityPassOpen(true) :
               undefined
             }
             sx={{
               borderRadius: 3,
               border: `1.5px solid ${k.color}20`,
-              cursor: (k.key === 'dup' && activeCount > 0) || (k.key === 'settled' && settledCount > 0) ? 'pointer' : 'default',
+              cursor: (k.key === 'dup' && activeCount > 0) || (k.key === 'settled' && settledCount > 0) || (k.key === 'priority' && priorityPassActive > 0) ? 'pointer' : 'default',
               transition: 'box-shadow 0.2s, transform 0.15s',
               ...((k.key === 'dup' && activeCount > 0) && { '&:hover': { boxShadow: '0 4px 20px rgba(198,40,40,0.18)', transform: 'translateY(-2px)' } }),
               ...((k.key === 'settled' && settledCount > 0) && { '&:hover': { boxShadow: '0 4px 20px rgba(46,125,50,0.18)', transform: 'translateY(-2px)' } }),
+              ...((k.key === 'priority' && priorityPassActive > 0) && { '&:hover': { boxShadow: '0 4px 20px rgba(124,58,237,0.18)', transform: 'translateY(-2px)' } }),
             }}>
             <CardContent sx={{ py: 2 }}>
               <Typography variant="h4" fontWeight={800} sx={{ color: k.color }}>{k.value}</Typography>
               <Typography variant="body2" color="text.secondary" fontWeight={600}>
                 {k.label}
-                {((k.key === 'dup' && activeCount > 0) || (k.key === 'settled' && settledCount > 0)) && (
+                {((k.key === 'dup' && activeCount > 0) || (k.key === 'settled' && settledCount > 0) || (k.key === 'priority' && priorityPassActive > 0)) && (
                   <Typography component="span" variant="caption" sx={{ ml: 1, color: k.color, fontWeight: 700 }}>
                     (click to view)
+                  </Typography>
+                )}
+                {k.key === 'priority' && (
+                  <Typography component="span" variant="caption" sx={{ display: 'block', mt: 0.5, color: k.color, opacity: 0.8 }}>
+                    Tide · {selectedMonth.split(' ')[0]}
                   </Typography>
                 )}
               </Typography>
@@ -2986,6 +3022,15 @@ export default function MerchantForms() {
         onClose={() => setMeetingOpen(false)}
         employees={employees}
         tls={tls}
+      />
+
+      {/* Priority Pass Tracking Dialog */}
+      <PriorityPassTracking
+        open={priorityPassOpen}
+        onClose={() => setPriorityPassOpen(false)}
+        verificationMonth={selectedMonth}
+        forms={forms}
+        globalVerifyMap={globalVerifyMap}
       />
     </Box>
   );

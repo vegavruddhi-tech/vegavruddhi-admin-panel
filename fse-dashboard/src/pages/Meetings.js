@@ -22,9 +22,28 @@ export default function MeetingScheduler({ open, onClose, employees = [], tls = 
   const [loading, setLoading] = useState(false);
   const [searchFSE, setSearchFSE] = useState('');
   const [searchTL, setSearchTL] = useState('');
+  const [searchManager, setSearchManager] = useState('');
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
   const [meetings, setMeetings] = useState([]);
   const [loadingMeetings, setLoadingMeetings] = useState(false);
+  const [managers, setManagers] = useState([]);
+
+  // Fetch managers list
+  useEffect(() => {
+    const fetchManagers = async () => {
+      try {
+        const response = await fetch('http://localhost:4000/api/manager/approved-list');
+        const data = await response.json();
+        setManagers(Array.isArray(data) ? data : []);
+      } catch (err) {
+        console.error('Error fetching managers:', err);
+        setManagers([]);
+      }
+    };
+    if (open) {
+      fetchManagers();
+    }
+  }, [open]);
 
   // Fetch meetings list
   const fetchMeetings = async () => {
@@ -32,9 +51,11 @@ export default function MeetingScheduler({ open, onClose, employees = [], tls = 
     try {
       const response = await fetch('http://localhost:4000/api/meetings/list');
       const data = await response.json();
-      setMeetings(data);
+      // Ensure data is an array
+      setMeetings(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error('Error fetching meetings:', err);
+      setMeetings([]); // Set empty array on error
     }
     setLoadingMeetings(false);
   };
@@ -52,14 +73,15 @@ export default function MeetingScheduler({ open, onClose, employees = [], tls = 
     setSnackbar({ open: true, message: 'Link copied to clipboard!', severity: 'success' });
   };
 
-  // Combine employees and TLs
+  // Combine employees, TLs, and Managers with hierarchy info
   const allAttendees = useMemo(() => {
     const empList = employees.map(e => ({
       _id: e._id,
       name: e.newJoinerName || e.name,
       email: e.newJoinerEmailId || e.email,
       position: e.position || 'FSE',
-      type: 'FSE'
+      type: 'FSE',
+      reportingManager: e.reportingManager // TL's name
     }));
     
     const tlList = tls.map(t => ({
@@ -67,13 +89,70 @@ export default function MeetingScheduler({ open, onClose, employees = [], tls = 
       name: t.name,
       email: t.email,
       position: 'Team Lead',
-      type: 'TL'
+      type: 'TL',
+      reportingManager: t.reportingManager // Manager's name
     }));
     
-    return [...empList, ...tlList];
-  }, [employees, tls]);
+    const managerList = managers.map(m => ({
+      _id: m._id,
+      name: m.name,
+      email: m.email,
+      position: 'Manager',
+      type: 'Manager'
+    }));
+    
+    return [...empList, ...tlList, ...managerList];
+  }, [employees, tls, managers]);
 
-  // Filtered FSEs and TLs based on search
+  // Build hierarchy maps
+  const hierarchyMap = useMemo(() => {
+    // Map: Manager name -> TL IDs
+    const managerToTLs = {};
+    // Map: TL name -> FSE IDs
+    const tlToFSEs = {};
+    
+    allAttendees.forEach(person => {
+      if (person.type === 'TL' && person.reportingManager) {
+        if (!managerToTLs[person.reportingManager]) {
+          managerToTLs[person.reportingManager] = [];
+        }
+        managerToTLs[person.reportingManager].push(person._id);
+      }
+      
+      if (person.type === 'FSE' && person.reportingManager) {
+        if (!tlToFSEs[person.reportingManager]) {
+          tlToFSEs[person.reportingManager] = [];
+        }
+        tlToFSEs[person.reportingManager].push(person._id);
+      }
+    });
+    
+    return { managerToTLs, tlToFSEs };
+  }, [allAttendees]);
+
+  // Get all subordinates (TLs + FSEs) for a manager
+  const getManagerSubordinates = (managerName) => {
+    const tlIds = hierarchyMap.managerToTLs[managerName] || [];
+    const fseIds = [];
+    
+    // Get all FSEs under each TL
+    tlIds.forEach(tlId => {
+      const tl = allAttendees.find(a => a._id === tlId);
+      if (tl) {
+        const tlFSEs = hierarchyMap.tlToFSEs[tl.name] || [];
+        fseIds.push(...tlFSEs);
+      }
+    });
+    
+    return [...tlIds, ...fseIds];
+  };
+
+  // Get all FSEs for a TL
+  const getTLSubordinates = (tlName) => {
+    return hierarchyMap.tlToFSEs[tlName] || [];
+  };
+
+  // Filtered FSEs, TLs, and Managers based on search
   const filteredFSEs = useMemo(() => {
     return allAttendees
       .filter(a => a.type === 'FSE')
@@ -92,6 +171,54 @@ export default function MeetingScheduler({ open, onClose, employees = [], tls = 
       );
   }, [allAttendees, searchTL]);
 
+  const filteredManagers = useMemo(() => {
+    return allAttendees
+      .filter(a => a.type === 'Manager')
+      .filter(a => 
+        a.name.toLowerCase().includes(searchManager.toLowerCase()) ||
+        a.email.toLowerCase().includes(searchManager.toLowerCase())
+      );
+  }, [allAttendees, searchManager]);
+
+  // Hierarchical selection handlers
+  const handlePersonSelect = (person, checked) => {
+    if (checked) {
+      // Add person
+      let toAdd = [person._id];
+      
+      // If Manager: add all TLs + FSEs under them
+      if (person.type === 'Manager') {
+        const subordinates = getManagerSubordinates(person.name);
+        toAdd = [...toAdd, ...subordinates];
+      }
+      
+      // If TL: add all FSEs under them
+      if (person.type === 'TL') {
+        const subordinates = getTLSubordinates(person.name);
+        toAdd = [...toAdd, ...subordinates];
+      }
+      
+      setSelectedAttendees([...new Set([...selectedAttendees, ...toAdd])]);
+    } else {
+      // Remove person
+      let toRemove = [person._id];
+      
+      // If Manager: remove all TLs + FSEs under them
+      if (person.type === 'Manager') {
+        const subordinates = getManagerSubordinates(person.name);
+        toRemove = [...toRemove, ...subordinates];
+      }
+      
+      // If TL: remove all FSEs under them
+      if (person.type === 'TL') {
+        const subordinates = getTLSubordinates(person.name);
+        toRemove = [...toRemove, ...subordinates];
+      }
+      
+      setSelectedAttendees(selectedAttendees.filter(id => !toRemove.includes(id)));
+    }
+  };
+
   // Select/Deselect all handlers
   const handleSelectAllFSE = (checked) => {
     if (checked) {
@@ -106,10 +233,44 @@ export default function MeetingScheduler({ open, onClose, employees = [], tls = 
   const handleSelectAllTL = (checked) => {
     if (checked) {
       const tlIds = filteredTLs.map(a => a._id);
-      setSelectedAttendees([...new Set([...selectedAttendees, ...tlIds])]);
+      // Also add all FSEs under these TLs
+      const fseIds = [];
+      filteredTLs.forEach(tl => {
+        const subordinates = getTLSubordinates(tl.name);
+        fseIds.push(...subordinates);
+      });
+      setSelectedAttendees([...new Set([...selectedAttendees, ...tlIds, ...fseIds])]);
     } else {
       const tlIds = filteredTLs.map(a => a._id);
-      setSelectedAttendees(selectedAttendees.filter(id => !tlIds.includes(id)));
+      // Also remove all FSEs under these TLs
+      const fseIds = [];
+      filteredTLs.forEach(tl => {
+        const subordinates = getTLSubordinates(tl.name);
+        fseIds.push(...subordinates);
+      });
+      setSelectedAttendees(selectedAttendees.filter(id => ![...tlIds, ...fseIds].includes(id)));
+    }
+  };
+
+  const handleSelectAllManager = (checked) => {
+    if (checked) {
+      const managerIds = filteredManagers.map(a => a._id);
+      // Also add all TLs + FSEs under these managers
+      const subordinateIds = [];
+      filteredManagers.forEach(manager => {
+        const subordinates = getManagerSubordinates(manager.name);
+        subordinateIds.push(...subordinates);
+      });
+      setSelectedAttendees([...new Set([...selectedAttendees, ...managerIds, ...subordinateIds])]);
+    } else {
+      const managerIds = filteredManagers.map(a => a._id);
+      // Also remove all TLs + FSEs under these managers
+      const subordinateIds = [];
+      filteredManagers.forEach(manager => {
+        const subordinates = getManagerSubordinates(manager.name);
+        subordinateIds.push(...subordinates);
+      });
+      setSelectedAttendees(selectedAttendees.filter(id => ![...managerIds, ...subordinateIds].includes(id)));
     }
   };
 
@@ -224,8 +385,36 @@ export default function MeetingScheduler({ open, onClose, employees = [], tls = 
               <Typography variant="subtitle1" sx={{ mt: 2, mb: 1 }}>
                 Select Attendees ({selectedAttendees.length} selected)
               </Typography>
+
+              {/* Selected Attendees Summary */}
+              {selectedAttendees.length > 0 && (
+                <Alert severity="info" sx={{ mb: 2, py: 0.5 }}>
+                  <Typography variant="caption" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>
+                    Selected Attendees:
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                    {selectedAttendees.map(id => {
+                      const person = allAttendees.find(a => a._id === id);
+                      if (!person) return null;
+                      return (
+                        <Chip
+                          key={id}
+                          label={`${person.name} (${person.type})`}
+                          size="small"
+                          onDelete={() => handlePersonSelect(person, false)}
+                          sx={{ 
+                            fontSize: 10,
+                            height: 22,
+                            bgcolor: person.type === 'Manager' ? '#ffebee' : person.type === 'TL' ? '#e8f5e9' : '#e3f2fd'
+                          }}
+                        />
+                      );
+                    })}
+                  </Box>
+                </Alert>
+              )}
               
-              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
+              <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 2 }}>
                 {/* FSE Column */}
                 <Box>
                   <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
@@ -255,13 +444,7 @@ export default function MeetingScheduler({ open, onClose, employees = [], tls = 
                       <ListItem key={attendee._id} dense>
                         <Checkbox
                           checked={selectedAttendees.includes(attendee._id)}
-                          onChange={e => {
-                            if (e.target.checked) {
-                              setSelectedAttendees([...selectedAttendees, attendee._id]);
-                            } else {
-                              setSelectedAttendees(selectedAttendees.filter(id => id !== attendee._id));
-                            }
-                          }}
+                          onChange={e => handlePersonSelect(attendee, e.target.checked)}
                           size="small"
                         />
                         <ListItemText 
@@ -304,13 +487,50 @@ export default function MeetingScheduler({ open, onClose, employees = [], tls = 
                       <ListItem key={attendee._id} dense>
                         <Checkbox
                           checked={selectedAttendees.includes(attendee._id)}
-                          onChange={e => {
-                            if (e.target.checked) {
-                              setSelectedAttendees([...selectedAttendees, attendee._id]);
-                            } else {
-                              setSelectedAttendees(selectedAttendees.filter(id => id !== attendee._id));
-                            }
-                          }}
+                          onChange={e => handlePersonSelect(attendee, e.target.checked)}
+                          size="small"
+                        />
+                        <ListItemText 
+                          primary={attendee.name} 
+                          secondary={attendee.email}
+                          primaryTypographyProps={{ fontSize: 12, fontWeight: 600 }}
+                          secondaryTypographyProps={{ fontSize: 10 }}
+                        />
+                      </ListItem>
+                    ))}
+                  </List>
+                </Box>
+
+                {/* Manager Column */}
+                <Box>
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 700, color: '#d32f2f', fontSize: 12 }}>
+                      Managers ({filteredManagers.length})
+                    </Typography>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <Checkbox
+                        checked={filteredManagers.length > 0 && filteredManagers.every(a => selectedAttendees.includes(a._id))}
+                        indeterminate={filteredManagers.some(a => selectedAttendees.includes(a._id)) && !filteredManagers.every(a => selectedAttendees.includes(a._id))}
+                        onChange={(e) => handleSelectAllManager(e.target.checked)}
+                        size="small"
+                      />
+                      <Typography variant="caption" sx={{ fontSize: 10 }}>All</Typography>
+                    </Box>
+                  </Box>
+                  <TextField
+                    fullWidth
+                    size="small"
+                    placeholder="Search..."
+                    value={searchManager}
+                    onChange={(e) => setSearchManager(e.target.value)}
+                    sx={{ mb: 1 }}
+                  />
+                  <List sx={{ maxHeight: 200, overflow: 'auto', border: '1px solid #ddd', borderRadius: 1 }}>
+                    {filteredManagers.map(attendee => (
+                      <ListItem key={attendee._id} dense>
+                        <Checkbox
+                          checked={selectedAttendees.includes(attendee._id)}
+                          onChange={e => handlePersonSelect(attendee, e.target.checked)}
                           size="small"
                         />
                         <ListItemText 
