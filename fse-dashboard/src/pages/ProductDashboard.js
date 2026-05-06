@@ -29,6 +29,9 @@ import { BRAND } from "../theme";
 const COLORS = ["#7c3aed", "#10b981", "#3b82f6", "#f59e0b", "#14b8a6", "#ec4899", "#0ea5e9", "#ef4444"];
 const PRODUCT_COLORS = ["#7c3aed","#10b981","#3b82f6","#f59e0b","#14b8a6","#ec4899","#0ea5e9","#ef4444","#f97316","#84cc16","#06b6d4","#8b5cf6"];
 
+// ── Cache version: Increment this when verification rules change ─
+const CACHE_VERSION = 2; // Change to 2, 3, etc. to invalidate all caches
+
 function toChartTheme(muiTheme) {
   const isDark = muiTheme.palette.mode === "dark";
   return {
@@ -763,7 +766,7 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
       if (forms.length > 0) {
         // Generate cache key with today's date (auto-expires at midnight)
         const today = new Date().toISOString().split('T')[0]; // "2026-05-01"
-        const cacheKey = `verification_cache_productdashboard_${today}`;
+        const cacheKey = `verification_cache_v${CACHE_VERSION}_productdashboard_${today}`;
 
         // Check if we have cached data for TODAY
         let usedCache = false;
@@ -837,7 +840,7 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
   useEffect(() => {
     try {
       const today = new Date().toISOString().split('T')[0];
-      const currentCacheKey = `verification_cache_productdashboard_${today}`;
+      const currentCacheKey = `verification_cache_v${CACHE_VERSION}_productdashboard_${today}`;
       
       // Find and remove old cache entries
       const keysToRemove = [];

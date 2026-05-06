@@ -108,6 +108,14 @@ function flattenForm(f, empMap = {}, tlMap = {}, verifyMap = {}) {
     ? `${f.customerNumber}__${(f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim()}`
     : f.customerNumber;
   const verification = verifyMap[vKey]?.status || 'Not Found';
+  
+  // Calculate points for this form
+  let points = 0;
+  if (verification === 'Fully Verified') {
+    const productKey = Object.keys(POINTS_MAP).find(k => k.toLowerCase() === product.toLowerCase());
+    points = productKey ? POINTS_MAP[productKey] : 0;
+  }
+  
   return {
     'Employee Name':   f.employeeName   || '',
     'Employee Email':  emp.newJoinerEmailId || '',
@@ -123,8 +131,6 @@ function flattenForm(f, empMap = {}, tlMap = {}, verifyMap = {}) {
     'Verification Status': verification,
     'Tide QR Posted':    f.tide_qrPosted    || '',
     'Tide UPI Txn Done': f.tide_upiTxnDone  || '',
-    // 'Kotak Txn Done':    f.kotak_txnDone    || '',
-    // 'Kotak WiFi/BT Off': f.kotak_wifiBtOff  || '',
     'Insurance Vehicle No':   f.ins_vehicleNumber  || '',
     'Insurance Vehicle Type': f.ins_vehicleType    || '',
     'Insurance Type':         f.ins_insuranceType  || '',
@@ -132,57 +138,210 @@ function flattenForm(f, empMap = {}, tlMap = {}, verifyMap = {}) {
     'PineLab WiFi Connected': f.pine_wifiConnected || '',
     'Credit Card Name':       f.cc_cardName        || '',
     'Tide Insurance Type':    f.tideIns_type        || '',
-    // 'BharatPay Product':      f.bp_product          || '',
     'Submitted On':      f.createdAt ? new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '',
+    'Points':            points, // NEW: Points column at the end
   };
 }
 
 // ── Export to Excel ───────────────────────────────────────────
-  async function exportToExcel(forms) { 
-  // Fetch employee details
-  const [empRes, tlRes] = await Promise.all([
+async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPointsData = []) { 
+  // Fetch employee details and points data
+  const [empRes, tlRes, ptsRes] = await Promise.all([
     fetch(`${EMP_API}/auth/all-employees`),
-    fetch(`${EMP_API}/tl/approved-list`)
+    fetch(`${EMP_API}/tl/approved-list`),
+    fetch(`${EMP_API}/forms/admin/employee-points`)
   ]);
   const empList = empRes.ok ? await empRes.json() : [];
   const tlList  = tlRes.ok  ? await tlRes.json()  : [];
+  const empPointsList = ptsRes.ok ? await ptsRes.json() : empPointsData;
 
   // Build lookup maps
   const empMap = {};
   empList.forEach(e => { empMap[e.newJoinerName] = e; });
   const tlMap = {};
   tlList.forEach(t => { tlMap[t.name.toLowerCase().trim()] = t; });
+  
+  // Build empPoints map (empName → points data with slabs)
+  const empPointsMap = {};
+  empPointsList.forEach(e => {
+    const key = (e.newJoinerName || '').trim();
+    empPointsMap[key] = e;
+  });
 
-  // Fetch verification statuses
-  const phones   = forms.map(f => f.customerNumber).join(',');
-  const names    = forms.map(f => encodeURIComponent(f.customerName || '')).join(',');
-  const products = forms.map(f => encodeURIComponent((f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim())).join(',');
-  const months   = forms.map(f => encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))).join(',');
-  let verifyMap = {};
-  try {
-    const vRes = await fetch(`${EMP_API}/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`);
-    if (vRes.ok) verifyMap = await vRes.json();
-  } catch { /* ignore */ }
+  // Use cached verification data (instant, no API call needed!)
+  const verifyMap = cachedVerifyMap;
 
-  const rows = forms.map(f => flattenForm(f, empMap, tlMap, verifyMap));
-  const ws   = XLSX.utils.json_to_sheet(rows);
+  // ═══════════════════════════════════════════════════════════
+  // SHEET 1: Merchant Forms (detailed data with points per row)
+  // ═══════════════════════════════════════════════════════════
+  const merchantRows = forms.map(f => flattenForm(f, empMap, tlMap, verifyMap));
+  const ws1 = XLSX.utils.json_to_sheet(merchantRows);
 
-  // Auto column widths
-  const colWidths = Object.keys(rows[0] || {}).map(key => ({
-    wch: Math.max(key.length, ...rows.map(r => String(r[key] || '').length), 10)
+  // Auto column widths for Sheet 1
+  const colWidths1 = Object.keys(merchantRows[0] || {}).map(key => ({
+    wch: Math.max(key.length, ...merchantRows.map(r => String(r[key] || '').length), 10)
   }));
-  ws['!cols'] = colWidths;
+  ws1['!cols'] = colWidths1;
 
+  // ═══════════════════════════════════════════════════════════
+  // SHEET 2: FSE Summary (employee-wise breakdown with points + slabs)
+  // ═══════════════════════════════════════════════════════════
+  
+  // Group forms by employee
+  const employeeData = {};
+  
+  forms.forEach(f => {
+    const empName = f.employeeName || 'Unknown';
+    
+    if (!employeeData[empName]) {
+      const emp = empMap[empName] || {};
+      const tl = tlMap[(emp.reportingManager || '').toLowerCase().trim()] || {};
+      
+      employeeData[empName] = {
+        'FSE Name': empName,
+        'FSE Email': emp.newJoinerEmailId || '',
+        'FSE Phone': emp.newJoinerPhone || '',
+        'TL Name': emp.reportingManager || '',
+        'TL Email': tl.email || '',
+        'TL Phone': tl.phone || '',
+        productCounts: {},
+        autoPoints: 0,
+        slabBonuses: {} // { "Tide - Slab 1": 5.0, "Tide - Slab 2": 5.0 }
+      };
+    }
+    
+    // Only count fully verified forms
+    const product = f.formFillingFor || f.tideProduct || f.brand || 'Other';
+    const vKey = product
+      ? `${f.customerNumber}__${product.toLowerCase().trim()}`
+      : f.customerNumber;
+    const verification = verifyMap[vKey]?.status || 'Not Found';
+    
+    if (verification === 'Fully Verified') {
+      // Count by product
+      if (!employeeData[empName].productCounts[product]) {
+        employeeData[empName].productCounts[product] = 0;
+      }
+      employeeData[empName].productCounts[product]++;
+      
+      // Calculate auto points (from verified forms only)
+      const productKey = Object.keys(POINTS_MAP).find(k => k.toLowerCase() === product.toLowerCase());
+      const points = productKey ? POINTS_MAP[productKey] : 0;
+      employeeData[empName].autoPoints += points;
+    }
+  });
+  
+  // Calculate slab bonuses for each employee
+  Object.keys(employeeData).forEach(empName => {
+    const empPts = empPointsMap[empName.trim()];
+    if (empPts && empPts.productSlabs) {
+      Object.entries(empPts.productSlabs).forEach(([product, slabData]) => {
+        // New tier format: { slabTiers: [{name, forms, multiplier}] }
+        if (slabData?.slabTiers && Array.isArray(slabData.slabTiers)) {
+          slabData.slabTiers.forEach(tier => {
+            const slabName = `${product} - ${tier.name || 'Bonus'}`;
+            const slabPoints = (parseFloat(tier.forms) || 0) * (parseFloat(tier.multiplier) || 0);
+            employeeData[empName].slabBonuses[slabName] = Math.round(slabPoints * 10) / 10;
+          });
+        }
+        // Legacy flat array format: [{forms, multiplier}]
+        else if (Array.isArray(slabData)) {
+          slabData.forEach((slab, idx) => {
+            const slabName = `${product} - Slab ${idx + 1}`;
+            const slabPoints = (slab.forms || 0) * (slab.multiplier || 0);
+            employeeData[empName].slabBonuses[slabName] = Math.round(slabPoints * 10) / 10;
+          });
+        }
+      });
+    }
+  });
+  
+  // Get all unique products and slab columns across all employees
+  const allProducts = new Set();
+  const allSlabColumns = new Set();
+  Object.values(employeeData).forEach(emp => {
+    Object.keys(emp.productCounts).forEach(product => allProducts.add(product));
+    Object.keys(emp.slabBonuses).forEach(slabName => allSlabColumns.add(slabName));
+  });
+  const productList = Array.from(allProducts).sort();
+  const slabColumnList = Array.from(allSlabColumns).sort();
+  
+  // Build filter info text
+  let filterText = 'All Data';
+  if (filterInfo.dateFilter === 'custom' && filterInfo.fromDate && filterInfo.toDate) {
+    filterText = `${filterInfo.fromDate} to ${filterInfo.toDate}`;
+  } else if (filterInfo.selectedMonth && filterInfo.selectedYear) {
+    filterText = `${filterInfo.selectedMonth} ${filterInfo.selectedYear}`;
+  } else if (filterInfo.selectedMonth) {
+    filterText = filterInfo.selectedMonth;
+  } else if (filterInfo.selectedYear) {
+    filterText = `Year ${filterInfo.selectedYear}`;
+  } else if (filterInfo.dateFilter === 'today') {
+    filterText = 'Today';
+  } else if (filterInfo.dateFilter === 'week') {
+    filterText = 'This Week';
+  } else if (filterInfo.dateFilter === 'month') {
+    filterText = 'This Month';
+  }
+  
+  // Build FSE summary rows
+  const fseRows = Object.values(employeeData).map(emp => {
+    const row = {
+      'FSE Name': emp['FSE Name'],
+      'FSE Email': emp['FSE Email'],
+      'FSE Phone': emp['FSE Phone'],
+      'TL Name': emp['TL Name'],
+      'TL Email': emp['TL Email'],
+      'TL Phone': emp['TL Phone'],
+      'Date Range': filterText,
+    };
+    
+    // Add product count columns
+    productList.forEach(product => {
+      row[`${product} Count`] = emp.productCounts[product] || 0;
+    });
+    
+    // Add Auto Points column (from verified forms only)
+    row['Auto Points'] = Math.round(emp.autoPoints * 10) / 10;
+    
+    // Add slab bonus columns (dynamic based on what slabs exist)
+    slabColumnList.forEach(slabName => {
+      row[slabName] = emp.slabBonuses[slabName] || 0;
+    });
+    
+    // Calculate total slab bonus
+    const totalSlabBonus = Object.values(emp.slabBonuses).reduce((sum, val) => sum + val, 0);
+    
+    // Add Total Points column (Auto Points + Slab Bonuses)
+    row['Total Points'] = Math.round((emp.autoPoints + totalSlabBonus) * 10) / 10;
+    
+    return row;
+  });
+  
+  const ws2 = XLSX.utils.json_to_sheet(fseRows);
+  
+  // Auto column widths for Sheet 2
+  const colWidths2 = Object.keys(fseRows[0] || {}).map(key => ({
+    wch: Math.max(key.length, ...fseRows.map(r => String(r[key] || '').length), 12)
+  }));
+  ws2['!cols'] = colWidths2;
+
+  // ═══════════════════════════════════════════════════════════
+  // Create workbook with both sheets
+  // ═══════════════════════════════════════════════════════════
   const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Merchant Forms');
+  XLSX.utils.book_append_sheet(wb, ws1, 'Merchant Forms');
+  XLSX.utils.book_append_sheet(wb, ws2, 'FSE Summary');
+  
   XLSX.writeFile(wb, `Merchant_Forms_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
 
 // ── Export to Google Sheets ───────────────────────────────────
-async function exportToGoogleSheets(forms, setExporting, setError) {
+async function exportToGoogleSheets(forms, setExporting, setError, cachedVerifyMap = {}, empMap = {}, tlMap = {}) {
   setExporting(true);
   try {
-    const rows    = forms.map(flattenForm);
+    // Use cached verification data
+    const rows    = forms.map(f => flattenForm(f, empMap, tlMap, cachedVerifyMap));
     const headers = Object.keys(rows[0] || {});
     const values  = [headers, ...rows.map(r => headers.map(h => r[h] || ''))];
 
@@ -270,6 +429,9 @@ const POINTS_MAP = {
   'Tide Insurance': 1, 
   'Tide Credit Card': 1 
 };
+
+// ── Cache version: Increment this when verification rules change ─
+const CACHE_VERSION = 2; // Change to 2, 3, etc. to invalidate all caches
 
 
 function calcAutoPoints(forms, verifiedPhones) {
@@ -501,7 +663,7 @@ function VerifyChip({ status, onClick }) {
 }
 
 // ── Verification Detail Modal ─────────────────────────────────
-function VerificationDetailModal({ open, onClose, form, verifyData, loading }) {
+function VerificationDetailModal({ open, onClose, form, verifyData, loading, onDataFetched }) {
   if (!form) return null;
 
   const getProduct = (f) => (f?.formFillingFor || f?.tideProduct || f?.brand || '').toLowerCase().trim();
@@ -510,9 +672,18 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading }) {
   // Extract verification data (backend returns { verification, phoneCheck })
   const verification = verifyData?.verification || verifyData;
   const phoneCheck = verifyData?.phoneCheck;
+  
+  // Notify parent when modal closes with fresh data
+  const handleClose = () => {
+    if (verifyData && form && onDataFetched) {
+      const vKey = product ? `${form.customerNumber}__${product}` : form.customerNumber;
+      onDataFetched(vKey, verification);
+    }
+    onClose();
+  };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+    <Dialog open={open} onClose={handleClose} maxWidth="md" fullWidth>
       <DialogTitle sx={{ 
         display: 'flex', 
         alignItems: 'center', 
@@ -528,7 +699,7 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading }) {
             {form.customerName} · {form.customerNumber}
           </Typography>
         </Box>
-        <IconButton onClick={onClose} size="small" sx={{ color: '#fff' }}>
+        <IconButton onClick={handleClose} size="small" sx={{ color: '#fff' }}>
           <CloseIcon />
         </IconButton>
       </DialogTitle>
@@ -694,14 +865,14 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading }) {
       </DialogContent>
 
       <DialogActions>
-        <Button onClick={onClose} sx={{ color: BRAND.primary, fontWeight: 700 }}>Close</Button>
+        <Button onClick={handleClose} sx={{ color: BRAND.primary, fontWeight: 700 }}>Close</Button>
       </DialogActions>
     </Dialog>
   );
 }
 
 // ── Employee Group Row ────────────────────────────────────────
-function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPointsData, empData, tlData, filterProduct, setFilterProduct, onEditPoints, onManualVerify, onRevertVerification, onReload, globalVerifyMap: parentVerifyMap }) {
+function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPointsData, empData, tlData, filterProduct, setFilterProduct, onEditPoints, onManualVerify, onRevertVerification, onReload, globalVerifyMap: parentVerifyMap, onUpdateVerifyMap }) {
 
   // ✅ FIXED: Use same priority order as backend (formFillingFor first)
   const getProduct = (f) =>
@@ -1274,6 +1445,7 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
           form={verifyDetail.form}
           verifyData={verifyDetail.data}
           loading={verifyDetail.loading}
+          onDataFetched={onUpdateVerifyMap}
         />
       )}
 
@@ -1420,6 +1592,27 @@ export default function MerchantForms() {
   const [employees,        setEmployees]        = useState([]); // Employee data with phone and TL
   const [teamLeaders,      setTeamLeaders]      = useState([]); // TL data
   const [tls,              setTls]              = useState([]); // TL data for meetings
+
+  // ── Update verification map when modal fetches fresh data ────
+  const handleUpdateVerifyMap = useCallback((vKey, verificationData) => {
+    if (!vKey || !verificationData) return;
+    
+    setGlobalVerifyMap(prev => {
+      const updated = { ...prev, [vKey]: verificationData };
+      
+      // Also update localStorage cache
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        const cacheKey = `verification_cache_v${CACHE_VERSION}_${today}`;
+        localStorage.setItem(cacheKey, JSON.stringify(updated));
+        console.log(`✅ Updated verification cache for ${vKey}:`, verificationData.status);
+      } catch (err) {
+        console.warn('Failed to update verification cache:', err);
+      }
+      
+      return updated;
+    });
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
@@ -1863,8 +2056,9 @@ export default function MerchantForms() {
       }
     }
 
-    // Month/Year filter
-    if (selectedYear || selectedMonth) {
+    // Month/Year filter - ONLY apply if NOT using custom date range
+    // This prevents month filter from overriding the date range filter
+    if ((selectedYear || selectedMonth) && dateFilter !== 'custom') {
       const formDate = new Date(f.createdAt);
       const formYear = formDate.getFullYear();
       const formMonth = formDate.toLocaleString('en-US', { month: 'long' });
@@ -1888,8 +2082,12 @@ export default function MerchantForms() {
     if (!map[key]) map[key] = [];
     map[key].push(f);
   });
-  return Object.entries(map).sort((a, b) => b[1].length - a[1].length);
+  return { grouped: Object.entries(map).sort((a, b) => b[1].length - a[1].length), filteredForms: filtered };
 }, [forms, search, dateFilter, fromDate, toDate, selectedMonth, selectedYear]);
+
+  // Extract grouped and filtered forms
+  const groupedEntries = grouped.grouped;
+  const filteredForms = grouped.filteredForms;
 
 
 
@@ -1939,7 +2137,7 @@ export default function MerchantForms() {
 
   // Generate cache key with today's date (auto-expires at midnight)
   const today = new Date().toISOString().split('T')[0]; // "2026-05-01"
-  const cacheKey = `verification_cache_${today}`;
+  const cacheKey = `verification_cache_v${CACHE_VERSION}_${today}`;
 
   // Check if we have cached data for TODAY
   try {
@@ -1991,7 +2189,7 @@ export default function MerchantForms() {
   useEffect(() => {
     try {
       const today = new Date().toISOString().split('T')[0];
-      const currentCacheKey = `verification_cache_${today}`;
+      const currentCacheKey = `verification_cache_v${CACHE_VERSION}_${today}`;
       
       // Find and remove old cache entries
       const keysToRemove = [];
@@ -2013,7 +2211,6 @@ export default function MerchantForms() {
 
   // Compute verification KPI counts from global map
   const verifyKpiCounts = useMemo(() => {
-    const filteredForms = grouped.flatMap(([, empForms]) => empForms);
     const counts = { 'Fully Verified': 0, 'Partially Done': 0, 'Not Found': 0 };
     filteredForms.forEach(f => {
       const status = globalVerifyMap[getFormKey(f)]?.status || 'Not Found';
@@ -2027,7 +2224,6 @@ export default function MerchantForms() {
   // Breakdown by product for the clicked KPI
   const verifyBreakdown = useMemo(() => {
     if (!verifyKpiOpen) return [];
-    const filteredForms = grouped.flatMap(([, empForms]) => empForms);
     const productMap = {};
     filteredForms.forEach(f => {
       const status  = globalVerifyMap[getFormKey(f)]?.status || 'Not Found';
@@ -2130,12 +2326,37 @@ export default function MerchantForms() {
           </Button>
           <Menu anchorEl={exportAnchor} open={Boolean(exportAnchor)} onClose={() => setExportAnchor(null)}
             PaperProps={{ sx: { borderRadius: 2, mt: 0.5, minWidth: 200, boxShadow: '0 4px 20px rgba(0,0,0,0.12)' } }}>
-            <MenuItem onClick={() => { setExportAnchor(null); exportToExcel(forms); }}
+            <MenuItem onClick={() => { 
+              setExportAnchor(null); 
+              const filterInfo = { dateFilter, fromDate, toDate, selectedMonth, selectedYear };
+              exportToExcel(filteredForms, globalVerifyMap, filterInfo, empPoints); 
+            }}
               sx={{ gap: 1.5, py: 1.5 }}>
               <ListItemIcon><TableChartIcon sx={{ color: '#217346' }} /></ListItemIcon>
               <ListItemText primary="Export to Excel" secondary=".xlsx file download" />
             </MenuItem>
-            <MenuItem onClick={() => { setExportAnchor(null); exportToGoogleSheets(forms, setExporting, setError); }}
+            <MenuItem onClick={async () => { 
+              setExportAnchor(null);
+              // Fetch employee and TL data for Google Sheets export
+              try {
+                const [empRes, tlRes] = await Promise.all([
+                  fetch(`${EMP_API}/auth/all-employees`),
+                  fetch(`${EMP_API}/tl/approved-list`)
+                ]);
+                const empList = empRes.ok ? await empRes.json() : [];
+                const tlList  = tlRes.ok  ? await tlRes.json()  : [];
+                
+                // Build lookup maps
+                const empMap = {};
+                empList.forEach(e => { empMap[e.newJoinerName] = e; });
+                const tlMap = {};
+                tlList.forEach(t => { tlMap[t.name.toLowerCase().trim()] = t; });
+                
+                exportToGoogleSheets(filteredForms, setExporting, setError, globalVerifyMap, empMap, tlMap);
+              } catch (err) {
+                setError('Failed to fetch employee data: ' + err.message);
+              }
+            }}
               sx={{ gap: 1.5, py: 1.5 }}>
               <ListItemIcon><GridOnIcon sx={{ color: '#0F9D58' }} /></ListItemIcon>
               <ListItemText primary="Export to Google Sheets" secondary="Opens in new tab" />
@@ -2151,9 +2372,8 @@ export default function MerchantForms() {
 
       {/* Summary KPIs */}
       {(() => {
-        const filteredForms = grouped.flatMap(([, empForms]) => empForms);
         const filteredTotal = filteredForms.length;
-        const filteredEmps  = grouped.length;
+        const filteredEmps  = groupedEntries.length;
         
         // Calculate Priority Pass Active count (Tide merchants verified in selected month with active Priority Pass in future months)
         // This requires checking future months, so we'll use a simpler approach for now
@@ -2298,7 +2518,6 @@ export default function MerchantForms() {
 
       {/* Drill-down: Merchant + FSE list for selected product */}
       {drillProduct && (() => {
-        const filteredForms = grouped.flatMap(([, empForms]) => empForms);
         const drillForms = filteredForms.filter(f => {
           const rawProduct = f.formFillingFor || f.tideProduct || f.brand || '–';
           const product = rawProduct.toLowerCase() === 'msme' ? 'Tide MSME' : rawProduct;
@@ -2475,12 +2694,12 @@ export default function MerchantForms() {
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
               <CircularProgress sx={{ color: BRAND.primary }} />
             </Box>
-          ) : grouped.length === 0 ? (
+          ) : groupedEntries.length === 0 ? (
             <Card sx={{ textAlign: 'center', py: 6, border: `1.5px dashed ${BRAND.primaryLight}` }}>
               <Typography color="text.secondary">No merchant forms found.</Typography>
             </Card>
           ) : (
-            grouped.map(([empName, empForms]) => (
+            groupedEntries.map(([empName, empForms]) => (
               <EmployeeGroup 
                 key={empName} 
                 empName={empName} 
@@ -2497,6 +2716,7 @@ export default function MerchantForms() {
                 onRevertVerification={handleRevertVerification}
                 onReload={load}
                 globalVerifyMap={globalVerifyMap}
+                onUpdateVerifyMap={handleUpdateVerifyMap}
               />
             ))
           )}

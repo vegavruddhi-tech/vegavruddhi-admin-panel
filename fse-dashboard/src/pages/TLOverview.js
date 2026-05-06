@@ -16,6 +16,9 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveCont
 
 const EMP_API = process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api';
 
+// ── Cache version: Increment this when verification rules change ─
+const CACHE_VERSION = 2; // Change to 2, 3, etc. to invalidate all caches
+
 function initials(name) {
   return (name || '?').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 }
@@ -419,7 +422,7 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
     
     // Generate cache key with today's date (auto-expires at midnight)
     const today = new Date().toISOString().split('T')[0]; // "2026-05-01"
-    const cacheKey = `verification_cache_tloverview_${today}`;
+    const cacheKey = `verification_cache_v${CACHE_VERSION}_tloverview_${today}`;
 
     // Check if we have cached data for TODAY
     try {
@@ -468,7 +471,7 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
   useEffect(() => {
     try {
       const today = new Date().toISOString().split('T')[0];
-      const currentCacheKey = `verification_cache_tloverview_${today}`;
+      const currentCacheKey = `verification_cache_v${CACHE_VERSION}_tloverview_${today}`;
       
       // Find and remove old cache entries
       const keysToRemove = [];

@@ -16,6 +16,9 @@ import TideMerchantTimeline from "../components/TideMerchantTimeline";
 
 const COLORS = ["#7c3aed","#10b981","#3b82f6","#f59e0b","#14b8a6","#ec4899","#0ea5e9","#ef4444"];
 
+// ── Cache version: Increment this when verification rules change ─
+const CACHE_VERSION = 2; // Change to 2, 3, etc. to invalidate all caches
+
 function OnboardVerifySection({ filteredForms, onboardVerifyMap, onboardVerifying, verifyDrillStatus, setVerifyDrillStatus, employees }) {
   const [drillModal, setDrillModal] = useState(null); // { product, status, color, bg, rows, total, matched }
 
@@ -325,7 +328,7 @@ useEffect(() => {
   
   // Generate cache key with today's date (auto-expires at midnight)
   const today = new Date().toISOString().split('T')[0]; // "2026-05-01"
-  const cacheKey = `verification_cache_dashboard_${today}`;
+  const cacheKey = `verification_cache_v${CACHE_VERSION}_dashboard_${today}`;
 
   // Check if we have cached data for TODAY
   try {
@@ -376,7 +379,7 @@ useEffect(() => {
 useEffect(() => {
   try {
     const today = new Date().toISOString().split('T')[0];
-    const currentCacheKey = `verification_cache_dashboard_${today}`;
+    const currentCacheKey = `verification_cache_v${CACHE_VERSION}_dashboard_${today}`;
     
     // Find and remove old cache entries
     const keysToRemove = [];
