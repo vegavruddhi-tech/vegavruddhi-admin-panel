@@ -2735,7 +2735,7 @@ export default function MerchantForms() {
                 key={empName} 
                 empName={empName} 
                 forms={empForms}
-                allEmpForms={forms.filter(f => f.employeeName === empName)}
+                allEmpForms={filteredForms.filter(f => f.employeeName === empName)}
                 duplicatePhones={duplicatePhones}
                 empPointsData={empPointsMap[empName.trim()]}
                 empData={empDataMap[empName]}
