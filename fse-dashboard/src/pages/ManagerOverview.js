@@ -10,6 +10,7 @@ import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import SearchIcon from '@mui/icons-material/Search';
 import CloseIcon from '@mui/icons-material/Close';
+import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, Legend, ResponsiveContainer } from 'recharts';
 import { BRAND } from '../theme';
 
 const EMP_API = process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api';
@@ -111,6 +112,7 @@ function TLCard({ tlData }) {
 
 function ManagerCard({ manager, tlsData, search }) {
   const [expanded, setExpanded] = useState(false);
+  const [tlDrill, setTlDrill]   = useState(null); // { type, tls }
   const isOpen = expanded;
 
   // Filter TLs by search
@@ -162,6 +164,23 @@ function ManagerCard({ manager, tlsData, search }) {
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
           <Chip label={`${tlsData.length} TL${tlsData.length !== 1 ? 's' : ''}`} size="small"
             sx={{ bgcolor: '#f3e8ff', color: '#7c3aed', fontWeight: 700, fontSize: 11 }} />
+          {/* Active / Inactive TL chips */}
+          {(() => {
+            const active   = tlsData.filter(d => d.forms.length > 0);
+            const inactive = tlsData.filter(d => d.forms.length === 0);
+            return (
+              <>
+                <Chip label={`✅ ${active.length} Active`} size="small" clickable
+                  onClick={e => { e.stopPropagation(); setTlDrill({ type: 'Active', tls: active }); }}
+                  sx={{ bgcolor: '#e6f4ea', color: '#2e7d32', fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: '#c8e6c9' } }} />
+                {inactive.length > 0 && (
+                  <Chip label={`⚪ ${inactive.length} Inactive`} size="small" clickable
+                    onClick={e => { e.stopPropagation(); setTlDrill({ type: 'Inactive', tls: inactive }); }}
+                    sx={{ bgcolor: '#f5f5f5', color: '#757575', fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: '#e0e0e0' } }} />
+                )}
+              </>
+            );
+          })()}
           <Chip label={`${totalFSEs} FSEs`} size="small"
             sx={{ bgcolor: '#e3f2fd', color: '#1565c0', fontWeight: 700, fontSize: 11 }} />
           <Chip label={`${totalForms} forms`} size="small"
@@ -171,6 +190,53 @@ function ManagerCard({ manager, tlsData, search }) {
             : <ExpandMoreIcon sx={{ color: 'text.secondary' }} />}
         </Box>
       </Box>
+
+      {/* TL drill-down modal */}
+      {tlDrill && (
+        <Dialog open onClose={() => setTlDrill(null)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}
+          onClick={e => e.stopPropagation()}>
+          <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 1 }}>
+            <Box>
+              <Typography fontWeight={800} fontSize={16} sx={{ color: tlDrill.type === 'Active' ? '#2e7d32' : '#757575' }}>
+                {tlDrill.type === 'Active' ? '✅ Active' : '⚪ Inactive'} TLs — {manager.name}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">{tlDrill.tls.length} TL{tlDrill.tls.length !== 1 ? 's' : ''}</Typography>
+            </Box>
+            <IconButton onClick={() => setTlDrill(null)} size="small"><CloseIcon /></IconButton>
+          </DialogTitle>
+          <DialogContent sx={{ pt: 0 }}>
+            {tlDrill.tls.length === 0 ? (
+              <Typography color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>No TLs in this category.</Typography>
+            ) : (
+              tlDrill.tls.map((d, i) => {
+                const tlName = d.tl.name || d.tl.email;
+                return (
+                  <Box key={i} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 1.2, borderBottom: '1px solid #f0f0f0', '&:last-child': { borderBottom: 'none' } }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                      <Avatar sx={{ bgcolor: BRAND.primary, width: 32, height: 32, fontSize: 11, fontWeight: 700 }}>
+                        {initials(tlName)}
+                      </Avatar>
+                      <Box>
+                        <Typography fontWeight={700} fontSize={13}>{tlName}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {[d.tl.location, d.tl.phone].filter(Boolean).join(' · ')}
+                        </Typography>
+                      </Box>
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Chip label={`${d.fses.length} FSEs`} size="small" sx={{ bgcolor: '#e3f2fd', color: '#1565c0', fontWeight: 700, fontSize: 11 }} />
+                      <Chip label={`${d.forms.length} forms`} size="small" sx={{ bgcolor: '#e6f4ea', color: '#2e7d32', fontWeight: 700, fontSize: 11 }} />
+                    </Box>
+                  </Box>
+                );
+              })
+            )}
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button onClick={() => setTlDrill(null)} variant="contained" sx={{ bgcolor: BRAND.primary, fontWeight: 700, borderRadius: 2 }}>Close</Button>
+          </DialogActions>
+        </Dialog>
+      )}
 
       {/* TL list */}
       <Collapse in={isOpen}>
@@ -278,6 +344,160 @@ function UnassignedTLsCard({ tlsData, search }) {
         </Box>
       </Collapse>
     </Card>
+  );
+}
+
+// ── Manager Pie Charts ────────────────────────────────────────────────────────
+function ManagerPieCharts({ managerGroups }) {
+  const [drillDown, setDrillDown] = useState(null); // { managerName, type, tls }
+
+  if (!managerGroups || managerGroups.length === 0) return null;
+  const withTLs = managerGroups.filter(g => g.tls.length > 0);
+  if (withTLs.length === 0) return null;
+
+  return (
+    <Box sx={{ mb: 3 }}>
+      <Typography variant="body1" fontWeight={700} sx={{ color: BRAND.primary, mb: 2 }}>
+        Working Team Performance (Ready for Onboarding)
+      </Typography>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' }, gap: 2 }}>
+        {withTLs.map(g => {
+          // Count all TLs (remove working status filter)
+          const allTLs = g.tls;
+          
+          // TLs with "Ready for Onboarding" forms
+          const performingTLs = allTLs.filter(d => 
+            d.forms.some(f => f.status === 'Ready for Onboarding')
+          );
+          
+          // TLs without "Ready for Onboarding" forms
+          const nonPerformingTLs = allTLs.filter(d => 
+            !d.forms.some(f => f.status === 'Ready for Onboarding')
+          );
+          
+          const totalFSEs = allTLs.reduce((s, d) => s + d.fses.length, 0);
+          
+          const onboardingForms = allTLs.reduce((s, d) => 
+            s + d.forms.filter(f => f.status === 'Ready for Onboarding').length, 0
+          );
+          
+          const pct = allTLs.length > 0 ? Math.round((performingTLs.length / allTLs.length) * 100) : 0;
+          
+          const data = [
+            { name: 'With Onboarding',   value: performingTLs.length,   color: '#2e7d32', tls: performingTLs },
+            { name: 'Without Onboarding', value: nonPerformingTLs.length, color: '#e0e0e0', tls: nonPerformingTLs },
+          ].filter(d => d.value > 0);
+
+          return (
+            <Card key={g.manager._id} sx={{
+              borderRadius: 3, border: `1.5px solid ${BRAND.primaryLight}`, p: 2,
+              transition: 'all 0.2s',
+              '&:hover': { boxShadow: `0 4px 20px ${BRAND.primary}20`, transform: 'translateY(-2px)' }
+            }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5 }}>
+                <Avatar sx={{ bgcolor: BRAND.primary, width: 36, height: 36, fontSize: 13, fontWeight: 700 }}>
+                  {initials(g.manager.name)}
+                </Avatar>
+                <Box>
+                  <Typography fontWeight={800} fontSize={14} sx={{ color: BRAND.primary }}>{g.manager.name}</Typography>
+                  <Typography variant="caption" color="text.secondary">{g.manager.location || 'No location'}</Typography>
+                </Box>
+              </Box>
+
+              <ResponsiveContainer width="100%" height={140}>
+                <PieChart>
+                  <Pie data={data} cx="50%" cy="50%" innerRadius={38} outerRadius={58}
+                    dataKey="value" paddingAngle={4} startAngle={90} endAngle={-270}
+                    cursor="pointer" activeShape={null} activeIndex={null}
+                    onClick={(entry) => {
+                      if (entry?.tls) setDrillDown({ managerName: g.manager.name, type: entry.name, tls: entry.tls });
+                    }}>
+                    {data.map((entry, i) => <Cell key={i} fill={entry.color} stroke="none" strokeWidth={0} />)}
+                  </Pie>
+                  <RechartsTooltip
+                    formatter={(val, name) => [`${val} TLs — click to view`, name]}
+                    contentStyle={{ borderRadius: 8, fontSize: 12, background: '#1a4731', border: 'none', color: '#fff' }}
+                    itemStyle={{ color: '#fff' }} labelStyle={{ color: '#fff' }} />
+                </PieChart>
+              </ResponsiveContainer>
+
+              <Typography variant="h5" fontWeight={800} sx={{ textAlign: 'center', color: BRAND.primary, mt: -2, mb: 0.5 }}>
+                {pct}%
+              </Typography>
+              <Typography variant="caption" sx={{ display: 'block', textAlign: 'center', color: 'text.secondary', mb: 1.5 }}>
+                Performance Rate
+              </Typography>
+
+              <Box sx={{ display: 'flex', justifyContent: 'space-around', pt: 1.5, borderTop: '1px solid #f0f0f0' }}>
+                <Box sx={{ textAlign: 'center', cursor: 'pointer', '&:hover': { opacity: 0.7 } }}
+                  onClick={() => setDrillDown({ managerName: g.manager.name, type: 'With Onboarding', tls: performingTLs })}>
+                  <Typography fontWeight={800} fontSize={16} sx={{ color: '#2e7d32' }}>{performingTLs.length}</Typography>
+                  <Typography variant="caption" color="text.secondary">TLs</Typography>
+                </Box>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography fontWeight={800} fontSize={16} sx={{ color: '#1565c0' }}>{totalFSEs}</Typography>
+                  <Typography variant="caption" color="text.secondary">FSEs</Typography>
+                </Box>
+                <Box sx={{ textAlign: 'center' }}>
+                  <Typography fontWeight={800} fontSize={16} sx={{ color: '#2e7d32' }}>{onboardingForms}</Typography>
+                  <Typography variant="caption" color="text.secondary">Onboarding</Typography>
+                </Box>
+              </Box>
+            </Card>
+          );
+        })}
+      </Box>
+
+      {/* Drill-down modal */}
+      {drillDown && (
+        <Dialog open onClose={() => setDrillDown(null)} maxWidth="sm" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}>
+          <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 1 }}>
+            <Box>
+              <Typography fontWeight={800} fontSize={16} sx={{ color: drillDown.type === 'With Onboarding' ? '#2e7d32' : '#9e9e9e' }}>
+                {drillDown.type === 'With Onboarding' ? '✅' : '⚪'} {drillDown.type} — {drillDown.managerName}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {drillDown.tls.length} TL{drillDown.tls.length !== 1 ? 's' : ''}
+              </Typography>
+            </Box>
+            <IconButton onClick={() => setDrillDown(null)} size="small"><CloseIcon /></IconButton>
+          </DialogTitle>
+          <DialogContent sx={{ pt: 0 }}>
+            {drillDown.tls.length === 0 ? (
+              <Typography color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>No TLs in this category.</Typography>
+            ) : (
+              drillDown.tls.map((d, i) => {
+                const tlName = d.tl.name || d.tl.email;
+                const onboardingCount = d.forms.filter(f => f.status === 'Ready for Onboarding').length;
+                const totalFSEs = d.fses.length;
+                return (
+                  <Box key={i} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 1.2, borderBottom: '1px solid #f0f0f0', '&:last-child': { borderBottom: 'none' } }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                      <Avatar sx={{ bgcolor: BRAND.primary, width: 32, height: 32, fontSize: 11, fontWeight: 700 }}>
+                        {initials(tlName)}
+                      </Avatar>
+                      <Box>
+                        <Typography fontWeight={700} fontSize={13}>{tlName}</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {[d.tl.location, d.tl.phone].filter(Boolean).join(' · ')}
+                        </Typography>
+                      </Box>
+                    </Box>
+                    <Box sx={{ display: 'flex', gap: 1 }}>
+                      <Chip label={`${totalFSEs} FSEs`} size="small" sx={{ bgcolor: '#e3f2fd', color: '#1565c0', fontWeight: 700, fontSize: 11 }} />
+                      <Chip label={`${onboardingCount} Onboarding`} size="small" sx={{ bgcolor: '#e6f4ea', color: '#2e7d32', fontWeight: 700, fontSize: 11 }} />
+                    </Box>
+                  </Box>
+                );
+              })
+            )}
+          </DialogContent>
+          <DialogActions sx={{ px: 3, pb: 2 }}>
+            <Button onClick={() => setDrillDown(null)} variant="contained" sx={{ bgcolor: BRAND.primary, fontWeight: 700, borderRadius: 2 }}>Close</Button>
+          </DialogActions>
+        </Dialog>
+      )}
+    </Box>
   );
 }
 
@@ -539,9 +759,11 @@ export default function ManagerOverview() {
               </Button>
             </Box>
           )}
+          {/* Pie charts — active vs inactive TLs per manager */}
+          <ManagerPieCharts managerGroups={managerGroups} />
+
           {/* Search bar */}
-          <TextField
-            fullWidth
+          <TextField            fullWidth
             size="small"
             placeholder="Search by manager, TL, or location…"
             value={search}

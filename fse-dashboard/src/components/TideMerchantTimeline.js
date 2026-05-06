@@ -84,49 +84,95 @@ function TideMerchantTimeline({ phone, customerName, inline = false }) {
   const selectedMonthData = timeline?.timeline?.find(m => m.month === selectedMonth);
 
   return (
-    <Box>
-      {/* Timeline Toggle Button */}
-      <Tooltip title={expanded ? 'Hide Timeline' : 'Show Month-by-Month Timeline'}>
-        <IconButton
-          size="small"
-          onClick={(e) => {
-            e.stopPropagation();
-            toggleTimeline();
-          }}
+    <>
+      {/* Timeline Toggle Button - Hide when any modal is expanded */}
+      {!expanded && (
+        <Tooltip title="Show Month-by-Month Timeline" placement="left">
+          <IconButton
+            size="small"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleTimeline();
+            }}
+            sx={{
+              color: '#1565c0',
+              bgcolor: '#e3f2fd',
+              border: `1.5px solid #1565c0`,
+              '&:hover': {
+                bgcolor: '#bbdefb',
+                transform: 'scale(1.05)'
+              },
+              transition: 'all 0.2s'
+            }}
+          >
+            <TimelineIcon fontSize="small" />
+          </IconButton>
+        </Tooltip>
+      )}
+
+      {/* Backdrop */}
+      {expanded && (
+        <Box
+          onClick={toggleTimeline}
           sx={{
-            color: expanded ? BRAND.primary : '#1565c0',
-            bgcolor: expanded ? '#e6f4ea' : '#e3f2fd',
-            border: `1.5px solid ${expanded ? BRAND.primary : '#1565c0'}`,
-            '&:hover': {
-              bgcolor: expanded ? '#c8e6c9' : '#bbdefb',
-              transform: 'scale(1.05)'
-            },
-            transition: 'all 0.2s'
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            bgcolor: 'rgba(0, 0, 0, 0.7)',
+            zIndex: 999998,
+            backdropFilter: 'blur(2px)',
+            pointerEvents: 'all'
           }}
-        >
-          {expanded ? <ExpandLessIcon fontSize="small" /> : <TimelineIcon fontSize="small" />}
-        </IconButton>
-      </Tooltip>
+        />
+      )}
 
       {/* Timeline Content */}
-      <Collapse in={expanded}>
-        <Card sx={{
-          mt: 1,
-          border: `2px solid ${BRAND.primary}`,
-          borderRadius: 3,
-          bgcolor: '#f9fffe',
-          boxShadow: '0 4px 20px rgba(26,71,49,0.12)'
-        }}>
+      {expanded && (
+        <Card 
+          onClick={(e) => e.stopPropagation()}
+          sx={{
+            position: 'fixed',
+            top: '50%',
+            left: '50%',
+            transform: 'translate(-50%, -50%)',
+            width: '90%',
+            maxWidth: 900,
+            maxHeight: '90vh',
+            overflow: 'auto',
+            border: `3px solid ${BRAND.primary}`,
+            borderRadius: 3,
+            bgcolor: '#ffffff',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+            zIndex: 999999
+          }}>
+          {/* Close Button */}
+          <IconButton
+            onClick={toggleTimeline}
+            sx={{
+              position: 'absolute',
+              top: 8,
+              right: 8,
+              color: '#fff',
+              bgcolor: 'rgba(0,0,0,0.2)',
+              zIndex: 10,
+              '&:hover': { bgcolor: 'rgba(0,0,0,0.3)' }
+            }}
+          >
+            ✕
+          </IconButton>
+          
           <Box sx={{
             background: `linear-gradient(135deg, ${BRAND.primary}dd, ${BRAND.primary}88)`,
             px: 2.5,
             py: 1.5,
             color: '#fff'
           }}>
-            <Typography variant="subtitle1" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1, color: '#fff' }}>
               📅 Merchant Timeline — {customerName}
             </Typography>
-            <Typography variant="caption" sx={{ opacity: 0.9 }}>
+            <Typography variant="caption" sx={{ opacity: 0.9, color: '#fff' }}>
               Phone: {phone} · Verification & Priority Pass Pro Status (2026)
             </Typography>
           </Box>
@@ -180,7 +226,10 @@ function TideMerchantTimeline({ phone, customerName, inline = false }) {
                       return (
                         <Button
                           key={month.monthKey}
-                          onClick={() => setSelectedMonth(month.month)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedMonth(month.month);
+                          }}
                           variant={isSelected ? 'contained' : 'outlined'}
                           sx={{
                             minWidth: 0,
@@ -395,8 +444,8 @@ function TideMerchantTimeline({ phone, customerName, inline = false }) {
             )}
           </CardContent>
         </Card>
-      </Collapse>
-    </Box>
+      )}
+    </>
   );
 }
 

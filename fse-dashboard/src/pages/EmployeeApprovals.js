@@ -16,6 +16,7 @@ import { BRAND }        from '../theme';
 
 const EMP_API = (process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api') + '/auth';
 const TL_API = (process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api') + '/tl';
+const MANAGER_API = (process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api') + '/manager';
 
 function initials(name) {
   return (name || '?').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -121,6 +122,10 @@ export default function EmployeeApprovals() {
   const [changeReqLoading,   setChangeReqLoading]   = useState(false);
   const [tlPending,    setTlPending]    = useState([]);
   const [tlReqLoading, setTlReqLoading] = useState(false);
+  const [tlChangeRequests, setTlChangeRequests] = useState([]);
+  const [tlChangeReqLoading, setTlChangeReqLoading] = useState(false);
+  const [managerChangeRequests, setManagerChangeRequests] = useState([]);
+  const [managerChangeReqLoading, setManagerChangeReqLoading] = useState(false);
 
 
   // Edit modal state
@@ -173,6 +178,8 @@ export default function EmployeeApprovals() {
     loadPosRequests();
     loadChangeRequests();
     loadTlPending();
+    loadTlChangeRequests();
+    loadManagerChangeRequests();
   }, [load]);
 
   const loadChangeRequests = async () => {
@@ -204,6 +211,48 @@ const approveTL = async (id) => {
 const rejectTL = async (id) => {
   const res = await fetch(`${TL_API}/reject/${id}`, { method: 'PUT' });
   if (res.ok) { setSnack({ open: true, msg: 'TL rejected', sev: 'warning' }); loadTlPending(); }
+  else setSnack({ open: true, msg: 'Failed', sev: 'error' });
+};
+
+const loadTlChangeRequests = async () => {
+  setTlChangeReqLoading(true);
+  try {
+    const res = await fetch(`${TL_API}/change-requests`);
+    const data = await res.json();
+    setTlChangeRequests(Array.isArray(data) ? data : []);
+  } catch { } finally { setTlChangeReqLoading(false); }
+};
+
+const approveTlChangeReq = async (id) => {
+  const res = await fetch(`${TL_API}/change-requests/${id}/approve`, { method: 'PUT' });
+  if (res.ok) { setSnack({ open: true, msg: 'TL profile updated!', sev: 'success' }); loadTlChangeRequests(); }
+  else setSnack({ open: true, msg: 'Failed', sev: 'error' });
+};
+
+const rejectTlChangeReq = async (id) => {
+  const res = await fetch(`${TL_API}/change-requests/${id}/reject`, { method: 'PUT' });
+  if (res.ok) { setSnack({ open: true, msg: 'Request rejected', sev: 'warning' }); loadTlChangeRequests(); }
+  else setSnack({ open: true, msg: 'Failed', sev: 'error' });
+};
+
+const loadManagerChangeRequests = async () => {
+  setManagerChangeReqLoading(true);
+  try {
+    const res = await fetch(`${MANAGER_API}/change-requests`);
+    const data = await res.json();
+    setManagerChangeRequests(Array.isArray(data) ? data : []);
+  } catch { } finally { setManagerChangeReqLoading(false); }
+};
+
+const approveManagerChangeReq = async (id) => {
+  const res = await fetch(`${MANAGER_API}/change-requests/${id}/approve`, { method: 'PUT' });
+  if (res.ok) { setSnack({ open: true, msg: 'Manager profile updated!', sev: 'success' }); loadManagerChangeRequests(); }
+  else setSnack({ open: true, msg: 'Failed', sev: 'error' });
+};
+
+const rejectManagerChangeReq = async (id) => {
+  const res = await fetch(`${MANAGER_API}/change-requests/${id}/reject`, { method: 'PUT' });
+  if (res.ok) { setSnack({ open: true, msg: 'Request rejected', sev: 'warning' }); loadManagerChangeRequests(); }
   else setSnack({ open: true, msg: 'Failed', sev: 'error' });
 };
 
@@ -375,7 +424,7 @@ const rejectTL = async (id) => {
         </Box>
         <Tooltip title="Refresh now">
           <Button startIcon={<RefreshIcon />} variant="outlined"
-            onClick={() => { load(); loadPosRequests(); loadChangeRequests(); loadTlPending(); }}
+            onClick={() => { load(); loadPosRequests(); loadChangeRequests(); loadTlPending(); loadTlChangeRequests(); loadManagerChangeRequests(); }}
             sx={{ borderColor: BRAND.primary, color: BRAND.primary, fontWeight: 700 }}>
             Refresh
           </Button>
@@ -429,6 +478,16 @@ const rejectTL = async (id) => {
             <Tab value="tlpending" label={
               <Badge badgeContent={tlPending.length} color="error" max={99} sx={{ '& .MuiBadge-badge': { right: -8, top: -2 } }}>
                 <Box sx={{ pr: 2 }}>TL Approvals</Box>
+              </Badge>
+            } />
+            <Tab value="tlchangereq" label={
+              <Badge badgeContent={tlChangeRequests.filter(r => r.status === 'pending').length} color="error" max={99} sx={{ '& .MuiBadge-badge': { right: -8, top: -2 } }}>
+                <Box sx={{ pr: 2 }}>TL Change Requests</Box>
+              </Badge>
+            } />
+            <Tab value="managerchangereq" label={
+              <Badge badgeContent={managerChangeRequests.filter(r => r.status === 'pending').length} color="error" max={99} sx={{ '& .MuiBadge-badge': { right: -8, top: -2 } }}>
+                <Box sx={{ pr: 2 }}>Manager Change Requests</Box>
               </Badge>
             } />
           </Tabs>
@@ -651,6 +710,143 @@ const rejectTL = async (id) => {
     )}
   </Box>
 )}
+              {tab === 'tlchangereq' && (
+                <Box>
+                  <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Typography variant="subtitle1" fontWeight={700} sx={{ color: BRAND.primary }}>🔔 Team Leader Profile Change Requests</Typography>
+                    <Typography variant="caption" color="text.secondary">{tlChangeRequests.length} total</Typography>
+                  </Box>
+                  {tlChangeReqLoading ? (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress size={28} sx={{ color: BRAND.primary }} /></Box>
+                  ) : tlChangeRequests.length === 0 ? (
+                    <Box sx={{ textAlign: 'center', py: 5, color: 'text.secondary' }}><Typography variant="body2">No TL change requests</Typography></Box>
+                  ) : (
+                    <TableContainer sx={{ overflowX: 'auto' }}>
+                      <Table size="small">
+                        <TableHead>
+                          <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider', py: 1.5, bgcolor: 'transparent' } }}>
+                            <TableCell>Team Leader</TableCell>
+                            <TableCell>Changes</TableCell>
+                            <TableCell>Reason</TableCell>
+                            <TableCell>Requested On</TableCell>
+                            <TableCell>Status</TableCell>
+                            <TableCell>Actions</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {tlChangeRequests.map(r => {
+                            const changes = Object.entries(r.changes || {})
+                              .map(([key, value]) => `${key}: ${value}`)
+                              .join(', ');
+                            return (
+                              <TableRow key={r._id} hover sx={{ '&:last-child td': { border: 0 } }}>
+                                <TableCell><Typography variant="body2" fontWeight={700} sx={{ color: 'text.primary' }}>{r.tlName}</Typography></TableCell>
+                                <TableCell>
+                                  <Typography variant="caption" sx={{ color: 'text.primary', maxWidth: 250, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {changes || '–'}
+                                  </Typography>
+                                </TableCell>
+                                <TableCell><Typography variant="caption" color="text.secondary">{r.reason || '–'}</Typography></TableCell>
+                                <TableCell>
+                                  <Typography variant="caption" color="text.secondary">
+                                    {new Date(r.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                  </Typography>
+                                </TableCell>
+                                <TableCell><StatusChip status={r.status} /></TableCell>
+                                <TableCell>
+                                  {r.status === 'pending' ? (
+                                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                      <Button size="small" variant="contained" startIcon={<CheckCircleIcon />}
+                                        onClick={() => approveTlChangeReq(r._id)}
+                                        sx={{ bgcolor: BRAND.primary, fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: BRAND.primaryMid } }}>
+                                        Approve
+                                      </Button>
+                                      <Button size="small" variant="outlined" startIcon={<CancelIcon />}
+                                        onClick={() => rejectTlChangeReq(r._id)}
+                                        sx={{ color: '#c62828', borderColor: '#c62828', fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: '#fdecea' } }}>
+                                        Reject
+                                      </Button>
+                                    </Box>
+                                  ) : <Typography variant="caption" color="text.secondary">–</Typography>}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  )}
+                </Box>
+              )}
+              {tab === 'managerchangereq' && (
+                <Box>
+                  <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Typography variant="subtitle1" fontWeight={700} sx={{ color: BRAND.primary }}>🔔 Manager Profile Change Requests</Typography>
+                    <Typography variant="caption" color="text.secondary">{managerChangeRequests.length} total</Typography>
+                  </Box>
+                  {managerChangeReqLoading ? (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress size={28} sx={{ color: BRAND.primary }} /></Box>
+                  ) : managerChangeRequests.length === 0 ? (
+                    <Box sx={{ textAlign: 'center', py: 5, color: 'text.secondary' }}><Typography variant="body2">No manager change requests</Typography></Box>
+                  ) : (
+                    <TableContainer sx={{ overflowX: 'auto' }}>
+                      <Table size="small">
+                        <TableHead>
+                          <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider', py: 1.5, bgcolor: 'transparent' } }}>
+                            <TableCell>Manager</TableCell>
+                            <TableCell>Changes</TableCell>
+                            <TableCell>Reason</TableCell>
+                            <TableCell>Requested On</TableCell>
+                            <TableCell>Status</TableCell>
+                            <TableCell>Actions</TableCell>
+                          </TableRow>
+                        </TableHead>
+                        <TableBody>
+                          {managerChangeRequests.map(r => {
+                            const changes = Object.entries(r.changes || {})
+                              .map(([key, value]) => `${key}: ${value}`)
+                              .join(', ');
+                            return (
+                              <TableRow key={r._id} hover sx={{ '&:last-child td': { border: 0 } }}>
+                                <TableCell><Typography variant="body2" fontWeight={700} sx={{ color: 'text.primary' }}>{r.managerName}</Typography></TableCell>
+                                <TableCell>
+                                  <Typography variant="caption" sx={{ color: 'text.primary', maxWidth: 250, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {changes || '–'}
+                                  </Typography>
+                                </TableCell>
+                                <TableCell><Typography variant="caption" color="text.secondary">{r.reason || '–'}</Typography></TableCell>
+                                <TableCell>
+                                  <Typography variant="caption" color="text.secondary">
+                                    {new Date(r.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                  </Typography>
+                                </TableCell>
+                                <TableCell><StatusChip status={r.status} /></TableCell>
+                                <TableCell>
+                                  {r.status === 'pending' ? (
+                                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                      <Button size="small" variant="contained" startIcon={<CheckCircleIcon />}
+                                        onClick={() => approveManagerChangeReq(r._id)}
+                                        sx={{ bgcolor: BRAND.primary, fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: BRAND.primaryMid } }}>
+                                        Approve
+                                      </Button>
+                                      <Button size="small" variant="outlined" startIcon={<CancelIcon />}
+                                        onClick={() => rejectManagerChangeReq(r._id)}
+                                        sx={{ color: '#c62828', borderColor: '#c62828', fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: '#fdecea' } }}>
+                                        Reject
+                                      </Button>
+                                    </Box>
+                                  ) : <Typography variant="caption" color="text.secondary">–</Typography>}
+                                </TableCell>
+                              </TableRow>
+                            );
+                          })}
+                        </TableBody>
+                      </Table>
+                    </TableContainer>
+                  )}
+                </Box>
+              )}
+
 
             </>
           )}

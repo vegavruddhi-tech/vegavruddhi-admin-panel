@@ -1,3 +1,14 @@
+/* Remove focus outline globally */
+*:focus {
+  outline: none !important;
+}
+
+/* Remove focus outline from SVG elements (charts) */
+svg:focus,
+svg *:focus {
+  outline: none !important;
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
