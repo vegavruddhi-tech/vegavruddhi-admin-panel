@@ -187,12 +187,15 @@ def process_sheet(sheet_id, label):
         logging.info(f"  {tab} → phone_col: {phone_col}, date_col: {date_col}")
         logging.info(f"  {tab} → categorical fields (new-record triggers): {cat_fields}")
 
-        # ── Group by phone + fingerprint ──────────────────────────────
-        # Key: (phone, fingerprint) → keep latest record for that combination
-        latest_records = {}
+        # ── Process ALL rows (no filtering) ──────────────────────────────
+        # This ensures new columns are added to ALL existing documents
+        ops = []
+        processed_count = 0
+        skipped_count = 0
 
         for row in rows:
             try:
+                # Clean and normalize row data
                 cleaned = {
                     clean_key(k): (v.strip() if isinstance(v, str) else v)
                     for k, v in row.items()
@@ -200,40 +203,23 @@ def process_sheet(sheet_id, label):
                 }
                 cleaned = {k: v for k, v in cleaned.items() if k and k.strip('_')}
 
+                # Extract phone number
                 phone = normalize_phone(cleaned.get(phone_col)) if phone_col else None
                 if not phone:
+                    skipped_count += 1
                     continue
 
-                dt = parse_date(cleaned.get(date_col)) if date_col else None
-
-                # Fingerprint based on categorical fields
+                # Generate fingerprint for duplicate detection
                 fp = row_fingerprint(cleaned, cat_fields)
-                key = (phone, fp)
 
-                if key not in latest_records:
-                    latest_records[key] = (dt, cleaned)
-                else:
-                    existing_dt = latest_records[key][0]
-                    if dt and (not existing_dt or dt > existing_dt):
-                        latest_records[key] = (dt, cleaned)
-
-            except Exception as e:
-                logging.error(f"  Row processing error: {e}")
-
-        logging.info(f"  {tab} → {len(latest_records)} unique records to sync "
-                     f"(from {len(rows)} sheet rows)")
-
-        # ── Upsert ───────────────────────────────────────────────────
-        ops = []
-
-        for (phone, fp), (dt, cleaned) in latest_records.items():
-            try:
+                # Add metadata fields
                 cleaned['phone']      = phone
-                cleaned['_row_fp']    = fp          # fingerprint stored for reference
+                cleaned['_row_fp']    = fp
                 cleaned['_sheet']     = label
                 cleaned['_tab']       = tab
                 cleaned['_synced_at'] = datetime.now(timezone.utc)
 
+                # Upsert filter (same as before - maintains duplicate detection)
                 filt = {
                     "phone":    phone,
                     "_row_fp":  fp,
@@ -241,11 +227,17 @@ def process_sheet(sheet_id, label):
                     "_tab":     tab
                 }
 
+                # Upsert operation - updates ALL fields including new columns
                 ops.append(UpdateOne(filt, {"$set": cleaned}, upsert=True))
+                processed_count += 1
 
             except Exception as e:
-                logging.error(f"  Upsert prep error: {e}")
+                logging.error(f"  Row processing error: {e}")
+                skipped_count += 1
 
+        logging.info(f"  {tab} → Processed: {processed_count}, Skipped: {skipped_count} (from {len(rows)} sheet rows)")
+
+        # ── Bulk write to MongoDB ───────────────────────────────────────
         if ops:
             try:
                 result = collection.bulk_write(ops)

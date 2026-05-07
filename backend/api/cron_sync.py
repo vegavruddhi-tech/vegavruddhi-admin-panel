@@ -24,6 +24,28 @@ def handler(request):
         process_sheet(sheet_id, "Tide Onboarding")
         print("✅ SYNC SUCCESS")
         
+        # Step 1.5: Clear Redis verification cache (so pre-compute uses fresh data)
+        print(f"\nStep 1.5: Clearing Redis verification cache")
+        try:
+            import redis
+            r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+            
+            # Clear all verification caches
+            keys = r.keys('verification:*')
+            if keys:
+                r.delete(*keys)
+                print(f"✅ Cleared {len(keys)} verification caches")
+            else:
+                print("ℹ️ No verification caches to clear")
+            
+            # Update timestamp to invalidate frontend cache
+            r.set('verification_rules_updated_at', str(int(time.time() * 1000)))
+            print("✅ Updated verification timestamp")
+            
+        except Exception as redis_error:
+            print(f"⚠️ Redis cache clear failed: {redis_error}")
+            print("   Continuing with pre-compute anyway...")
+        
         # Step 2: Pre-compute verification cache
         api_url = os.environ.get('API_URL', 'https://vegavruddhi-employee-panel.vercel.app')
         precompute_url = f'{api_url}/api/verify/precompute-all?force=true'
