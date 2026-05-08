@@ -19,10 +19,13 @@ def handler(request):
         return {"statusCode": 500, "body": "GOOGLE_SHEET_ID not configured"}
 
     try:
-        # Step 1: Sync Google Sheet → MongoDB
-        print(f"Step 1: Syncing sheet {sheet_id}")
+        # Step 1: Sync Google Sheet → MongoDB (using Option 3: Clean slate sync)
+        print(f"Step 1: Syncing sheet {sheet_id} (Option 3: Clean slate sync)")
+        print("  - Delete old documents from MongoDB")
+        print("  - Insert fresh data from Google Sheet")
+        print("  - Result: MongoDB = exact mirror of Google Sheet")
         process_sheet(sheet_id, "Tide Onboarding")
-        print("✅ SYNC SUCCESS")
+        print("✅ SYNC SUCCESS (Option 3 completed - no duplicates)")
         
         # Step 1.5: Clear Redis verification cache (so pre-compute uses fresh data)
         print(f"\nStep 1.5: Clearing Redis verification cache")

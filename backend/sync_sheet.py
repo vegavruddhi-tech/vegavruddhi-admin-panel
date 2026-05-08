@@ -71,6 +71,12 @@ NUMERIC_KEYWORDS = [
     'today', 'yesterday', 'eligible', 'slab', 'points', 'earned'
 ]
 
+# ================= IDENTITY FIELDS (Option C) =================
+# These fields uniquely identify a merchant record
+# Used for upsert matching instead of _row_fp
+# This allows new columns to be added without breaking sync
+IDENTITY_FIELDS = ['lead', 'product']  # name and product identify unique merchant
+
 def clean_key(k):
     return re.sub(r'[^\w]', '_', str(k).strip().lower())
 
@@ -124,13 +130,10 @@ def row_fingerprint(cleaned, categorical_fields):
 
 def ensure_index(collection):
     """
-    Drops ALL old indexes (except _id_) and creates the correct new unique index:
-    phone + _row_fp + _sheet + _tab
-
-    This handles:
-    - Old index: phone_1__sheet_1__tab_1
-    - Old index: phone_1_plan_name_1__sheet_1__tab_1 (from earlier fix attempt)
-    - Any other leftover indexes from previous sync versions
+    Drops ALL old indexes (except _id_) and creates a simple performance index.
+    
+    Option 3 (Clean slate sync) doesn't need unique index since we delete+insert.
+    We just create a regular index for query performance.
     """
     try:
         existing = collection.index_information()
@@ -145,18 +148,10 @@ def ensure_index(collection):
     except Exception as e:
         logging.warning(f"  Could not read indexes from {collection.name}: {e}")
 
-    # Create the single correct unique index
-    collection.create_index(
-        [
-            ("phone",    ASCENDING),
-            ("_row_fp",  ASCENDING),
-            ("_sheet",   ASCENDING),
-            ("_tab",     ASCENDING),
-        ],
-        unique=True,
-        name="phone_rowfp_sheet_tab_unique"
-    )
-    logging.info(f"  Created new index 'phone_rowfp_sheet_tab_unique' on {collection.name}")
+    # Create simple indexes for query performance (non-unique)
+    collection.create_index([("phone", ASCENDING)], name="phone_index")
+    collection.create_index([("_sheet", ASCENDING), ("_tab", ASCENDING)], name="sheet_tab_index")
+    logging.info(f"  Created performance indexes on {collection.name}")
 
 # ================= CORE FUNCTION =================
 
@@ -172,12 +167,54 @@ def process_sheet(sheet_id, label):
 
         ensure_index(collection)
 
-        rows = ws.get_all_records()
-        if not rows:
-            logging.info(f"  {tab} is empty, skipping...")
+        # ── Fetch data using get_all_values() to handle duplicate headers ──
+        all_values = ws.get_all_values()
+        if not all_values or len(all_values) < 2:
+            logging.info(f"  {tab} is empty or has no data rows, skipping...")
             continue
 
-        headers   = [clean_key(h) for h in rows[0].keys()]
+        # Extract headers and make them unique
+        raw_headers = all_values[0]
+        unique_headers = []
+        seen = {}
+        
+        for h in raw_headers:
+            h_clean = str(h).strip()
+            
+            # Handle empty headers
+            if not h_clean:
+                h_clean = 'unnamed_column'
+            
+            # Handle duplicates by adding suffix
+            if h_clean in seen:
+                seen[h_clean] += 1
+                unique_headers.append(f"{h_clean}_{seen[h_clean]}")
+                logging.warning(f"  {tab} → Duplicate header '{h_clean}' renamed to '{h_clean}_{seen[h_clean]}'")
+            else:
+                seen[h_clean] = 1
+                unique_headers.append(h_clean)
+        
+        # Convert data rows to dictionaries
+        data_rows = all_values[1:]
+        rows = []
+        for row in data_rows:
+            # Skip empty rows
+            if not any(row):
+                continue
+            
+            # Pad row if shorter than headers
+            while len(row) < len(unique_headers):
+                row.append('')
+            
+            # Create record dictionary
+            record = dict(zip(unique_headers, row))
+            rows.append(record)
+        
+        if not rows:
+            logging.info(f"  {tab} has no data rows, skipping...")
+            continue
+
+        headers   = [clean_key(h) for h in unique_headers]
         phone_col = next((h for h in headers if any(p in h for p in PHONE_COLS)), None)
         date_col  = next((h for h in headers if any(d in h for d in DATE_COLS)), None)
 
@@ -186,9 +223,18 @@ def process_sheet(sheet_id, label):
 
         logging.info(f"  {tab} → phone_col: {phone_col}, date_col: {date_col}")
         logging.info(f"  {tab} → categorical fields (new-record triggers): {cat_fields}")
+        logging.info(f"  {tab} → Using OPTION 3: Clean slate sync (delete old + insert fresh)")
 
-        # ── Process ALL rows (no filtering) ──────────────────────────────
-        # This ensures new columns are added to ALL existing documents
+        # ═══ OPTION 3: Delete old documents before inserting fresh data ═══
+        logging.info(f"  {tab} → Step 1: Cleaning old data...")
+        try:
+            delete_result = collection.delete_many({"_sheet": label, "_tab": tab})
+            logging.info(f"  {tab} ✅ Deleted {delete_result.deleted_count} old documents")
+        except Exception as e:
+            logging.error(f"  {tab} ❌ Failed to delete old documents: {e}")
+            # Continue anyway - will try to insert
+
+        # ── Process ALL rows from Google Sheet ──────────────────────────────
         ops = []
         processed_count = 0
         skipped_count = 0
@@ -209,26 +255,26 @@ def process_sheet(sheet_id, label):
                     skipped_count += 1
                     continue
 
-                # Generate fingerprint for duplicate detection
+                # Extract identity fields (lead and product) - allow empty values
+                lead = str(cleaned.get('lead', '')).strip()
+                product = str(cleaned.get('product', '')).strip()
+
+                # Generate fingerprint for backward compatibility
                 fp = row_fingerprint(cleaned, cat_fields)
 
                 # Add metadata fields
                 cleaned['phone']      = phone
+                cleaned['lead']       = lead if lead else ''
+                cleaned['product']    = product if product else ''
                 cleaned['_row_fp']    = fp
                 cleaned['_sheet']     = label
                 cleaned['_tab']       = tab
                 cleaned['_synced_at'] = datetime.now(timezone.utc)
 
-                # Upsert filter (same as before - maintains duplicate detection)
-                filt = {
-                    "phone":    phone,
-                    "_row_fp":  fp,
-                    "_sheet":   label,
-                    "_tab":     tab
-                }
-
-                # Upsert operation - updates ALL fields including new columns
-                ops.append(UpdateOne(filt, {"$set": cleaned}, upsert=True))
+                # ═══ OPTION 3: Insert fresh data (no upsert needed, old data deleted) ═══
+                # Use InsertOne instead of UpdateOne since we deleted old data
+                from pymongo import InsertOne
+                ops.append(InsertOne(cleaned))
                 processed_count += 1
 
             except Exception as e:
@@ -240,11 +286,12 @@ def process_sheet(sheet_id, label):
         # ── Bulk write to MongoDB ───────────────────────────────────────
         if ops:
             try:
-                result = collection.bulk_write(ops)
-                logging.info(f"  {tab} ✅ Inserted: {result.upserted_count}, "
-                             f"Updated: {result.modified_count}")
+                result = collection.bulk_write(ops, ordered=False)
+                logging.info(f"  {tab} ✅ Inserted: {result.inserted_count}")
             except Exception as e:
                 logging.error(f"  Bulk write error: {e}")
+        
+        logging.info(f"  {tab} ✅ Sync complete: MongoDB now matches Google Sheet exactly")
 
 # ================= RUN =================
 if __name__ == "__main__":

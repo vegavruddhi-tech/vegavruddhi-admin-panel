@@ -121,6 +121,27 @@ const allFieldOptions = cond.field && !fieldOptions.includes(cond.field) && cond
         onChange={e => onChange(index, "label", e.target.value)}
         sx={{ minWidth: 180 }} />
 
+      {/* Critical Condition Checkbox */}
+      <FormControlLabel
+        control={
+          <Switch
+            checked={cond.isCritical || false}
+            onChange={e => onChange(index, "isCritical", e.target.checked)}
+            disabled={disabled}
+            size="small"
+            color="error"
+          />
+        }
+        label={
+          <Tooltip title="If checked, failure of this condition will show as 'Critical Failure' status">
+            <Typography variant="caption" sx={{ color: cond.isCritical ? 'error.main' : 'text.secondary', fontWeight: cond.isCritical ? 600 : 400 }}>
+              Critical
+            </Typography>
+          </Tooltip>
+        }
+        sx={{ ml: 1 }}
+      />
+
       <Tooltip title="Remove condition">
         <span>
           <IconButton size="small" color="error" disabled={disabled} onClick={() => onDelete(index)}>
@@ -180,7 +201,13 @@ function RuleCard({ rule, token, onSaved }) {
         const values = (c.values && c.values.filter(v => v && v.trim()).length > 0)
           ? c.values.filter(v => v && v.trim())
           : [];
-        return { ...c, field, values, value: values.length > 0 ? values[0] : c.value };
+        return { 
+          ...c, 
+          field, 
+          values, 
+          value: values.length > 0 ? values[0] : c.value,
+          isCritical: c.isCritical || false  // ← Explicitly include isCritical
+        };
       });
 
       const res = await fetch(`${EMPLOYEE_API}/verify/rules/${rule._id}`, {
@@ -195,7 +222,7 @@ function RuleCard({ rule, token, onSaved }) {
       if (!res.ok) throw new Error(await res.text());
       setSnack({ open: true, msg: "Rules saved successfully!", sev: "success" });
       setEditing(false);
-      onSaved();
+      onSaved(); // This will reload the rules from backend
     } catch (err) {
       setSnack({ open: true, msg: "Save failed: " + err.message, sev: "error" });
     } finally {

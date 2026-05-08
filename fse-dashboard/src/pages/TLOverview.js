@@ -174,7 +174,7 @@ function FSEGroup({ fse, forms, verifyMap }) {
   );
 }
 
-function TLCard({ tlData, search, verifyMap, onAssignTask }) {
+function TLCard({ tlData, search, verifyMap, onAssignTask, onTLClick }) {
   const [expanded, setExpanded] = useState(false);
   const [fseFilter, setFseFilter] = useState(null); // null | 'active' | 'inactive'
   const { tl, fses, forms } = tlData;
@@ -207,7 +207,7 @@ function TLCard({ tlData, search, verifyMap, onAssignTask }) {
       <Box onClick={() => setExpanded(p => !p)}
         sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           px: 2.5, py: 1.5, cursor: 'pointer', '&:hover': { bgcolor: 'action.hover' }, borderRadius: 2 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }} onClick={(e) => { e.stopPropagation(); if (onTLClick) onTLClick(tlName); }}>
           <Avatar sx={{ bgcolor: BRAND.primary, width: 36, height: 36, fontSize: 13, fontWeight: 700 }}>
             {initials(tlName)}
           </Avatar>
@@ -301,7 +301,8 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
   const [toDate,     setToDate]     = useState('');
   const [dateFilter, setDateFilter] = useState('all');
   const [selectedYear,  setSelectedYear]  = useState(new Date().getFullYear());
-  const [selectedMonth, setSelectedMonth] = useState('');
+  const [selectedMonth, setSelectedMonth] = useState(new Date().toLocaleString('en-US', { month: 'long' }));
+  const [selectedTLFilter, setSelectedTLFilter] = useState(null); // null or TL name string
   
   // Assign Task Modal
   const [assignTaskOpen, setAssignTaskOpen] = useState(false);
@@ -507,13 +508,50 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
   const tlOptions = useMemo(() => data.map(d => d.tl.name || d.tl.email || '').filter(Boolean).sort(), [data]);
 
   const filtered = useMemo(() => {
-    if (!search) return data;
-    const q = search.toLowerCase();
-    return data.filter(d =>
-      (d.tl.name || d.tl.email || '').toLowerCase().includes(q) ||
-      (d.tl.location || '').toLowerCase().includes(q)
-    );
-  }, [data, search]);
+    let result = data.map(d => {
+      // Filter forms by date/month for each TL
+      const filteredForms = d.forms.filter(f => {
+        const formDate = new Date(f.createdAt);
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const weekStart = new Date(today); weekStart.setDate(today.getDate() - today.getDay());
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        
+        // Apply date filter
+        if (dateFilter === 'today' && formDate < today) return false;
+        if (dateFilter === 'week' && formDate < weekStart) return false;
+        if (dateFilter === 'month' && formDate < monthStart) return false;
+        if (dateFilter === 'custom') {
+          if (fromDate && formDate < new Date(fromDate)) return false;
+          if (toDate && formDate > new Date(toDate + 'T23:59:59')) return false;
+        }
+        
+        // Apply year/month filter
+        if (selectedYear && formDate.getFullYear() !== parseInt(selectedYear)) return false;
+        if (selectedMonth && formDate.toLocaleString('en-US', { month: 'long' }) !== selectedMonth) return false;
+        
+        return true;
+      });
+      
+      return { ...d, forms: filteredForms };
+    });
+    
+    // Apply TL filter
+    if (selectedTLFilter) {
+      result = result.filter(d => (d.tl.name || d.tl.email) === selectedTLFilter);
+    }
+    
+    // Apply search filter
+    if (search) {
+      const q = search.toLowerCase();
+      result = result.filter(d =>
+        (d.tl.name || d.tl.email || '').toLowerCase().includes(q) ||
+        (d.tl.location || '').toLowerCase().includes(q)
+      );
+    }
+    
+    return result;
+  }, [data, search, selectedTLFilter, dateFilter, fromDate, toDate, selectedYear, selectedMonth]);
 
   const totalFSEs  = data.reduce((s, d) => s + d.fses.length, 0);
   const totalForms = filteredAllForms.length;
@@ -1382,6 +1420,30 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
         );
       })()}
 
+      {/* Active TL Filter Indicator */}
+      {selectedTLFilter && (
+        <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1, p: 2, bgcolor: '#e6f4ea', borderRadius: 2, border: '1px solid #2e7d32' }}>
+          <Typography variant="body2" fontWeight={600} sx={{ color: '#2e7d32' }}>
+            📌 Filtered by TL: {selectedTLFilter}
+          </Typography>
+          <Button
+            size="small"
+            variant="outlined"
+            onClick={() => setSelectedTLFilter(null)}
+            sx={{
+              ml: 'auto',
+              fontSize: 11,
+              fontWeight: 700,
+              borderColor: '#2e7d32',
+              color: '#2e7d32',
+              textTransform: 'none',
+              '&:hover': { bgcolor: '#c8e6c9', borderColor: '#1b5e20' }
+            }}>
+            ✕ Clear Filter
+          </Button>
+        </Box>
+      )}
+
       {/* Search */}
       <Autocomplete
         size="small" options={tlOptions} value={search || null} freeSolo
@@ -1589,7 +1651,7 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
         </Card>
       ) : (
         filtered.map((tlData, i) => (
-          <TLCard key={tlData.tl._id || i} tlData={tlData} search={search} verifyMap={globalVerifyMap} onAssignTask={handleAssignTask} />
+          <TLCard key={tlData.tl._id || i} tlData={tlData} search={search} verifyMap={globalVerifyMap} onAssignTask={handleAssignTask} onTLClick={setSelectedTLFilter} />
         ))
       )}
 

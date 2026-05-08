@@ -584,8 +584,11 @@ export default function ManagerOverview() {
   const [search,      setSearch]      = useState('');
   const [activeKPI,   setActiveKPI]   = useState(null);
   const [kpiModal,    setKpiModal]    = useState(null);
-  const [selYear,     setSelYear]     = useState('');
-  const [selMonth,    setSelMonth]    = useState('');
+  const [selYear,     setSelYear]     = useState(new Date().getFullYear().toString());
+  const [selMonth,    setSelMonth]    = useState(new Date().getMonth().toString());
+  const [dateFilter,  setDateFilter]  = useState('all');
+  const [fromDate,    setFromDate]    = useState('');
+  const [toDate,      setToDate]      = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -609,7 +612,7 @@ export default function ManagerOverview() {
 
   useEffect(() => { load(); }, [load]);
 
-  // Group tl-overview entries by manager name — apply year/month filter to forms
+  // Group tl-overview entries by manager name — apply date/year/month filter to forms
   const { managerGroups, unassigned } = useMemo(() => {
     const groups = {};
     const unassignedTLs = [];
@@ -617,10 +620,30 @@ export default function ManagerOverview() {
     managers.forEach(m => { groups[m._id] = { manager: m, tls: [] }; });
 
     tlData.forEach(entry => {
-      // Filter forms by year/month if selected
-      let filteredForms = entry.forms;
-      if (selYear)  filteredForms = filteredForms.filter(f => new Date(f.createdAt).getFullYear() === parseInt(selYear));
-      if (selMonth) filteredForms = filteredForms.filter(f => new Date(f.createdAt).getMonth()    === parseInt(selMonth));
+      // Filter forms by date/year/month if selected
+      let filteredForms = entry.forms.filter(f => {
+        const formDate = new Date(f.createdAt);
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const weekStart = new Date(today); weekStart.setDate(today.getDate() - today.getDay());
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        
+        // Apply date filter
+        if (dateFilter === 'today' && formDate < today) return false;
+        if (dateFilter === 'week' && formDate < weekStart) return false;
+        if (dateFilter === 'month' && formDate < monthStart) return false;
+        if (dateFilter === 'custom') {
+          if (fromDate && formDate < new Date(fromDate)) return false;
+          if (toDate && formDate > new Date(toDate + 'T23:59:59')) return false;
+        }
+        
+        // Apply year/month filter
+        if (selYear && formDate.getFullYear() !== parseInt(selYear)) return false;
+        if (selMonth && formDate.getMonth() !== parseInt(selMonth)) return false;
+        
+        return true;
+      });
+      
       const filteredEntry = { ...entry, forms: filteredForms };
       const rm = (entry.tl.reportingManager || '').trim().toLowerCase();
       const matched = managers.find(m => m.name.trim().toLowerCase() === rm);
@@ -632,7 +655,7 @@ export default function ManagerOverview() {
     });
 
     return { managerGroups: Object.values(groups), unassigned: unassignedTLs };
-  }, [managers, tlData, selYear, selMonth]);
+  }, [managers, tlData, selYear, selMonth, dateFilter, fromDate, toDate]);
 
   // Filter managers by search (name / location)
   const filteredGroups = useMemo(() => {
@@ -649,19 +672,30 @@ export default function ManagerOverview() {
     );
   }, [managerGroups, search]);
 
-  // KPI totals
+  // KPI totals - calculated from filtered data
   const totalManagers = managers.length;
-  const totalTLs      = tlData.length;
-  const totalFSEs     = useMemo(() => tlData.reduce((s, d) => s + d.fses.length, 0), [tlData]);
+  const totalTLs      = useMemo(() => {
+    // Count TLs from filtered managerGroups + unassigned
+    return managerGroups.reduce((s, g) => s + g.tls.length, 0) + unassigned.length;
+  }, [managerGroups, unassigned]);
+  
+  const totalFSEs     = useMemo(() => {
+    // Count FSEs from filtered managerGroups + unassigned
+    const allTLs = [...managerGroups.flatMap(g => g.tls), ...unassigned];
+    return allTLs.reduce((s, d) => s + d.fses.length, 0);
+  }, [managerGroups, unassigned]);
+  
   const totalForms    = useMemo(() => {
+    // Count forms from filtered managerGroups + unassigned (deduplicated)
+    const allTLs = [...managerGroups.flatMap(g => g.tls), ...unassigned];
     const seen = new Set();
-    return tlData.flatMap(d => d.forms).filter(f => {
+    return allTLs.flatMap(d => d.forms).filter(f => {
       const id = String(f._id);
       if (seen.has(id)) return false;
       seen.add(id);
       return true;
     }).length;
-  }, [tlData]);
+  }, [managerGroups, unassigned]);
 
   return (
     <Box sx={{ maxWidth: 1100, mx: 'auto', px: { xs: 2, md: 4 }, py: 4 }}>
@@ -717,9 +751,10 @@ export default function ManagerOverview() {
               active={activeKPI === 'tls'}
               onClick={() => {
                 setActiveKPI(p => p === 'tls' ? null : 'tls');
+                const allTLs = [...managerGroups.flatMap(g => g.tls), ...unassigned];
                 setKpiModal({
                   type: 'tls', title: 'Total TLs',
-                  rows: tlData.map(d => ({ name: d.tl.name || d.tl.email, phone: d.tl.phone, email: d.tl.email, location: d.tl.location, manager: d.tl.reportingManager, fses: d.fses.length, forms: d.forms.length }))
+                  rows: allTLs.map(d => ({ name: d.tl.name || d.tl.email, phone: d.tl.phone, email: d.tl.email, location: d.tl.location, manager: d.tl.reportingManager, fses: d.fses.length, forms: d.forms.length }))
                 });
               }} />
             <KPICard label="Total FSEs" value={totalFSEs} color="#1565c0"
@@ -727,7 +762,8 @@ export default function ManagerOverview() {
               onClick={() => {
                 setActiveKPI(p => p === 'fses' ? null : 'fses');
                 const fseRows = [];
-                tlData.forEach(d => d.fses.forEach(fse => {
+                const allTLs = [...managerGroups.flatMap(g => g.tls), ...unassigned];
+                allTLs.forEach(d => d.fses.forEach(fse => {
                   fseRows.push({ name: fse.newJoinerName, phone: fse.newJoinerPhone, email: fse.email || fse.newJoinerEmailId, location: fse.location, tl: d.tl.name || d.tl.email, forms: d.forms.filter(f => f.employeeName === fse.newJoinerName).length });
                 }));
                 setKpiModal({ type: 'fses', title: 'Total FSEs', rows: fseRows });
@@ -737,7 +773,8 @@ export default function ManagerOverview() {
               onClick={() => {
                 setActiveKPI(p => p === 'forms' ? null : 'forms');
                 const seen = new Set();
-                const formRows = tlData.flatMap(d => d.forms).filter(f => {
+                const allTLs = [...managerGroups.flatMap(g => g.tls), ...unassigned];
+                const formRows = allTLs.flatMap(d => d.forms).filter(f => {
                   if (seen.has(String(f._id))) return false;
                   seen.add(String(f._id)); return true;
                 }).map(f => ({ customer: f.customerName, phone: f.customerNumber, fse: f.employeeName, product: f.formFillingFor || f.tideProduct || f.brand || '–', status: f.status, date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) }));
@@ -777,6 +814,32 @@ export default function ManagerOverview() {
             }}
             sx={{ mb: 2 }}
           />
+
+          {/* Date Filter Bar */}
+          <Box sx={{ display: 'flex', gap: 1, mb: 2, flexWrap: 'wrap', alignItems: 'center' }}>
+            {['all', 'today', 'month'].map(f => (
+              <Button key={f} size="small"
+                variant={dateFilter === f ? 'contained' : 'outlined'}
+                onClick={() => { setDateFilter(f); setFromDate(''); setToDate(''); }}
+                sx={{ fontWeight: 700, textTransform: 'capitalize',
+                  bgcolor: dateFilter === f ? BRAND.primary : 'transparent',
+                  borderColor: BRAND.primary, color: dateFilter === f ? '#fff' : BRAND.primary,
+                  '&:hover': { bgcolor: dateFilter === f ? '#0f3320' : '#e6f4ea' } }}>
+                {f === 'all' ? 'All' : f === 'today' ? 'Today' : 'This Month'}
+              </Button>
+            ))}
+            <TextField size="small" type="date" label="From" value={fromDate}
+              onChange={e => { setFromDate(e.target.value); setDateFilter('custom'); }}
+              InputLabelProps={{ shrink: true }} sx={{ minWidth: 150 }} />
+            <TextField size="small" type="date" label="To" value={toDate}
+              onChange={e => { setToDate(e.target.value); setDateFilter('custom'); }}
+              InputLabelProps={{ shrink: true }} sx={{ minWidth: 150 }} />
+            {(dateFilter !== 'all' || fromDate || toDate) && (
+              <Button size="small" variant="outlined" color="error"
+                onClick={() => { setDateFilter('all'); setFromDate(''); setToDate(''); }}
+                sx={{ fontWeight: 700 }}>Reset</Button>
+            )}
+          </Box>
 
           {/* Year / Month dropdowns */}
           <Box sx={{ display: 'flex', gap: 2, mb: 3, flexWrap: 'wrap' }}>

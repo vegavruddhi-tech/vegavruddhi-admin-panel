@@ -640,10 +640,11 @@ function DuplicatePanel({ duplicates, open, onClose, onNotify, notifying, onSett
 // ── Verification status chip ──────────────────────────────────
 function VerifyChip({ status, onClick }) {
   const map = {
-    'Fully Verified': { bg: '#e6f4ea', color: '#2e7d32', icon: '✓' },
-    'Partially Done': { bg: '#fff8e1', color: '#f57f17', icon: '◑' },
-    'Not Verified':   { bg: '#fdecea', color: '#c62828', icon: '✗' },
-    'Not Found':      { bg: '#f5f5f5', color: '#888',    icon: '–' },
+    'Fully Verified':   { bg: '#e6f4ea', color: '#2e7d32', icon: '✓' },
+    'Critical Failure': { bg: '#ffebee', color: '#c62828', icon: '⚠' },
+    'Partially Done':   { bg: '#fff8e1', color: '#f57f17', icon: '◑' },
+    'Not Verified':     { bg: '#fdecea', color: '#c62828', icon: '✗' },
+    'Not Found':        { bg: '#f5f5f5', color: '#888',    icon: '–' },
   };
   const s = map[status] || map['Not Found'];
   return (
@@ -755,9 +756,11 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading, onD
             {/* Verification Status */}
             <Card sx={{ 
               bgcolor: verification.status === 'Fully Verified' ? '#e6f4ea' : 
+                       verification.status === 'Critical Failure' ? '#ffebee' :
                        verification.status === 'Partially Done' ? '#fff8e1' : '#fdecea',
               border: `2px solid ${
                 verification.status === 'Fully Verified' ? '#2e7d32' : 
+                verification.status === 'Critical Failure' ? '#c62828' :
                 verification.status === 'Partially Done' ? '#f57f17' : '#c62828'
               }`
             }}>
@@ -768,6 +771,20 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading, onD
                   </Typography>
                   <VerifyChip status={verification.status} />
                 </Box>
+                
+                {/* Critical Failure Alert */}
+                {verification.hasCriticalFailure && verification.criticalFailed && verification.criticalFailed.length > 0 && (
+                  <Alert severity="error" sx={{ mb: 2 }}>
+                    <Typography variant="body2" fontWeight={600} sx={{ mb: 1 }}>
+                      ⚠️ Critical Condition Failed
+                    </Typography>
+                    {verification.criticalFailed.map((cf, idx) => (
+                      <Typography key={idx} variant="caption" display="block">
+                        • {cf.label}: Expected value not met (Found: {cf.actual})
+                      </Typography>
+                    ))}
+                  </Alert>
+                )}
                 
                 {verification.passed !== undefined && verification.total !== undefined && (
                   <Typography variant="body2" sx={{ mb: 2, fontWeight: 600 }}>
@@ -1063,23 +1080,17 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
   };
 
   const openVerifyDetail = async (f) => {
-    setVerifyDetail({ form: f, loading: true, data: null });
-    setVerifyDetailLoading(true);
-    try {
-      const product = getProduct(f);
-      const month   = f.createdAt
-        ? new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' })
-        : '';
-      const res = await fetch(
-        `${EMP_API}/verify/check-admin?phone=${encodeURIComponent(f.customerNumber)}&name=${encodeURIComponent(f.customerName || '')}&product=${encodeURIComponent(product)}&month=${encodeURIComponent(month)}`
-      );
-      const data = res.ok ? await res.json() : null;
-      setVerifyDetail({ form: f, loading: false, data });
-    } catch {
-      setVerifyDetail({ form: f, loading: false, data: null });
-    } finally {
-      setVerifyDetailLoading(false);
-    }
+    // Use cached verification data instead of fetching fresh
+    const product = getProduct(f);
+    const vKey = product ? `${f.customerNumber}__${product}` : f.customerNumber;
+    const cachedData = verifyMap[vKey];
+    
+    // Set modal with cached data immediately (no API call)
+    setVerifyDetail({ 
+      form: f, 
+      loading: false, 
+      data: cachedData ? { verification: cachedData } : null 
+    });
   };
 
   return (
@@ -1584,7 +1595,7 @@ export default function MerchantForms() {
   const [toDate, setToDate]         = useState('');
   const [fromDate, setFromDate]     = useState('');
   const [globalVerifyMap,  setGlobalVerifyMap]  = useState({});
-  const [verifyKpiOpen,    setVerifyKpiOpen]    = useState(null); // 'Fully Verified' | 'Partially Done' | 'Not Found'
+  const [verifyKpiOpen,    setVerifyKpiOpen]    = useState(null); // 'Fully Verified' | 'Critical Failure' | 'Partially Done' | 'Not Found'
   const [drillProduct,     setDrillProduct]     = useState(null); // { product, status }
   const [filterProduct,    setFilterProduct]    = useState(''); // For product chip filtering
   const [selectedMonth,    setSelectedMonth]    = useState(new Date().toLocaleString('en-US', { month: 'long' })); // Default current month
@@ -2242,10 +2253,11 @@ export default function MerchantForms() {
 
   // Compute verification KPI counts from global map
   const verifyKpiCounts = useMemo(() => {
-    const counts = { 'Fully Verified': 0, 'Partially Done': 0, 'Not Found': 0 };
+    const counts = { 'Fully Verified': 0, 'Critical Failure': 0, 'Partially Done': 0, 'Not Found': 0 };
     filteredForms.forEach(f => {
       const status = globalVerifyMap[getFormKey(f)]?.status || 'Not Found';
       if (status === 'Fully Verified') counts['Fully Verified']++;
+      else if (status === 'Critical Failure') counts['Critical Failure']++;
       else if (status === 'Partially Done') counts['Partially Done']++;
       else counts['Not Found']++;
     });
@@ -2475,11 +2487,12 @@ export default function MerchantForms() {
       )}
 
       {/* Verification KPI cards */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 2, mb: 3 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 2, mb: 3 }}>
         {[
-          { label: 'Fully Verified',  key: 'Fully Verified',  color: '#2e7d32', bg: '#e6f4ea', icon: '✓' },
-          { label: 'Partially Done',  key: 'Partially Done',  color: '#f57f17', bg: '#fff8e1', icon: '◑' },
-          { label: 'Not Found',       key: 'Not Found',       color: '#888',    bg: '#f5f5f5', icon: '–' },
+          { label: 'Fully Verified',   key: 'Fully Verified',   color: '#2e7d32', bg: '#e6f4ea', icon: '✓' },
+          { label: 'Critical Failure',  key: 'Critical Failure',  color: '#c62828', bg: '#ffebee', icon: '⚠' },
+          { label: 'Partially Done',   key: 'Partially Done',   color: '#f57f17', bg: '#fff8e1', icon: '◑' },
+          { label: 'Not Found',        key: 'Not Found',        color: '#888',    bg: '#f5f5f5', icon: '–' },
         ].map(k => (
           <Card key={k.key} onClick={() => setVerifyKpiOpen(k.key)}
             sx={{ borderRadius: 3, border: `1.5px solid ${k.color}30`, cursor: 'pointer',
