@@ -8,6 +8,8 @@ import MerchantForms from "./pages/MerchantForms";
 import TLOverview from './pages/TLOverview';
 import ManagerOverview from './pages/ManagerOverview';
 
+import AttendanceManagement from './pages/AttendanceManagement';
+
 import { ThemeProvider, createTheme, useTheme } from "@mui/material/styles";
 import useMediaQuery from "@mui/material/useMediaQuery";
 import CssBaseline from "@mui/material/CssBaseline";
@@ -40,6 +42,7 @@ const NAV_ITEMS = [
   { value: "merchants",     label: "Merchant Forms" },
   { value: "tl",            label: "TL Overview" },
   { value: "manager",       label: "Manager View" },
+  { value: "attendance",    label: "Attendance" },
   { value: "verification",  label: "Verification Rules" },
   { value: "approvals",     label: "Approvals" },
 ];
@@ -528,7 +531,8 @@ function App() {
              page === "verification" ? <VerificationRules token={user?.token} /> :
              page === "approvals"    ? <EmployeeApprovals /> :
              page === "tl"           ? <TLOverview /> :
-             page === "manager"      ? <ManagerOverview /> : null}
+             page === "manager"      ? <ManagerOverview /> :
+             page === "attendance"   ? <AttendanceManagement /> : null}
           </Box>
         </>
       )}

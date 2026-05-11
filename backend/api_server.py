@@ -33,6 +33,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.on_event("startup")
+async def startup_event():
+    """Pre-warm the cache on startup so the first request is instant."""
+    import asyncio
+    loop = asyncio.get_event_loop()
+    # _refresh_cache is defined later in this file but available at runtime
+    await loop.run_in_executor(None, lambda: get_cached_data())
+
 # -----------------------------
 # DATA SOURCE TOGGLE
 # "google_sheet" — fetch from Google Sheets (current default)
@@ -400,8 +408,10 @@ def get_cached_data():
 # DASHBOARD DATA API
 # -----------------------------
 @app.get("/data")
-def get_dashboard_data():
-    return get_cached_data()
+async def get_dashboard_data():
+    import asyncio
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, get_cached_data)
 
 
 # -----------------------------
