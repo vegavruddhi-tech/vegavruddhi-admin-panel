@@ -3,12 +3,14 @@ import {
   Box, Typography, Table, TableBody, TableCell, TableContainer,
   TableHead, TableRow, Paper, Chip, TextField, Card, CardContent,
   Grid, CircularProgress, Alert, InputAdornment, TableSortLabel,
-  Tooltip, MenuItem, Select, FormControl, InputLabel
+  Tooltip, MenuItem, Select, FormControl, InputLabel,
+  Dialog, DialogTitle, DialogContent, IconButton
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import PeopleIcon from '@mui/icons-material/People';
 import PersonOffIcon from '@mui/icons-material/PersonOff';
 import RepeatIcon from '@mui/icons-material/Repeat';
+import CloseIcon from '@mui/icons-material/Close';
 
 const EMP_BASE = process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api';
 
@@ -24,6 +26,8 @@ function AttendanceManagement() {
   const [sortField, setSortField]       = useState('status');
   const [sortDir, setSortDir]           = useState('asc');
   const [now, setNow]                   = useState(new Date());
+  const [teamModal, setTeamModal]       = useState(null); // { tl: record }
+  const [teamFilter, setTeamFilter]     = useState('all'); // 'all' | 'present' | 'absent'
 
   // Tick every minute to update live durations
   useEffect(() => {
@@ -291,18 +295,29 @@ function AttendanceManagement() {
                     <TableRow
                       key={record._id || `absent-${record.userId}`}
                       hover
+                      onClick={record.userType === 'teamlead' ? () => { setTeamModal({ tl: record }); setTeamFilter('all'); } : undefined}
                       sx={{
                         bgcolor: isAbsent ? 'rgba(198,40,40,0.04)' : 'inherit',
                         opacity: isAbsent ? 0.85 : 1,
+                        cursor: record.userType === 'teamlead' ? 'pointer' : 'default',
                       }}
                     >
                       <TableCell sx={{ color: 'text.secondary', fontSize: '0.75rem' }}>
                         {idx + 1}
                       </TableCell>
                       <TableCell>
-                        <Typography variant="body2" fontWeight={600}>
-                          {record.userName || '—'}
-                        </Typography>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          <Typography variant="body2" fontWeight={600}>
+                            {record.userName || '—'}
+                          </Typography>
+                          {record.userType === 'teamlead' && (
+                            <Tooltip title="Click to view team attendance">
+                              <Typography variant="caption" sx={{ color: 'primary.main', fontSize: '0.7rem' }}>
+                                👥
+                              </Typography>
+                            </Tooltip>
+                          )}
+                        </Box>
                       </TableCell>
                       <TableCell>
                         <Typography variant="body2" color="text.secondary" sx={{ fontSize: '0.78rem' }}>
@@ -422,6 +437,175 @@ function AttendanceManagement() {
           Showing {sorted.length} of {allRecords.length} employees
         </Typography>
       )}
+
+      {/* ── Team Modal ─────────────────────────────────────── */}
+      {teamModal && (() => {
+        const tl = teamModal.tl;
+        const tlName = tl.userName || '';
+
+        // Find all FSEs whose reportingManager matches this TL's name
+        const teamMembers = allRecords.filter(r =>
+          r.userType === 'employee' &&
+          (r.reportingManager || '').toLowerCase().trim() === tlName.toLowerCase().trim()
+        );
+
+        const presentTeam = teamMembers.filter(r => r.status === 'present');
+        const absentTeam  = teamMembers.filter(r => r.status === 'absent');
+
+        return (          <Dialog
+            open
+            onClose={() => setTeamModal(null)}
+            maxWidth="md"
+            fullWidth
+            PaperProps={{ sx: { borderRadius: 3 } }}
+          >
+            <DialogTitle sx={{
+              background: 'linear-gradient(90deg, #071a0f 0%, #1a5c38 100%)',
+              color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+            }}>
+              <Box>
+                <Typography fontWeight={800} fontSize={16}>
+                  👥 {tlName} — Team Attendance
+                </Typography>
+                <Typography variant="caption" sx={{ opacity: 0.8 }}>
+                  {tl.location || ''} · {selectedDate}
+                </Typography>
+              </Box>
+              <IconButton onClick={() => setTeamModal(null)} sx={{ color: '#fff' }} size="small">
+                <CloseIcon />
+              </IconButton>
+            </DialogTitle>
+
+            <DialogContent sx={{ pt: 2 }}>
+              {/* TL own status */}
+              <Box sx={{
+                p: 2, mb: 2, borderRadius: 2,
+                bgcolor: tl.status === 'present' ? '#e8f5e9' : '#ffebee',
+                border: `1.5px solid ${tl.status === 'present' ? '#2e7d32' : '#c62828'}`,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 1
+              }}>
+                <Box>
+                  <Typography fontWeight={700} fontSize={14}>TL Status: {tlName}</Typography>
+                  <Typography variant="caption" color="text.secondary">
+                    {tl.userEmail} · {tl.phone || '—'}
+                  </Typography>
+                </Box>
+                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                  {tl.status === 'present' && (
+                    <>
+                      <Typography variant="body2" color="text.secondary">Login: {formatTime(tl.firstLoginTime)}</Typography>
+                      {tl.duration ? (
+                        <Chip label={`${tl.duration.toFixed(1)}h`} size="small" color="success" />
+                      ) : tl.firstLoginTime ? (
+                        <Chip label={(() => {
+                          const ms = now - new Date(tl.firstLoginTime);
+                          const hrs = Math.floor(ms / 3600000);
+                          const mins = Math.floor((ms % 3600000) / 60000);
+                          return hrs > 0 ? `${hrs}h ${mins}m 🟢` : `${mins}m 🟢`;
+                        })()} size="small" color="success" />
+                      ) : null}
+                    </>
+                  )}
+                  <Chip
+                    label={tl.status}
+                    size="small"
+                    color={tl.status === 'present' ? 'success' : 'error'}
+                  />
+                </Box>
+              </Box>
+
+              {/* Team summary */}
+              <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
+                <Chip
+                  label={`✅ ${presentTeam.length} Present`}
+                  color="success"
+                  variant={teamFilter === 'present' ? 'filled' : 'outlined'}
+                  clickable
+                  onClick={() => setTeamFilter(f => f === 'present' ? 'all' : 'present')}
+                />
+                <Chip
+                  label={`❌ ${absentTeam.length} Absent`}
+                  color="error"
+                  variant={teamFilter === 'absent' ? 'filled' : 'outlined'}
+                  clickable
+                  onClick={() => setTeamFilter(f => f === 'absent' ? 'all' : 'absent')}
+                />
+                <Chip
+                  label={`Total: ${teamMembers.length}`}
+                  variant={teamFilter === 'all' ? 'filled' : 'outlined'}
+                  clickable
+                  onClick={() => setTeamFilter('all')}
+                />
+              </Box>
+
+              {teamMembers.length === 0 ? (
+                <Alert severity="info">No FSEs found under {tlName} for this date.</Alert>
+              ) : (
+                <TableContainer component={Paper} sx={{ boxShadow: 1, borderRadius: 2 }}>
+                  <Table size="small">
+                    <TableHead sx={{ bgcolor: '#f5f5f5' }}>
+                      <TableRow>
+                        {['#', 'Name', 'Location', 'Phone', 'Login Time', 'Duration', 'Status'].map(h => (
+                          <TableCell key={h} sx={{ fontWeight: 700, fontSize: 12 }}>{h}</TableCell>
+                        ))}
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {/* Present first, then absent — filtered by teamFilter */}
+                      {[...presentTeam, ...absentTeam]
+                        .filter(m => teamFilter === 'all' || m.status === teamFilter)
+                        .map((member, i) => {
+                        const isAbs = member.status === 'absent';
+                        return (
+                          <TableRow key={member._id || `t-${i}`} hover
+                            sx={{ bgcolor: isAbs ? 'rgba(198,40,40,0.04)' : 'inherit' }}>
+                            <TableCell sx={{ color: '#888', fontSize: 11 }}>{i + 1}</TableCell>
+                            <TableCell>
+                              <Typography variant="body2" fontWeight={600} fontSize={12}>
+                                {member.userName || '—'}
+                              </Typography>
+                            </TableCell>
+                            <TableCell sx={{ fontSize: 11 }}>{member.location || '—'}</TableCell>
+                            <TableCell sx={{ fontSize: 11 }}>{member.phone || '—'}</TableCell>
+                            <TableCell sx={{ fontSize: 11 }}>
+                              {isAbs ? '—' : formatTime(member.firstLoginTime)}
+                            </TableCell>
+                            <TableCell>
+                              {member.duration ? (
+                                <Typography variant="body2" fontWeight="bold" fontSize={11}>
+                                  {member.duration.toFixed(1)}h
+                                </Typography>
+                              ) : member.firstLoginTime ? (
+                                <Typography variant="body2" color="success.main" fontWeight="bold" fontSize={11}>
+                                  {(() => {
+                                    const ms = now - new Date(member.firstLoginTime);
+                                    const hrs = Math.floor(ms / 3600000);
+                                    const mins = Math.floor((ms % 3600000) / 60000);
+                                    return hrs > 0 ? `${hrs}h ${mins}m 🟢` : `${mins}m 🟢`;
+                                  })()}
+                                </Typography>
+                              ) : (
+                                <Typography variant="body2" color="text.disabled" fontSize={11}>—</Typography>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <Chip
+                                label={member.status}
+                                size="small"
+                                color={member.status === 'present' ? 'success' : 'error'}
+                              />
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              )}
+            </DialogContent>
+          </Dialog>
+        );
+      })()}
     </Box>
   );
 }

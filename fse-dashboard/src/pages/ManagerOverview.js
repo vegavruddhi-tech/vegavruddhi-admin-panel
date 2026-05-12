@@ -23,33 +23,140 @@ function initials(name) {
 
 // ── FSE row inside a TL card ──────────────────────────────────────────────────
 
-function FSERow({ fse, formCount }) {
+function FSERow({ fse, formCount, forms }) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+
+  const filtered = search
+    ? forms.filter(f => Object.values(f).some(v => String(v || '').toLowerCase().includes(search.toLowerCase())))
+    : forms;
+
   return (
-    <Box
-      sx={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        px: 2, py: 1, borderBottom: '1px solid #f0f0f0',
-        '&:last-child': { borderBottom: 'none' },
-        '&:hover': { bgcolor: '#f9fafb' },
-      }}
-    >
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-        <Avatar sx={{ bgcolor: '#e3f2fd', color: '#1565c0', width: 26, height: 26, fontSize: 10, fontWeight: 700 }}>
-          {initials(fse.newJoinerName)}
-        </Avatar>
-        <Box>
-          <Typography fontSize={13} fontWeight={600}>{fse.newJoinerName || '–'}</Typography>
-          <Typography variant="caption" color="text.secondary">
-            {[fse.location, fse.newJoinerPhone, fse.email || fse.newJoinerEmailId].filter(Boolean).join(' · ')}
-          </Typography>
+    <>
+      <Box
+        sx={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          px: 2, py: 1, borderBottom: '1px solid #f0f0f0',
+          '&:last-child': { borderBottom: 'none' },
+          '&:hover': { bgcolor: '#f9fafb' },
+        }}
+      >
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <Avatar sx={{ bgcolor: '#e3f2fd', color: '#1565c0', width: 26, height: 26, fontSize: 10, fontWeight: 700 }}>
+            {initials(fse.newJoinerName)}
+          </Avatar>
+          <Box>
+            <Typography fontSize={13} fontWeight={600}>{fse.newJoinerName || '–'}</Typography>
+            <Typography variant="caption" color="text.secondary">
+              {[fse.location, fse.newJoinerPhone, fse.email || fse.newJoinerEmailId].filter(Boolean).join(' · ')}
+            </Typography>
+          </Box>
         </Box>
+        <Chip
+          label={`${formCount} form${formCount !== 1 ? 's' : ''}`}
+          size="small"
+          clickable
+          onClick={() => setOpen(true)}
+          sx={{
+            bgcolor: '#e6f4ea', color: '#2e7d32', fontWeight: 700, fontSize: 11,
+            cursor: 'pointer',
+            '&:hover': { bgcolor: '#c8e6c9' },
+          }}
+        />
       </Box>
-      <Chip
-        label={`${formCount} form${formCount !== 1 ? 's' : ''}`}
-        size="small"
-        sx={{ bgcolor: '#e6f4ea', color: '#2e7d32', fontWeight: 700, fontSize: 11 }}
-      />
-    </Box>
+
+      {/* FSE Forms Detail Modal */}
+      <Dialog open={open} onClose={() => { setOpen(false); setSearch(''); }}
+        maxWidth="md" fullWidth PaperProps={{ sx: { borderRadius: 3 } }}
+        onClick={e => e.stopPropagation()}>
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', pb: 1 }}>
+          <Box>
+            <Typography fontWeight={800} fontSize={16} sx={{ color: BRAND.primary }}>
+              {fse.newJoinerName} — Forms
+            </Typography>
+            <Typography variant="caption" color="text.secondary">
+              {[fse.location, fse.newJoinerPhone].filter(Boolean).join(' · ')} · {forms.length} form{forms.length !== 1 ? 's' : ''}
+            </Typography>
+          </Box>
+          <IconButton onClick={() => { setOpen(false); setSearch(''); }} size="small"><CloseIcon /></IconButton>
+        </DialogTitle>
+
+        <DialogContent sx={{ pt: 1 }}>
+          <TextField fullWidth size="small" placeholder="Search customer, product, status…"
+            value={search} onChange={e => setSearch(e.target.value)}
+            InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> }}
+            sx={{ mb: 2 }} />
+
+          {filtered.length === 0 ? (
+            <Typography color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>No forms found.</Typography>
+          ) : (
+            <TableContainer sx={{ maxHeight: 420 }}>
+              <Table size="small" stickyHeader>
+                <TableHead>
+                  <TableRow>
+                    {['#', 'Customer', 'Phone', 'Product', 'Form Status', 'Verification', 'Date'].map(h => (
+                      <TableCell key={h} sx={{ fontWeight: 700, bgcolor: BRAND.primary, color: '#fff', fontSize: 12 }}>{h}</TableCell>
+                    ))}
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {filtered.map((f, i) => (
+                    <TableRow key={i} hover sx={{ '&:nth-of-type(odd)': { bgcolor: '#fafafa' } }}>
+                      <TableCell sx={{ fontSize: 12, color: '#888' }}>{i + 1}</TableCell>
+                      <TableCell sx={{ fontSize: 12, fontWeight: 600 }}>{f.customerName || '–'}</TableCell>
+                      <TableCell sx={{ fontSize: 12 }}>{f.customerNumber || '–'}</TableCell>
+                      <TableCell sx={{ fontSize: 12 }}>{f.formFillingFor || f.tideProduct || f.brand || '–'}</TableCell>
+                      {/* Form Status */}
+                      <TableCell>
+                        <Chip label={f.status || '–'} size="small" sx={{
+                          bgcolor:
+                            f.status === 'Ready for Onboarding' ? '#e6f4ea' :
+                            f.status === 'Not Interested'       ? '#fdecea' :
+                            f.status === 'Try but not done'     ? '#fff3e0' : '#f5f5f5',
+                          color:
+                            f.status === 'Ready for Onboarding' ? '#2e7d32' :
+                            f.status === 'Not Interested'       ? '#c62828' :
+                            f.status === 'Try but not done'     ? '#e65100' : '#757575',
+                          fontWeight: 700, fontSize: 10
+                        }} />
+                      </TableCell>
+                      {/* Verification Status */}
+                      <TableCell>
+                        <Chip
+                          label={f.verificationStatus || 'Not Found'}
+                          size="small"
+                          sx={{
+                            bgcolor:
+                              f.verificationStatus === 'Fully Verified'  ? '#e6f4ea' :
+                              f.verificationStatus === 'Partially Done'  ? '#fff3e0' :
+                              f.verificationStatus === 'Not Verified'    ? '#fdecea' : '#f5f5f5',
+                            color:
+                              f.verificationStatus === 'Fully Verified'  ? '#2e7d32' :
+                              f.verificationStatus === 'Partially Done'  ? '#e65100' :
+                              f.verificationStatus === 'Not Verified'    ? '#c62828' : '#757575',
+                            fontWeight: 700, fontSize: 10
+                          }}
+                        />
+                      </TableCell>
+                      <TableCell sx={{ fontSize: 12 }}>
+                        {f.createdAt ? new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '–'}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </DialogContent>
+
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => { setOpen(false); setSearch(''); }} variant="contained"
+            sx={{ bgcolor: BRAND.primary, fontWeight: 700, borderRadius: 2 }}>
+            Close
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </>
   );
 }
 
@@ -100,7 +207,8 @@ function TLCard({ tlData }) {
         ) : (
           fses.map(fse => {
             const fseFormCount = forms.filter(f => f.employeeName === fse.newJoinerName).length;
-            return <FSERow key={fse._id} fse={fse} formCount={fseFormCount} />;
+            const fseForms = forms.filter(f => f.employeeName === fse.newJoinerName);
+            return <FSERow key={fse._id} fse={fse} formCount={fseFormCount} forms={fseForms} />;
           })
         )}
       </Collapse>
@@ -110,7 +218,7 @@ function TLCard({ tlData }) {
 
 // ── Manager card ─────────────────────────────────────────────────────────────
 
-function ManagerCard({ manager, tlsData, search }) {
+function ManagerCard({ manager, tlsData, search, setKpiModal }) {
   const [expanded, setExpanded] = useState(false);
   const [tlDrill, setTlDrill]   = useState(null); // { type, tls }
   const isOpen = expanded;
@@ -225,7 +333,9 @@ function ManagerCard({ manager, tlsData, search }) {
                     </Box>
                     <Box sx={{ display: 'flex', gap: 1 }}>
                       <Chip label={`${d.fses.length} FSEs`} size="small" sx={{ bgcolor: '#e3f2fd', color: '#1565c0', fontWeight: 700, fontSize: 11 }} />
-                      <Chip label={`${d.forms.length} forms`} size="small" sx={{ bgcolor: '#e6f4ea', color: '#2e7d32', fontWeight: 700, fontSize: 11 }} />
+                      <Chip label={`${d.forms.length} forms`} size="small" clickable
+                        onClick={e => { e.stopPropagation(); setTlDrill(null); setTimeout(() => setKpiModal({ title: `${d.tl.name || d.tl.email} — Forms`, type: 'forms', rows: d.forms.map(f => ({ customer: f.customerName, phone: f.customerNumber, fse: f.employeeName, product: f.formFillingFor || f.tideProduct || f.brand || '–', status: f.status, date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) })) }), 100); }}
+                        sx={{ bgcolor: '#e6f4ea', color: '#2e7d32', fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: '#c8e6c9' } }} />
                     </Box>
                   </Box>
                 );
@@ -358,34 +468,34 @@ function ManagerPieCharts({ managerGroups }) {
   return (
     <Box sx={{ mb: 3 }}>
       <Typography variant="body1" fontWeight={700} sx={{ color: BRAND.primary, mb: 2 }}>
-        Working Team Performance (Ready for Onboarding)
+        Working Team Performance (Fully Verified)
       </Typography>
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(2, 1fr)', md: 'repeat(3, 1fr)' }, gap: 2 }}>
         {withTLs.map(g => {
           // Count all TLs (remove working status filter)
           const allTLs = g.tls;
           
-          // TLs with "Ready for Onboarding" forms
+          // TLs with "Fully Verified" forms
           const performingTLs = allTLs.filter(d => 
-            d.forms.some(f => f.status === 'Ready for Onboarding')
+            d.forms.some(f => f.verificationStatus === 'Fully Verified')
           );
           
-          // TLs without "Ready for Onboarding" forms
+          // TLs without "Fully Verified" forms
           const nonPerformingTLs = allTLs.filter(d => 
-            !d.forms.some(f => f.status === 'Ready for Onboarding')
+            !d.forms.some(f => f.verificationStatus === 'Fully Verified')
           );
           
           const totalFSEs = allTLs.reduce((s, d) => s + d.fses.length, 0);
           
           const onboardingForms = allTLs.reduce((s, d) => 
-            s + d.forms.filter(f => f.status === 'Ready for Onboarding').length, 0
+            s + d.forms.filter(f => f.verificationStatus === 'Fully Verified').length, 0
           );
           
           const pct = allTLs.length > 0 ? Math.round((performingTLs.length / allTLs.length) * 100) : 0;
           
           const data = [
-            { name: 'With Onboarding',   value: performingTLs.length,   color: '#2e7d32', tls: performingTLs },
-            { name: 'Without Onboarding', value: nonPerformingTLs.length, color: '#e0e0e0', tls: nonPerformingTLs },
+            { name: 'With Fully Verified',    value: performingTLs.length,    color: '#2e7d32', tls: performingTLs },
+            { name: 'Without Fully Verified', value: nonPerformingTLs.length, color: '#e0e0e0', tls: nonPerformingTLs },
           ].filter(d => d.value > 0);
 
           return (
@@ -430,7 +540,7 @@ function ManagerPieCharts({ managerGroups }) {
 
               <Box sx={{ display: 'flex', justifyContent: 'space-around', pt: 1.5, borderTop: '1px solid #f0f0f0' }}>
                 <Box sx={{ textAlign: 'center', cursor: 'pointer', '&:hover': { opacity: 0.7 } }}
-                  onClick={() => setDrillDown({ managerName: g.manager.name, type: 'With Onboarding', tls: performingTLs })}>
+                  onClick={() => setDrillDown({ managerName: g.manager.name, type: 'With Fully Verified', tls: performingTLs })}>
                   <Typography fontWeight={800} fontSize={16} sx={{ color: '#2e7d32' }}>{performingTLs.length}</Typography>
                   <Typography variant="caption" color="text.secondary">TLs</Typography>
                 </Box>
@@ -440,7 +550,7 @@ function ManagerPieCharts({ managerGroups }) {
                 </Box>
                 <Box sx={{ textAlign: 'center' }}>
                   <Typography fontWeight={800} fontSize={16} sx={{ color: '#2e7d32' }}>{onboardingForms}</Typography>
-                  <Typography variant="caption" color="text.secondary">Onboarding</Typography>
+                  <Typography variant="caption" color="text.secondary">Fully Verified</Typography>
                 </Box>
               </Box>
             </Card>
@@ -468,7 +578,7 @@ function ManagerPieCharts({ managerGroups }) {
             ) : (
               drillDown.tls.map((d, i) => {
                 const tlName = d.tl.name || d.tl.email;
-                const onboardingCount = d.forms.filter(f => f.status === 'Ready for Onboarding').length;
+                const onboardingCount = d.forms.filter(f => f.verificationStatus === 'Fully Verified').length;
                 const totalFSEs = d.fses.length;
                 return (
                   <Box key={i} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 1.2, borderBottom: '1px solid #f0f0f0', '&:last-child': { borderBottom: 'none' } }}>
@@ -485,7 +595,7 @@ function ManagerPieCharts({ managerGroups }) {
                     </Box>
                     <Box sx={{ display: 'flex', gap: 1 }}>
                       <Chip label={`${totalFSEs} FSEs`} size="small" sx={{ bgcolor: '#e3f2fd', color: '#1565c0', fontWeight: 700, fontSize: 11 }} />
-                      <Chip label={`${onboardingCount} Onboarding`} size="small" sx={{ bgcolor: '#e6f4ea', color: '#2e7d32', fontWeight: 700, fontSize: 11 }} />
+                      <Chip label={`${onboardingCount} Fully Verified`} size="small" sx={{ bgcolor: '#e6f4ea', color: '#2e7d32', fontWeight: 700, fontSize: 11 }} />
                     </Box>
                   </Box>
                 );
@@ -589,7 +699,7 @@ export default function ManagerOverview() {
   const [dateFilter,  setDateFilter]  = useState('all');
   const [fromDate,    setFromDate]    = useState('');
   const [toDate,      setToDate]      = useState('');
-
+  const [verifyFilter, setVerifyFilter] = useState('all');
   const load = useCallback(async () => {
     setLoading(true);
     setError('');
@@ -640,6 +750,9 @@ export default function ManagerOverview() {
         // Apply year/month filter
         if (selYear && formDate.getFullYear() !== parseInt(selYear)) return false;
         if (selMonth && formDate.getMonth() !== parseInt(selMonth)) return false;
+
+        // Apply verification filter
+        if (verifyFilter !== 'all' && f.verificationStatus !== verifyFilter) return false;
         
         return true;
       });
@@ -655,6 +768,40 @@ export default function ManagerOverview() {
     });
 
     return { managerGroups: Object.values(groups), unassigned: unassignedTLs };
+  }, [managers, tlData, selYear, selMonth, dateFilter, fromDate, toDate, verifyFilter]);
+
+  // Separate groups for pie chart — date/year/month filter only, NO verifyFilter, always Fully Verified base
+  const managerGroupsForPie = useMemo(() => {
+    const groups = {};
+    managers.forEach(m => { groups[m._id] = { manager: m, tls: [] }; });
+
+    tlData.forEach(entry => {
+      let filteredForms = entry.forms.filter(f => {
+        const formDate = new Date(f.createdAt);
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const weekStart = new Date(today); weekStart.setDate(today.getDate() - today.getDay());
+        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+        if (dateFilter === 'today' && formDate < today) return false;
+        if (dateFilter === 'week' && formDate < weekStart) return false;
+        if (dateFilter === 'month' && formDate < monthStart) return false;
+        if (dateFilter === 'custom') {
+          if (fromDate && formDate < new Date(fromDate)) return false;
+          if (toDate && formDate > new Date(toDate + 'T23:59:59')) return false;
+        }
+        if (selYear && formDate.getFullYear() !== parseInt(selYear)) return false;
+        if (selMonth && formDate.getMonth() !== parseInt(selMonth)) return false;
+        return true; // NO verifyFilter here
+      });
+
+      const filteredEntry = { ...entry, forms: filteredForms };
+      const rm = (entry.tl.reportingManager || '').trim().toLowerCase();
+      const matched = managers.find(m => m.name.trim().toLowerCase() === rm);
+      if (matched) groups[matched._id].tls.push(filteredEntry);
+    });
+
+    return Object.values(groups);
   }, [managers, tlData, selYear, selMonth, dateFilter, fromDate, toDate]);
 
   // Filter managers by search (name / location)
@@ -797,7 +944,7 @@ export default function ManagerOverview() {
             </Box>
           )}
           {/* Pie charts — active vs inactive TLs per manager */}
-          <ManagerPieCharts managerGroups={managerGroups} />
+          <ManagerPieCharts managerGroups={managerGroupsForPie} />
 
           {/* Search bar */}
           <TextField            fullWidth
@@ -855,6 +1002,14 @@ export default function ManagerOverview() {
                 <MenuItem key={i} value={String(i)}>{m}</MenuItem>
               ))}
             </TextField>
+            <TextField select size="small" label="Verification" value={verifyFilter}
+              onChange={e => setVerifyFilter(e.target.value)} sx={{ minWidth: 170 }}>
+              <MenuItem value="all">All Verifications</MenuItem>
+              <MenuItem value="Fully Verified">✅ Fully Verified</MenuItem>
+              <MenuItem value="Partially Done">🟠 Partially Done</MenuItem>
+              <MenuItem value="Not Verified">🔴 Not Verified</MenuItem>
+              <MenuItem value="Not Found">⚪ Not Found</MenuItem>
+            </TextField>
           </Box>
           />
 
@@ -870,6 +1025,7 @@ export default function ManagerOverview() {
                 manager={g.manager}
                 tlsData={g.tls}
                 search={search}
+                setKpiModal={setKpiModal}
               />
             ))
           )}
