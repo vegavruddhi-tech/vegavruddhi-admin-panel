@@ -4,13 +4,14 @@ import {
   TableHead, TableRow, Paper, Chip, TextField, Card, CardContent,
   Grid, CircularProgress, Alert, InputAdornment, TableSortLabel,
   Tooltip, MenuItem, Select, FormControl, InputLabel,
-  Dialog, DialogTitle, DialogContent, IconButton
+  Dialog, DialogTitle, DialogContent, IconButton, Button
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import PeopleIcon from '@mui/icons-material/People';
 import PersonOffIcon from '@mui/icons-material/PersonOff';
 import RepeatIcon from '@mui/icons-material/Repeat';
 import CloseIcon from '@mui/icons-material/Close';
+import RefreshIcon from '@mui/icons-material/Refresh';
 
 const EMP_BASE = process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api';
 
@@ -123,9 +124,20 @@ function AttendanceManagement() {
 
   return (
     <Box sx={{ p: { xs: 2, md: 3 } }}>
-      <Typography variant="h4" gutterBottom sx={{ fontWeight: 700, mb: 3 }}>
-        Attendance Management
-      </Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+        <Typography variant="h4" sx={{ fontWeight: 700 }}>
+          Attendance Management
+        </Typography>
+        <Button
+          variant="outlined"
+          startIcon={loading ? <CircularProgress size={16} /> : <RefreshIcon />}
+          onClick={() => { fetchFull(); fetchSummary(); }}
+          disabled={loading}
+          sx={{ borderColor: '#2e7d32', color: '#2e7d32', fontWeight: 700, '&:hover': { bgcolor: '#e8f5e9', borderColor: '#2e7d32' } }}
+        >
+          Refresh
+        </Button>
+      </Box>
 
       {/* ── Summary Cards ─────────────────────────────────── */}
       <Grid container spacing={2} sx={{ mb: 3 }}>
