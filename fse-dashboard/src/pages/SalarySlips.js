@@ -374,12 +374,17 @@ export default function SalarySlips() {
     );
   };
 
-  // Select all
+  // Select all (excluding employees with 0 points)
   const toggleSelectAll = () => {
-    if (selectedEmployees.length === filteredEmployees.length) {
+    if (selectedEmployees.length === filteredEmployees.filter(emp => emp.totalPoints > 0).length) {
       setSelectedEmployees([]);
     } else {
-      setSelectedEmployees(filteredEmployees.map(emp => emp.employeeEmail));
+      // Only select employees with points > 0
+      setSelectedEmployees(
+        filteredEmployees
+          .filter(emp => emp.totalPoints > 0)
+          .map(emp => emp.employeeEmail)
+      );
     }
   };
 
@@ -514,8 +519,14 @@ export default function SalarySlips() {
                 <TableRow sx={{ bgcolor: '#f5f5f5' }}>
                   <TableCell padding="checkbox">
                     <Checkbox
-                      checked={selectedEmployees.length === filteredEmployees.length && filteredEmployees.length > 0}
-                      indeterminate={selectedEmployees.length > 0 && selectedEmployees.length < filteredEmployees.length}
+                      checked={
+                        selectedEmployees.length === filteredEmployees.filter(emp => emp.totalPoints > 0).length && 
+                        filteredEmployees.filter(emp => emp.totalPoints > 0).length > 0
+                      }
+                      indeterminate={
+                        selectedEmployees.length > 0 && 
+                        selectedEmployees.length < filteredEmployees.filter(emp => emp.totalPoints > 0).length
+                      }
                       onChange={toggleSelectAll}
                     />
                   </TableCell>
