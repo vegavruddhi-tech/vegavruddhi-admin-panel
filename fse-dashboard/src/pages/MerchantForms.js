@@ -1120,6 +1120,11 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
           <Box>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Typography fontWeight={700}>{empName}</Typography>
+              {empData?.employeeId && (
+                <Typography variant="caption" sx={{ bgcolor: '#e6f4ea', color: '#1a5c38', fontWeight: 700, px: 1, py: 0.2, borderRadius: 1, fontSize: 10 }}>
+                  {empData.employeeId}
+                </Typography>
+              )}
               {empData?.newJoinerPhone && (
                 <Typography variant="caption" sx={{ color: 'text.secondary' }}>
                   · {empData.newJoinerPhone}
@@ -2219,13 +2224,89 @@ export default function MerchantForms() {
         console.log('✅ Verification data cached in localStorage');
       } catch (err) {
         console.warn('Failed to cache verification data:', err);
-        // Continue even if caching fails
       }
     });
   };
 
   checkAndFetchVerification();
 }, [forms]); // ✅ Changed from [grouped] to [forms] - only fetch once on page load
+
+// ✅ SYNC POINTS TO BACKEND: Runs when globalVerifyMap + grouped data are both ready
+// Uses the EXACT same points calculation as EmployeeGroup component
+useEffect(() => {
+  if (!globalVerifyMap || Object.keys(globalVerifyMap).length === 0) return;
+  if (!grouped || !grouped.grouped || grouped.grouped.length === 0) return;
+
+  const syncTimeout = setTimeout(async () => {
+    try {
+      const POINTS_MAP_SYNC = { 'Tide': 2, 'Tide MSME': 0.3, 'Tide Insurance': 1, 'Tide Credit Card': 1, 'Tide BT': 1 };
+
+      const employees = grouped.grouped.map(([empName, empForms]) => {
+        // EXACT same logic as EmployeeGroup autoPoints calculation
+        let autoPoints = 0;
+        empForms.forEach(form => {
+          const product = (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
+          const vKey = product ? `${form.customerNumber}__${product}` : form.customerNumber;
+          const status = globalVerifyMap[vKey]?.status;
+          if (status === 'Fully Verified') {
+            const pk = Object.keys(POINTS_MAP_SYNC).find(k => k.toLowerCase().trim() === product);
+            autoPoints += pk ? POINTS_MAP_SYNC[pk] : 0;
+          }
+        });
+        autoPoints = Math.round(autoPoints * 10) / 10;
+
+        // EXACT same slab points calculation as EmployeeGroup
+        const empPtsData = empPointsMap[empName.trim()];
+        let slabPoints = 0;
+        if (empPtsData?.productSlabs && Object.keys(empPtsData.productSlabs).length > 0) {
+          Object.values(empPtsData.productSlabs).forEach(ps => {
+            const tiers = ps?.slabTiers || (Array.isArray(ps) ? ps : []);
+            tiers.forEach(t => {
+              slabPoints += (parseFloat(t.forms) || 0) * (parseFloat(t.multiplier) || 0);
+            });
+          });
+          slabPoints = Math.round(slabPoints * 10) / 10;
+        }
+
+        const totalPoints = Math.round((autoPoints + slabPoints) * 10) / 10;
+
+        // Get employee email from empDataMap
+        const empInfo = empDataMap[empName];
+        const email = empInfo?.newJoinerEmailId || empInfo?.email || '';
+
+        return {
+          employeeName: empName,
+          employeeEmail: email,
+          basePoints: autoPoints,
+          slabPoints,
+          totalPoints
+        };
+      });
+
+      if (employees.length === 0) return;
+
+      // Send to backend
+      const res = await fetch(`${EMP_API}/salary/sync-points`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employees,
+          month: selectedMonth || new Date().toLocaleString('en-US', { month: 'long' }),
+          year: selectedYear || new Date().getFullYear()
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        console.log(`✅ Points synced: ${data.saved} employees saved for ${selectedMonth} ${selectedYear}`);
+      }
+    } catch (err) {
+      console.warn('Points sync error (non-critical):', err.message);
+    }
+  }, 3000); // 3 second delay to ensure all data is ready
+
+  return () => clearTimeout(syncTimeout);
+}, [globalVerifyMap, grouped, empPointsMap, empDataMap, selectedMonth, selectedYear]); // eslint-disable-line
 
   // ✅ CLEANUP: Remove old verification cache entries (runs once on mount)
   useEffect(() => {
