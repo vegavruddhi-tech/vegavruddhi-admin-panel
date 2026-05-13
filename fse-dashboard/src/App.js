@@ -7,8 +7,8 @@ import EmployeeApprovals from "./pages/EmployeeApprovals";
 import MerchantForms from "./pages/MerchantForms";
 import TLOverview from './pages/TLOverview';
 import ManagerOverview from './pages/ManagerOverview';
-
 import AttendanceManagement from './pages/AttendanceManagement';
+import SalarySlips from './pages/SalarySlips';
 
 import { ThemeProvider, createTheme, useTheme } from "@mui/material/styles";
 import useMediaQuery from "@mui/material/useMediaQuery";
@@ -45,6 +45,7 @@ const NAV_ITEMS = [
   { value: "attendance",    label: "Attendance" },
   { value: "verification",  label: "Verification Rules" },
   { value: "approvals",     label: "Approvals" },
+  { value: "salary",        label: "Salary Slips" },
 ];
 
 // ── Responsive Navbar inner component (needs theme/breakpoints) ──
@@ -532,7 +533,8 @@ function App() {
              page === "approvals"    ? <EmployeeApprovals /> :
              page === "tl"           ? <TLOverview /> :
              page === "manager"      ? <ManagerOverview /> :
-             page === "attendance"   ? <AttendanceManagement /> : null}
+             page === "attendance"   ? <AttendanceManagement /> :
+             page === "salary"       ? <SalarySlips /> : null}
           </Box>
         </>
       )}
