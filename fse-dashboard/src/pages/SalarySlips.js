@@ -65,6 +65,11 @@ export default function SalarySlips() {
   
   // Bulk selection
   const [selectedEmployees, setSelectedEmployees] = useState([]);
+  
+  // Bulk PDF generation
+  const [bulkPdfGenerating, setBulkPdfGenerating] = useState(false);
+  const [bulkPdfProgress, setBulkPdfProgress] = useState({ current: 0, total: 0 });
+  const [bulkPdfErrors, setBulkPdfErrors] = useState([]);
 
   // Load employees with points (WITHOUT pointValue - calculate on frontend)
   const loadEmployees = useCallback(async () => {
@@ -310,9 +315,11 @@ export default function SalarySlips() {
       
       setLoading(false);
       
-      // Auto-open the PDF using view-pdf endpoint
-      alert('✅ PDF generated successfully! Opening PDF...');
-      handleViewPDF(slip);
+      // Don't auto-open PDF - let admin click View PDF button when ready
+      alert('✅ PDF generated successfully! Click the PDF icon to view.');
+      
+      // Reload to update the icon color
+      loadSalarySlips();
       
     } catch (err) {
       setLoading(false);
@@ -398,6 +405,85 @@ export default function SalarySlips() {
       newData.totalSalary = newData.totalPoints * (parseFloat(newData.pointValue) || 250);
     }
     setFormData(newData);
+  };
+
+  // Handle bulk PDF generation for all slips without PDFs
+  const handleBulkGenerateAllPDFs = async () => {
+    // Find all slips that don't have PDFs yet
+    const slipsWithoutPdf = salarySlips.filter(slip => !slip.pdfUrl);
+    
+    if (slipsWithoutPdf.length === 0) {
+      alert('✅ All salary slips already have PDFs!');
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Generate PDFs for ${slipsWithoutPdf.length} salary slip(s)?\n\n` +
+      `This will generate PDFs for all slips that don't have one yet.`
+    );
+    
+    if (!confirmed) return;
+
+    setBulkPdfGenerating(true);
+    setBulkPdfProgress({ current: 0, total: slipsWithoutPdf.length });
+    setBulkPdfErrors([]);
+
+    const errors = [];
+    let successCount = 0;
+
+    for (let i = 0; i < slipsWithoutPdf.length; i++) {
+      const slip = slipsWithoutPdf[i];
+      
+      try {
+        // Update progress
+        setBulkPdfProgress({ current: i + 1, total: slipsWithoutPdf.length });
+
+        // Call the generate-pdf endpoint
+        const res = await fetch(`${EMP_API}/salary/${slip._id}/generate-pdf`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (!res.ok) {
+          const error = await res.json();
+          throw new Error(error.error || 'Failed to generate PDF');
+        }
+
+        const data = await res.json();
+        
+        // Update local state immediately
+        setSalarySlips(prev => prev.map(s => 
+          s._id === slip._id ? { ...s, pdfUrl: data.pdfUrl } : s
+        ));
+        
+        successCount++;
+        
+      } catch (err) {
+        console.error(`PDF generation failed for ${slip.employeeName}:`, err);
+        errors.push({
+          employeeName: slip.employeeName,
+          error: err.message
+        });
+      }
+    }
+
+    setBulkPdfGenerating(false);
+    setBulkPdfErrors(errors);
+
+    // Show summary
+    if (errors.length === 0) {
+      alert(`✅ Success! Generated ${successCount} PDF(s) successfully.`);
+    } else {
+      alert(
+        `⚠️ Completed with some errors:\n\n` +
+        `✅ Success: ${successCount} PDF(s)\n` +
+        `❌ Failed: ${errors.length} PDF(s)\n\n` +
+        `Failed slips:\n${errors.map(e => `• ${e.employeeName}: ${e.error}`).join('\n')}`
+      );
+    }
+
+    // Reload to refresh the UI
+    loadSalarySlips();
   };
 
   return (
@@ -506,6 +592,49 @@ export default function SalarySlips() {
         </Card>
       )}
 
+      {/* Bulk PDF Generation */}
+      {(() => {
+        const slipsWithoutPdf = salarySlips.filter(slip => !slip.pdfUrl);
+        const pendingCount = slipsWithoutPdf.length;
+        
+        if (pendingCount > 0 || bulkPdfGenerating) {
+          return (
+            <Card sx={{ mb: 2, p: 2, bgcolor: '#fff3e0', border: '1px solid #f57c00' }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2 }}>
+                <Box>
+                  <Typography variant="body2" fontWeight={600} sx={{ color: '#e65100' }}>
+                    {bulkPdfGenerating 
+                      ? `Generating PDFs... (${bulkPdfProgress.current}/${bulkPdfProgress.total} completed)`
+                      : `${pendingCount} salary slip(s) without PDF`
+                    }
+                  </Typography>
+                  {bulkPdfGenerating && (
+                    <Typography variant="caption" color="text.secondary">
+                      Please wait, this may take a few moments...
+                    </Typography>
+                  )}
+                </Box>
+                <Button
+                  variant="contained"
+                  onClick={handleBulkGenerateAllPDFs}
+                  disabled={bulkPdfGenerating || pendingCount === 0}
+                  startIcon={bulkPdfGenerating ? <CircularProgress size={16} sx={{ color: '#fff' }} /> : <PictureAsPdfIcon />}
+                  sx={{ 
+                    bgcolor: '#f57c00', 
+                    fontWeight: 700,
+                    '&:hover': { bgcolor: '#e65100' },
+                    '&:disabled': { bgcolor: '#ccc' }
+                  }}
+                >
+                  {bulkPdfGenerating ? 'Generating...' : `Generate All PDFs (${pendingCount})`}
+                </Button>
+              </Box>
+            </Card>
+          );
+        }
+        return null;
+      })()}
+
       {/* Employee List */}
       {loading ? (
         <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
@@ -608,21 +737,21 @@ export default function SalarySlips() {
                             return (
                               <>
                                 {slip?.pdfUrl ? (
-                                  // RED ICON - PDF exists, click to view directly
+                                  // GREEN ICON - PDF ready, click to view
                                   <IconButton 
                                     size="small" 
                                     onClick={() => handleViewPDF(slip)}
-                                    sx={{ color: '#d32f2f' }}
-                                    title="View PDF"
+                                    sx={{ color: '#2e7d32' }}
+                                    title="View PDF (Ready)"
                                   >
                                     <PictureAsPdfIcon fontSize="small" />
                                   </IconButton>
                                 ) : (
-                                  // ORANGE ICON - No PDF, click to generate
+                                  // GRAY ICON - No PDF, click to generate
                                   <IconButton 
                                     size="small" 
                                     onClick={() => handleGeneratePDF(slip)}
-                                    sx={{ color: '#ff9800' }}
+                                    sx={{ color: '#9e9e9e' }}
                                     title="Generate PDF"
                                   >
                                     <PictureAsPdfIcon fontSize="small" />
