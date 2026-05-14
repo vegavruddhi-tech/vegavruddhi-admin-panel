@@ -25,6 +25,8 @@ export default function SalarySlips() {
   const [selectedMonth, setSelectedMonth] = useState(CURRENT_MONTH);
   const [selectedYear, setSelectedYear] = useState(CURRENT_YEAR);
   const [pointValue, setPointValue] = useState(250);
+  const [baseSalaryTL, setBaseSalaryTL] = useState(35000);  // 🔥 NEW: Base salary for TL
+  const [baseSalaryManager, setBaseSalaryManager] = useState(60000);  // 🔥 NEW: Base salary for Manager
   const [roleFilter, setRoleFilter] = useState('All');
   const [search, setSearch] = useState('');
   const [error, setError] = useState('');
@@ -46,6 +48,7 @@ export default function SalarySlips() {
     slabPoints: 0,
     totalPoints: 0,
     pointValue: 250,
+    incentiveAmount: 0,  // 🔥 NEW: For TL/Manager
     totalSalary: 0,
     paymentDate: '',
     paymentMode: 'Bank Transfer',
@@ -105,11 +108,23 @@ export default function SalarySlips() {
     loadSalarySlips();
   }, [loadEmployees, loadSalarySlips]);
 
-  // Recalculate salary when pointValue changes (frontend only - no API call)
-  const employeesWithRecalculatedSalary = employees.map(emp => ({
-    ...emp,
-    totalSalary: emp.pointsEarned * pointValue
-  }));
+  // Recalculate salary when pointValue or base salaries change (frontend only - no API call)
+  const employeesWithRecalculatedSalary = employees.map(emp => {
+    // 🔥 Role-based salary calculation using dynamic base salaries
+    let totalSalary;
+    if (emp.role === 'TL') {
+      totalSalary = baseSalaryTL; // Use dynamic TL base salary
+    } else if (emp.role === 'Manager') {
+      totalSalary = baseSalaryManager; // Use dynamic Manager base salary
+    } else {
+      totalSalary = emp.pointsEarned * pointValue; // Points-based for FSE
+    }
+    
+    return {
+      ...emp,
+      totalSalary
+    };
+  });
 
   // Filter employees
   const filteredEmployees = employeesWithRecalculatedSalary.filter(emp => {
@@ -122,12 +137,25 @@ export default function SalarySlips() {
   // Handle generate slip
   const handleGenerate = (employee) => {
     setSelectedEmployee(employee);
+    
+    // 🔥 Role-based salary calculation using dynamic base salaries
+    let totalSalary;
+    const baseSalary = employee.role === 'TL' ? baseSalaryTL : employee.role === 'Manager' ? baseSalaryManager : 0;
+    
+    if (employee.role === 'TL' || employee.role === 'Manager') {
+      totalSalary = baseSalary; // Start with base, incentive can be added
+    } else {
+      totalSalary = (employee.totalPoints || employee.pointsEarned) * pointValue;
+    }
+    
     setFormData({
-      pointsEarned: employee.pointsEarned,
-      slabPoints: employee.slabPoints || 0,
-      totalPoints: employee.totalPoints || employee.pointsEarned,
+      pointsEarned: employee.role === 'FSE' ? employee.pointsEarned : 0,
+      slabPoints: employee.role === 'FSE' ? (employee.slabPoints || 0) : 0,
+      totalPoints: employee.role === 'FSE' ? (employee.totalPoints || employee.pointsEarned) : 0,
       pointValue: pointValue,
-      totalSalary: (employee.totalPoints || employee.pointsEarned) * pointValue,
+      baseSalary: baseSalary,  // 🔥 Use dynamic base salary
+      incentiveAmount: 0,  // Default 0, admin can add
+      totalSalary: totalSalary,
       paymentDate: '',
       paymentMode: 'Bank Transfer',
       status: 'generated',
@@ -147,21 +175,35 @@ export default function SalarySlips() {
   // Submit generate
   const submitGenerate = async () => {
     try {
-      const base = parseFloat(formData.pointsEarned) || 0;
-      const slab = parseFloat(formData.slabPoints) || 0;
-      const pv   = parseFloat(formData.pointValue) || 250;
-      const totalPts = Math.round((base + slab) * 10) / 10;
-      const totalSal = Math.round(totalPts * pv * 10) / 10;
+      const empRole = selectedEmployee.role || 'FSE';
+      let totalSal, totalPts, baseSalary;
+      
+      // 🔥 Role-based salary calculation
+      if (empRole === 'TL' || empRole === 'Manager') {
+        baseSalary = parseFloat(formData.baseSalary) || (empRole === 'TL' ? 35000 : 60000);
+        totalPts = 0;
+        totalSal = baseSalary + (parseFloat(formData.incentiveAmount) || 0);
+      } else {
+        // FSE: Points-based
+        baseSalary = 0;
+        const base = parseFloat(formData.pointsEarned) || 0;
+        const slab = parseFloat(formData.slabPoints) || 0;
+        const pv   = parseFloat(formData.pointValue) || 250;
+        totalPts = Math.round((base + slab) * 10) / 10;
+        totalSal = Math.round(totalPts * pv * 10) / 10;
+      }
 
       const res = await fetch(`${EMP_API}/salary/generate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...selectedEmployee,
-          pointsEarned: base,
-          slabPoints: slab,
+          pointsEarned: empRole === 'FSE' ? (parseFloat(formData.pointsEarned) || 0) : 0,
+          slabPoints: empRole === 'FSE' ? (parseFloat(formData.slabPoints) || 0) : 0,
           totalPoints: totalPts,
-          pointValue: pv,
+          pointValue: parseFloat(formData.pointValue) || 250,
+          baseSalary: baseSalary,  // 🔥 Send editable base salary
+          incentiveAmount: (empRole === 'TL' || empRole === 'Manager') ? (parseFloat(formData.incentiveAmount) || 0) : 0,
           totalSalary: totalSal,
           remarks: formData.remarks,
           // Editable percentages
@@ -202,6 +244,8 @@ export default function SalarySlips() {
       slabPoints:    slip.slabPoints   || 0,
       totalPoints:   slip.totalPoints  || slip.pointsEarned || 0,
       pointValue:    slip.pointValue   || 250,
+      baseSalary:    slip.baseSalary || (slip.role === 'TL' ? 35000 : slip.role === 'Manager' ? 60000 : 0),  // 🔥 Load base salary
+      incentiveAmount: slip.incentiveAmount || 0,
       totalSalary:   slip.totalSalary  || 0,
       paymentDate:   slip.paymentDate ? new Date(slip.paymentDate).toISOString().split('T')[0] : '',
       paymentMode:   slip.paymentMode  || 'Bank Transfer',
@@ -222,20 +266,35 @@ export default function SalarySlips() {
   // Submit edit
   const submitEdit = async () => {
     try {
-      const base = parseFloat(formData.pointsEarned) || 0;
-      const slab = parseFloat(formData.slabPoints) || 0;
-      const pv   = parseFloat(formData.pointValue) || 250;
-      const totalPts = Math.round((base + slab) * 10) / 10;
-      const totalSal = Math.round(totalPts * pv * 10) / 10;
+      const empRole = selectedSlip.role || 'FSE';
+      let totalPts, totalSal, baseSalary;
+      
+      if (empRole === 'TL' || empRole === 'Manager') {
+        // TL/Manager: Editable base + incentive
+        baseSalary = parseFloat(formData.baseSalary) || (empRole === 'TL' ? 35000 : 60000);
+        const incentive = parseFloat(formData.incentiveAmount) || 0;
+        totalPts = 0;
+        totalSal = baseSalary + incentive;
+      } else {
+        // FSE: Points-based
+        baseSalary = 0;
+        const base = parseFloat(formData.pointsEarned) || 0;
+        const slab = parseFloat(formData.slabPoints) || 0;
+        const pv   = parseFloat(formData.pointValue) || 250;
+        totalPts = Math.round((base + slab) * 10) / 10;
+        totalSal = Math.round(totalPts * pv * 10) / 10;
+      }
 
       const res = await fetch(`${EMP_API}/salary/${selectedSlip._id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          pointsEarned:  base,
-          slabPoints:    slab,
+          pointsEarned:  empRole === 'FSE' ? (parseFloat(formData.pointsEarned) || 0) : 0,
+          slabPoints:    empRole === 'FSE' ? (parseFloat(formData.slabPoints) || 0) : 0,
           totalPoints:   totalPts,
-          pointValue:    pv,
+          pointValue:    parseFloat(formData.pointValue) || 250,
+          baseSalary:    baseSalary,  // 🔥 Save editable base salary
+          incentiveAmount: (empRole === 'TL' || empRole === 'Manager') ? (parseFloat(formData.incentiveAmount) || 0) : 0,
           totalSalary:   totalSal,
           paymentDate:   formData.paymentDate,
           paymentMode:   formData.paymentMode,
@@ -381,16 +440,19 @@ export default function SalarySlips() {
     );
   };
 
-  // Select all (excluding employees with 0 points)
+  // Select all (excluding employees with 0 salary)
   const toggleSelectAll = () => {
-    if (selectedEmployees.length === filteredEmployees.filter(emp => emp.totalPoints > 0).length) {
+    // 🔥 FIX: Include TL/Manager who have totalSalary > 0 even if totalPoints = 0
+    const selectableEmployees = filteredEmployees.filter(emp => 
+      emp.totalPoints > 0 || emp.totalSalary > 0
+    );
+    
+    if (selectedEmployees.length === selectableEmployees.length) {
       setSelectedEmployees([]);
     } else {
-      // Only select employees with points > 0
+      // Select all employees with points > 0 OR salary > 0
       setSelectedEmployees(
-        filteredEmployees
-          .filter(emp => emp.totalPoints > 0)
-          .map(emp => emp.employeeEmail)
+        selectableEmployees.map(emp => emp.employeeEmail)
       );
     }
   };
@@ -398,12 +460,18 @@ export default function SalarySlips() {
   // Update total salary when points or value changes
   const updateFormData = (field, value) => {
     const newData = { ...formData, [field]: value };
+    
+    // FSE: Recalculate based on points
     if (field === 'pointsEarned' || field === 'slabPoints' || field === 'pointValue') {
       const base = parseFloat(newData.pointsEarned) || 0;
       const slab = parseFloat(newData.slabPoints) || 0;
       newData.totalPoints = Math.round((base + slab) * 10) / 10;
       newData.totalSalary = newData.totalPoints * (parseFloat(newData.pointValue) || 250);
     }
+    
+    // TL/Manager: Recalculate based on incentive (handled in TextField onChange, just update state)
+    // The totalSalary is already set in the TextField's onChange handler
+    
     setFormData(newData);
   };
 
@@ -537,14 +605,35 @@ export default function SalarySlips() {
             ))}
           </TextField>
 
-          <TextField
-            label="Point Value (₹)"
-            type="number"
-            value={pointValue}
-            onChange={(e) => setPointValue(parseInt(e.target.value) || 250)}
-            sx={{ minWidth: 150 }}
-            size="small"
-          />
+          {/* Dynamic filter based on role: Point Value for FSE, Base Salary for TL/Manager */}
+          {roleFilter === 'TL' ? (
+            <TextField
+              label="Base Salary (₹)"
+              type="number"
+              value={baseSalaryTL}
+              onChange={(e) => setBaseSalaryTL(parseInt(e.target.value) || 35000)}
+              sx={{ minWidth: 150 }}
+              size="small"
+            />
+          ) : roleFilter === 'Manager' ? (
+            <TextField
+              label="Base Salary (₹)"
+              type="number"
+              value={baseSalaryManager}
+              onChange={(e) => setBaseSalaryManager(parseInt(e.target.value) || 60000)}
+              sx={{ minWidth: 150 }}
+              size="small"
+            />
+          ) : (
+            <TextField
+              label="Point Value (₹)"
+              type="number"
+              value={pointValue}
+              onChange={(e) => setPointValue(parseInt(e.target.value) || 250)}
+              sx={{ minWidth: 150 }}
+              size="small"
+            />
+          )}
 
           <TextField
             select
@@ -649,19 +738,21 @@ export default function SalarySlips() {
                   <TableCell padding="checkbox">
                     <Checkbox
                       checked={
-                        selectedEmployees.length === filteredEmployees.filter(emp => emp.totalPoints > 0).length && 
-                        filteredEmployees.filter(emp => emp.totalPoints > 0).length > 0
+                        selectedEmployees.length === filteredEmployees.filter(emp => emp.totalPoints > 0 || emp.totalSalary > 0).length && 
+                        filteredEmployees.filter(emp => emp.totalPoints > 0 || emp.totalSalary > 0).length > 0
                       }
                       indeterminate={
                         selectedEmployees.length > 0 && 
-                        selectedEmployees.length < filteredEmployees.filter(emp => emp.totalPoints > 0).length
+                        selectedEmployees.length < filteredEmployees.filter(emp => emp.totalPoints > 0 || emp.totalSalary > 0).length
                       }
                       onChange={toggleSelectAll}
                     />
                   </TableCell>
                   <TableCell sx={{ fontWeight: 700 }}>Employee</TableCell>
                   <TableCell sx={{ fontWeight: 700 }}>Role</TableCell>
-                  <TableCell sx={{ fontWeight: 700 }}>Points</TableCell>
+                  <TableCell sx={{ fontWeight: 700 }}>
+                    {roleFilter === 'TL' || roleFilter === 'Manager' ? 'Base Amount' : 'Points'}
+                  </TableCell>
                   <TableCell sx={{ fontWeight: 700 }}>Salary</TableCell>
                   <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
                   <TableCell sx={{ fontWeight: 700 }}>Actions</TableCell>
@@ -685,10 +776,18 @@ export default function SalarySlips() {
                       <Chip label={emp.role} size="small" sx={{ bgcolor: '#e3f2fd', color: '#1565c0', fontWeight: 600 }} />
                     </TableCell>
                     <TableCell>
-                      <Typography variant="body2" fontWeight={700}>{emp.pointsEarned}</Typography>
-                      {emp.slabPoints > 0 && (
-                        <Typography variant="caption" color="text.secondary">
-                          +{emp.slabPoints} slab = <strong>{emp.totalPoints}</strong>
+                      {emp.role === 'FSE' ? (
+                        <>
+                          <Typography variant="body2" fontWeight={700}>{emp.pointsEarned}</Typography>
+                          {emp.slabPoints > 0 && (
+                            <Typography variant="caption" color="text.secondary">
+                              +{emp.slabPoints} slab = <strong>{emp.totalPoints}</strong>
+                            </Typography>
+                          )}
+                        </>
+                      ) : (
+                        <Typography variant="body2" fontWeight={700} sx={{ color: '#1565c0' }}>
+                          ₹{(emp.role === 'TL' ? baseSalaryTL : baseSalaryManager).toLocaleString('en-IN')}
                         </Typography>
                       )}
                     </TableCell>
@@ -798,22 +897,37 @@ export default function SalarySlips() {
         </DialogTitle>
         <DialogContent sx={{ p: 0 }}>
           {selectedEmployee && (() => {
-            // Live calculation
-            const FIXED_GROSS = 25000;
-            // Total calendar days in the month (including Sundays)
+            // 🔥 Role-based live calculation
+            const empRole = selectedEmployee.role || 'FSE';
             const MONTHS_LIST = ['January','February','March','April','May','June','July','August','September','October','November','December'];
             const mIdx = MONTHS_LIST.indexOf(selectedMonth);
             const TOTAL_WD = new Date(selectedYear, mIdx + 1, 0).getDate();
-            const base = parseFloat(formData.pointsEarned) || 0;
-            const slab = parseFloat(formData.slabPoints) || 0;
-            const pv   = parseFloat(formData.pointValue) || 250;
-            const totalPts = Math.round((base + slab) * 10) / 10;
-            const pointsSalary = Math.round(totalPts * pv * 10) / 10;
-            const hasIncentive = pointsSalary > FIXED_GROSS;
-            const incentive    = hasIncentive ? Math.round((pointsSalary - FIXED_GROSS) * 10) / 10 : 0;
-            const workingDays  = hasIncentive ? TOTAL_WD : Math.round((pointsSalary / FIXED_GROSS) * TOTAL_WD);
-            // Breakdown: ₹25k base if incentive, else actual salary
-            const breakBase = hasIncentive ? FIXED_GROSS : pointsSalary;
+            
+            let pointsSalary, hasIncentive, incentive, workingDays, breakBase;
+            
+            if (empRole === 'TL' || empRole === 'Manager') {
+              // TL/Manager: Fixed base + incentive
+              const baseSalary = empRole === 'TL' ? 35000 : 60000;
+              const incentiveAmt = parseFloat(formData.incentiveAmount) || 0;
+              pointsSalary = baseSalary + incentiveAmt;
+              hasIncentive = incentiveAmt > 0;
+              incentive = incentiveAmt;
+              breakBase = pointsSalary; // Breakdown on total salary
+              workingDays = TOTAL_WD;
+            } else {
+              // FSE: Points-based (existing logic)
+              const FIXED_GROSS = 25000;
+              const base = parseFloat(formData.pointsEarned) || 0;
+              const slab = parseFloat(formData.slabPoints) || 0;
+              const pv   = parseFloat(formData.pointValue) || 250;
+              const totalPts = Math.round((base + slab) * 10) / 10;
+              pointsSalary = Math.round(totalPts * pv * 10) / 10;
+              hasIncentive = pointsSalary > FIXED_GROSS;
+              incentive    = hasIncentive ? Math.round((pointsSalary - FIXED_GROSS) * 10) / 10 : 0;
+              workingDays  = hasIncentive ? TOTAL_WD : Math.round((pointsSalary / FIXED_GROSS) * TOTAL_WD);
+              breakBase = hasIncentive ? FIXED_GROSS : pointsSalary;
+            }
+            
             const pctB = parseFloat(formData.pctBasic) || 50;
             const pctH = parseFloat(formData.pctHRA)   || 25;
             const pctC = parseFloat(formData.pctConv)  || 5;
@@ -837,18 +951,61 @@ export default function SalarySlips() {
                 <Box sx={{ width: 290, p: 2, borderRight: '1px solid #eee', bgcolor: '#fafafa', flexShrink: 0, overflowY: 'auto' }}>
                   <Typography variant="subtitle2" fontWeight={700} color={BRAND.primary} sx={{ mb: 1.5 }}>Edit Values</Typography>
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                    <TextField label="Base Points" type="number" size="small" fullWidth
-                      value={formData.pointsEarned}
-                      onChange={(e) => updateFormData('pointsEarned', parseFloat(e.target.value) || 0)}
-                      helperText="From verified forms" />
-                    <TextField label="Slab / Bonus Points" type="number" size="small" fullWidth
-                      value={formData.slabPoints}
-                      onChange={(e) => updateFormData('slabPoints', parseFloat(e.target.value) || 0)}
-                      helperText="Admin editable"
-                      sx={{ '& .MuiOutlinedInput-notchedOutline': { borderColor: '#ff9800' } }} />
-                    <TextField label="Point Value (₹)" type="number" size="small" fullWidth
-                      value={formData.pointValue}
-                      onChange={(e) => updateFormData('pointValue', parseInt(e.target.value) || 250)} />
+                    {/* 🔥 Conditional: Show Points for FSE, Incentive for TL/Manager */}
+                    {selectedEmployee.role === 'FSE' ? (
+                      <>
+                        <TextField label="Base Points" type="number" size="small" fullWidth
+                          value={formData.pointsEarned}
+                          onChange={(e) => updateFormData('pointsEarned', parseFloat(e.target.value) || 0)}
+                          helperText="From verified forms" />
+                        <TextField label="Slab / Bonus Points" type="number" size="small" fullWidth
+                          value={formData.slabPoints}
+                          onChange={(e) => updateFormData('slabPoints', parseFloat(e.target.value) || 0)}
+                          helperText="Admin editable"
+                          sx={{ '& .MuiOutlinedInput-notchedOutline': { borderColor: '#ff9800' } }} />
+                        <TextField label="Point Value (₹)" type="number" size="small" fullWidth
+                          value={formData.pointValue}
+                          onChange={(e) => updateFormData('pointValue', parseInt(e.target.value) || 250)} />
+                      </>
+                    ) : (
+                      <>
+                        <TextField 
+                          label="Base Salary (₹)" 
+                          type="number" 
+                          size="small" 
+                          fullWidth
+                          value={formData.baseSalary}
+                          onChange={(e) => {
+                            const base = parseFloat(e.target.value) || 0;
+                            const incentive = parseFloat(formData.incentiveAmount) || 0;
+                            setFormData({
+                              ...formData,
+                              baseSalary: base,
+                              totalSalary: base + incentive
+                            });
+                          }}
+                          helperText={`Default: ₹${selectedEmployee.role === 'TL' ? '35,000' : '60,000'}`}
+                        />
+                        <TextField 
+                          label="Incentive Amount (₹)" 
+                          type="number" 
+                          size="small" 
+                          fullWidth
+                          value={formData.incentiveAmount}
+                          onChange={(e) => {
+                            const incentive = parseFloat(e.target.value) || 0;
+                            const base = parseFloat(formData.baseSalary) || (selectedEmployee.role === 'TL' ? 35000 : 60000);
+                            setFormData({
+                              ...formData,
+                              incentiveAmount: incentive,
+                              totalSalary: base + incentive
+                            });
+                          }}
+                          helperText="Additional incentive on top of base salary"
+                          sx={{ '& .MuiOutlinedInput-notchedOutline': { borderColor: '#ff9800' } }}
+                        />
+                      </>
+                    )}
 
                     <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ mt: 0.5 }}>Breakdown %</Typography>
                     <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
@@ -901,19 +1058,28 @@ export default function SalarySlips() {
 
                   {/* Employee Info */}
                   <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.5, mb: 1.5, p: 1, bgcolor: '#f9f9f9', borderRadius: 1 }}>
-                    {[
+                    {(empRole === 'FSE' ? [
                       ['Employee', selectedEmployee.employeeName],
                       ['Designation', selectedEmployee.role],
                       ['Department', 'Sales'],
                       ['Pay Period', `${selectedMonth} ${selectedYear}`],
                       ['Working Days', `${workingDays}`],
-                      ['Base Points', `${base} pts`],
-                      ...(slab > 0 ? [['Slab Bonus', `+${slab} pts`]] : []),
-                      ['Total Points', `${totalPts} pts × ₹${pv} = ₹${fmt(pointsSalary)}`],
-                    ].map(([label, val]) => (
-                      <Box key={label} sx={{ display: 'flex', gap: 0.5 }}>
-                        <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ minWidth: 85, fontSize: 10 }}>{label}:</Typography>
-                        <Typography variant="caption" fontWeight={700} sx={{ fontSize: 10 }}>{val}</Typography>
+                      ['Base Points', `${parseFloat(formData.pointsEarned) || 0} pts`],
+                      ...((parseFloat(formData.slabPoints) || 0) > 0 ? [['Slab Bonus', `+${parseFloat(formData.slabPoints) || 0} pts`]] : []),
+                      ['Total Points', `${(parseFloat(formData.pointsEarned) || 0) + (parseFloat(formData.slabPoints) || 0)} pts × ₹${parseFloat(formData.pointValue) || 250} = ₹${fmt(pointsSalary)}`],
+                    ] : [
+                      ['Employee', selectedEmployee.employeeName],
+                      ['Designation', selectedEmployee.role],
+                      ['Department', 'Sales'],
+                      ['Pay Period', `${selectedMonth} ${selectedYear}`],
+                      ['Working Days', `${workingDays}`],
+                      ['Base Salary', `₹${fmt(empRole === 'TL' ? 35000 : 60000)}`],
+                      ...((parseFloat(formData.incentiveAmount) || 0) > 0 ? [['Incentive', `₹${fmt(parseFloat(formData.incentiveAmount) || 0)}`]] : []),
+                      ['Total Salary', `₹${fmt(pointsSalary)}`],
+                    ]).map(([rowLabel, rowValue]) => (
+                      <Box key={rowLabel} sx={{ display: 'flex', gap: 0.5 }}>
+                        <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ minWidth: 85, fontSize: 10 }}>{rowLabel}:</Typography>
+                        <Typography variant="caption" fontWeight={700} sx={{ fontSize: 10 }}>{rowValue}</Typography>
                       </Box>
                     ))}
                   </Box>
@@ -934,17 +1100,19 @@ export default function SalarySlips() {
                         ['HRA', `${pctH}%`, hra],
                         ['Conveyance / Fuel', `${pctC}%`, conv],
                         ['Special Allowance', `${pctS}%`, spec],
-                      ].map(([label, pct, val]) => (
-                        <TableRow key={label}>
-                          <TableCell sx={{ fontSize: 11, py: 0.5 }}>{label}</TableCell>
+                      ].map(([rowLabel, pct, rowVal]) => (
+                        <TableRow key={rowLabel}>
+                          <TableCell sx={{ fontSize: 11, py: 0.5 }}>{rowLabel}</TableCell>
                           <TableCell align="center" sx={{ fontSize: 11, color: '#666', py: 0.5 }}>{pct}</TableCell>
-                          <TableCell align="right" sx={{ fontSize: 11, fontWeight: 600, py: 0.5 }}>₹{fmt(val)}</TableCell>
+                          <TableCell align="right" sx={{ fontSize: 11, fontWeight: 600, py: 0.5 }}>₹{fmt(rowVal)}</TableCell>
                         </TableRow>
                       ))}
                       {hasIncentive && (
                         <TableRow>
                           <TableCell sx={{ fontSize: 11, color: '#e65100', fontWeight: 700, py: 0.5 }}>
-                            Incentive <span style={{ fontSize: 9, fontWeight: 400 }}>(₹{fmt(pointsSalary)} − ₹{fmt(FIXED_GROSS)})</span>
+                            Incentive <span style={{ fontSize: 9, fontWeight: 400 }}>
+                              {empRole === 'FSE' ? `(₹${fmt(pointsSalary)} − ₹25000)` : '(Additional)'}
+                            </span>
                           </TableCell>
                           <TableCell align="center" sx={{ fontSize: 11, color: '#e65100', py: 0.5 }}>Variable</TableCell>
                           <TableCell align="right" sx={{ fontSize: 11, fontWeight: 700, color: '#e65100', py: 0.5 }}>₹{fmt(incentive)}</TableCell>
@@ -1043,16 +1211,59 @@ export default function SalarySlips() {
                 <Box sx={{ width: 290, p: 2, borderRight: '1px solid #eee', bgcolor: '#fafafa', flexShrink: 0, overflowY: 'auto' }}>
                   <Typography variant="subtitle2" fontWeight={700} color={BRAND.primary} sx={{ mb: 1.5 }}>Edit Values</Typography>
                   <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                    <TextField label="Base Points" type="number" size="small" fullWidth
-                      value={formData.pointsEarned}
-                      onChange={(e) => updateFormData('pointsEarned', parseFloat(e.target.value) || 0)} />
-                    <TextField label="Slab / Bonus Points" type="number" size="small" fullWidth
-                      value={formData.slabPoints}
-                      onChange={(e) => updateFormData('slabPoints', parseFloat(e.target.value) || 0)}
-                      sx={{ '& .MuiOutlinedInput-notchedOutline': { borderColor: '#ff9800' } }} />
-                    <TextField label="Point Value (₹)" type="number" size="small" fullWidth
-                      value={formData.pointValue}
-                      onChange={(e) => updateFormData('pointValue', parseInt(e.target.value) || 250)} />
+                    {/* 🔥 Conditional: Show Points for FSE, Incentive for TL/Manager */}
+                    {selectedSlip.role === 'FSE' ? (
+                      <>
+                        <TextField label="Base Points" type="number" size="small" fullWidth
+                          value={formData.pointsEarned}
+                          onChange={(e) => updateFormData('pointsEarned', parseFloat(e.target.value) || 0)} />
+                        <TextField label="Slab / Bonus Points" type="number" size="small" fullWidth
+                          value={formData.slabPoints}
+                          onChange={(e) => updateFormData('slabPoints', parseFloat(e.target.value) || 0)}
+                          sx={{ '& .MuiOutlinedInput-notchedOutline': { borderColor: '#ff9800' } }} />
+                        <TextField label="Point Value (₹)" type="number" size="small" fullWidth
+                          value={formData.pointValue}
+                          onChange={(e) => updateFormData('pointValue', parseInt(e.target.value) || 250)} />
+                      </>
+                    ) : (
+                      <>
+                        <TextField 
+                          label="Base Salary (₹)" 
+                          type="number" 
+                          size="small" 
+                          fullWidth
+                          value={formData.baseSalary}
+                          onChange={(e) => {
+                            const base = parseFloat(e.target.value) || 0;
+                            const incentive = parseFloat(formData.incentiveAmount) || 0;
+                            setFormData({
+                              ...formData,
+                              baseSalary: base,
+                              totalSalary: base + incentive
+                            });
+                          }}
+                          helperText={`Default: ₹${selectedSlip.role === 'TL' ? '35,000' : '60,000'}`}
+                        />
+                        <TextField 
+                          label="Incentive Amount (₹)" 
+                          type="number" 
+                          size="small" 
+                          fullWidth
+                          value={formData.incentiveAmount}
+                          onChange={(e) => {
+                            const incentive = parseFloat(e.target.value) || 0;
+                            const base = parseFloat(formData.baseSalary) || (selectedSlip.role === 'TL' ? 35000 : 60000);
+                            setFormData({
+                              ...formData,
+                              incentiveAmount: incentive,
+                              totalSalary: base + incentive
+                            });
+                          }}
+                          helperText="Additional incentive on top of base salary"
+                          sx={{ '& .MuiOutlinedInput-notchedOutline': { borderColor: '#ff9800' } }}
+                        />
+                      </>
+                    )}
 
                     <Typography variant="caption" fontWeight={700} color="text.secondary" sx={{ mt: 0.5 }}>Breakdown %</Typography>
                     <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1 }}>
@@ -1114,10 +1325,10 @@ export default function SalarySlips() {
                       ['Base Points', `${base} pts`],
                       ...(slab > 0 ? [['Slab Bonus', `+${slab} pts`]] : []),
                       ['Total Points', `${totalPts} pts × ₹${pv} = ₹${fmt(pointsSalary)}`],
-                    ].map(([label, val]) => (
-                      <Box key={label} sx={{ display: 'flex', gap: 0.5 }}>
-                        <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ minWidth: 85, fontSize: 10 }}>{label}:</Typography>
-                        <Typography variant="caption" fontWeight={700} sx={{ fontSize: 10 }}>{val}</Typography>
+                    ].map(([rowLabel, rowValue]) => (
+                      <Box key={rowLabel} sx={{ display: 'flex', gap: 0.5 }}>
+                        <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ minWidth: 85, fontSize: 10 }}>{rowLabel}:</Typography>
+                        <Typography variant="caption" fontWeight={700} sx={{ fontSize: 10 }}>{rowValue}</Typography>
                       </Box>
                     ))}
                   </Box>
@@ -1132,17 +1343,17 @@ export default function SalarySlips() {
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {[['Basic', `${pctB}%`, basic], ['HRA', `${pctH}%`, hra], ['Conveyance / Fuel', `${pctC}%`, conv], ['Special Allowance', `${pctS}%`, spec]].map(([label, pct, val]) => (
-                        <TableRow key={label}>
-                          <TableCell sx={{ fontSize: 11, py: 0.5 }}>{label}</TableCell>
+                      {[['Basic', `${pctB}%`, basic], ['HRA', `${pctH}%`, hra], ['Conveyance / Fuel', `${pctC}%`, conv], ['Special Allowance', `${pctS}%`, spec]].map(([rowLabel, pct, rowVal]) => (
+                        <TableRow key={rowLabel}>
+                          <TableCell sx={{ fontSize: 11, py: 0.5 }}>{rowLabel}</TableCell>
                           <TableCell align="center" sx={{ fontSize: 11, color: '#666', py: 0.5 }}>{pct}</TableCell>
-                          <TableCell align="right" sx={{ fontSize: 11, fontWeight: 600, py: 0.5 }}>₹{fmt(val)}</TableCell>
+                          <TableCell align="right" sx={{ fontSize: 11, fontWeight: 600, py: 0.5 }}>₹{fmt(rowVal)}</TableCell>
                         </TableRow>
                       ))}
                       {hasIncentive && (
                         <TableRow>
                           <TableCell sx={{ fontSize: 11, color: '#e65100', fontWeight: 700, py: 0.5 }}>
-                            Incentive <span style={{ fontSize: 9, fontWeight: 400 }}>(₹{fmt(pointsSalary)} − ₹{fmt(FIXED_GROSS)})</span>
+                            Incentive <span style={{ fontSize: 9, fontWeight: 400 }}>(₹{fmt(pointsSalary)} − ₹25000)</span>
                           </TableCell>
                           <TableCell align="center" sx={{ fontSize: 11, color: '#e65100', py: 0.5 }}>Variable</TableCell>
                           <TableCell align="right" sx={{ fontSize: 11, fontWeight: 700, color: '#e65100', py: 0.5 }}>₹{fmt(incentive)}</TableCell>
