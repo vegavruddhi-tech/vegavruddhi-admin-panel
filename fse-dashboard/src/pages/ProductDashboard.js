@@ -667,7 +667,7 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
   const [topFilterTL,     setTopFilterTL]     = useState('');
   const [topFilterFSE,    setTopFilterFSE]    = useState('');
   const [topFilterStatus, setTopFilterStatus] = useState('');
-  const [topFilterMonth,  setTopFilterMonth]  = useState('');
+  const [topFilterMonth,  setTopFilterMonth]  = useState(new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' }));
 
   // Onboarding verification state
   const [showOnboardVerify,  setShowOnboardVerify]  = useState(false);

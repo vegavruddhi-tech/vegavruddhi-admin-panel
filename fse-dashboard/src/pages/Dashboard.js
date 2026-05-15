@@ -247,7 +247,7 @@ function Dashboard({ onReady }) {
   const [filterTL,     setFilterTL]     = useState('');
   const [filterFSE,    setFilterFSE]    = useState('');
   const [filterStatus, setFilterStatus] = useState('');
-  const [filterMonth,  setFilterMonth]  = useState('');
+  const [filterMonth,  setFilterMonth]  = useState(new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' }));
   const [showOnboardVerify,  setShowOnboardVerify]  = useState(false);
   const [onboardVerifying,   setOnboardVerifying]   = useState(false);
   const [onboardVerifyMap,   setOnboardVerifyMap]   = useState({});

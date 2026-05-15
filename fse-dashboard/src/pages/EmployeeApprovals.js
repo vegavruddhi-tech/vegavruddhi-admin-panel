@@ -115,17 +115,29 @@ export default function EmployeeApprovals() {
   const [loading,   setLoading]   = useState(true);
   const [error,     setError]     = useState('');
   const [tab,       setTab]       = useState('pending');
+  const [approvedSubTab, setApprovedSubTab] = useState('all');
+  const [approvedSearch, setApprovedSearch] = useState('');
+  const [pendingSubTab,  setPendingSubTab]  = useState('fse');
+  const [changeSubTab,   setChangeSubTab]   = useState('fse');
+  const [changeStatusFilter, setChangeStatusFilter] = useState('all');
+  const [changeSearch, setChangeSearch] = useState('');
+  const [rejectedSubTab, setRejectedSubTab] = useState('fse');
   const [snack,     setSnack]     = useState({ open: false, msg: '', sev: 'success' });
   const [posRequests,    setPosRequests]    = useState([]);
   const [posReqLoading,  setPosReqLoading]  = useState(false);
   const [changeRequests,     setChangeRequests]     = useState([]);
   const [changeReqLoading,   setChangeReqLoading]   = useState(false);
   const [tlPending,    setTlPending]    = useState([]);
+  const [tlApprovedList, setTlApprovedList] = useState([]);
+  const [tlRejectedList, setTlRejectedList] = useState([]);
   const [tlReqLoading, setTlReqLoading] = useState(false);
   const [tlChangeRequests, setTlChangeRequests] = useState([]);
   const [tlChangeReqLoading, setTlChangeReqLoading] = useState(false);
   const [managerChangeRequests, setManagerChangeRequests] = useState([]);
   const [managerChangeReqLoading, setManagerChangeReqLoading] = useState(false);
+  const [managerRejectedList, setManagerRejectedList] = useState([]);
+  const [managerPending, setManagerPending] = useState([]);
+  const [managerPendingLoading, setManagerPendingLoading] = useState(false);
 
 
   // Edit modal state
@@ -180,6 +192,7 @@ export default function EmployeeApprovals() {
     loadTlPending();
     loadTlChangeRequests();
     loadManagerChangeRequests();
+    loadManagerPending();
   }, [load]);
 
   const loadChangeRequests = async () => {
@@ -196,9 +209,17 @@ export default function EmployeeApprovals() {
   const loadTlPending = async () => {
   setTlReqLoading(true);
   try {
-    const res  = await fetch(`${TL_API}/pending`);
-    const data = await res.json();
-    setTlPending(Array.isArray(data) ? data : []);
+    const [pendingRes, approvedRes, rejectedRes] = await Promise.all([
+      fetch(`${TL_API}/pending`),
+      fetch(`${TL_API}/approved-list`),
+      fetch(`${TL_API}/rejected-list`),
+    ]);
+    const pendingData  = await pendingRes.json();
+    const approvedData = await approvedRes.json();
+    const rejectedData = await rejectedRes.json();
+    setTlPending(Array.isArray(pendingData) ? pendingData : []);
+    setTlApprovedList(Array.isArray(approvedData) ? approvedData : []);
+    setTlRejectedList(Array.isArray(rejectedData) ? rejectedData : []);
   } catch { } finally { setTlReqLoading(false); }
 };
 
@@ -238,10 +259,36 @@ const rejectTlChangeReq = async (id) => {
 const loadManagerChangeRequests = async () => {
   setManagerChangeReqLoading(true);
   try {
-    const res = await fetch(`${MANAGER_API}/change-requests`);
-    const data = await res.json();
+    const [changeRes, rejectedRes] = await Promise.all([
+      fetch(`${MANAGER_API}/change-requests`),
+      fetch(`${MANAGER_API}/rejected-list`),
+    ]);
+    const data = await changeRes.json();
+    const rejectedData = await rejectedRes.json();
     setManagerChangeRequests(Array.isArray(data) ? data : []);
+    setManagerRejectedList(Array.isArray(rejectedData) ? rejectedData : []);
   } catch { } finally { setManagerChangeReqLoading(false); }
+};
+
+const loadManagerPending = async () => {
+  setManagerPendingLoading(true);
+  try {
+    const res = await fetch(`${MANAGER_API}/pending`);
+    const data = await res.json();
+    setManagerPending(Array.isArray(data) ? data : []);
+  } catch { } finally { setManagerPendingLoading(false); }
+};
+
+const approveManager = async (id) => {
+  const res = await fetch(`${MANAGER_API}/approve/${id}`, { method: 'PUT' });
+  if (res.ok) { setSnack({ open: true, msg: 'Manager approved!', sev: 'success' }); loadManagerPending(); }
+  else setSnack({ open: true, msg: 'Failed', sev: 'error' });
+};
+
+const rejectManager = async (id) => {
+  const res = await fetch(`${MANAGER_API}/reject/${id}`, { method: 'PUT' });
+  if (res.ok) { setSnack({ open: true, msg: 'Manager rejected', sev: 'warning' }); loadManagerPending(); }
+  else setSnack({ open: true, msg: 'Failed', sev: 'error' });
 };
 
 const approveManagerChangeReq = async (id) => {
@@ -424,7 +471,7 @@ const rejectManagerChangeReq = async (id) => {
         </Box>
         <Tooltip title="Refresh now">
           <Button startIcon={<RefreshIcon />} variant="outlined"
-            onClick={() => { load(); loadPosRequests(); loadChangeRequests(); loadTlPending(); loadTlChangeRequests(); loadManagerChangeRequests(); }}
+            onClick={() => { load(); loadPosRequests(); loadChangeRequests(); loadTlPending(); loadTlChangeRequests(); loadManagerChangeRequests(); loadManagerPending(); }}
             sx={{ borderColor: BRAND.primary, color: BRAND.primary, fontWeight: 700 }}>
             Refresh
           </Button>
@@ -435,7 +482,7 @@ const rejectManagerChangeReq = async (id) => {
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 2, mb: 3 }}>
         {[
           { label: 'Pending Approval', count: pending.length,  color: '#e65100', bg: '#fff3e0' },
-          { label: 'Approved',         count: approved.length, color: '#2e7d32', bg: '#e6f4ea' },
+          { label: 'Approved',         count: approved.filter(e => !['tl','team lead','team leader'].includes((e.position||'').toLowerCase())).length + tlApprovedList.length, color: '#2e7d32', bg: '#e6f4ea' },
           { label: 'Rejected',         count: rejected.length, color: '#c62828', bg: '#fdecea' },
         ].map(s => (
           <Card key={s.label} sx={{ borderRadius: 3, border: `1.5px solid ${s.color}20` }}>
@@ -459,11 +506,11 @@ const rejectManagerChangeReq = async (id) => {
             '& .MuiTabs-indicator': { backgroundColor: BRAND.primary },
           }}>
             <Tab value="pending" label={
-              <Badge badgeContent={pending.length} color="warning" max={99} sx={{ '& .MuiBadge-badge': { right: -8, top: -2 } }}>
+              <Badge badgeContent={pending.length + tlPending.length + managerPending.length} color="warning" max={99} sx={{ '& .MuiBadge-badge': { right: -8, top: -2 } }}>
                 <Box sx={{ pr: 2 }}>Pending</Box>
               </Badge>
             } />
-            <Tab value="approved" label={`Approved (${approved.length})`} />
+            <Tab value="approved" label={`Approved (${approved.filter(e => !['tl','team lead','team leader'].includes((e.position||'').toLowerCase())).length + tlApprovedList.length})`} />
             <Tab value="rejected" label={`Rejected (${rejected.length})`} />
             <Tab value="posreq" label={
               <Badge badgeContent={posRequests.filter(r => r.status === 'pending').length} color="error" max={99} sx={{ '& .MuiBadge-badge': { right: -8, top: -2 } }}>
@@ -471,23 +518,12 @@ const rejectManagerChangeReq = async (id) => {
               </Badge>
             } />
             <Tab value="changereq" label={
-              <Badge badgeContent={changeRequests.filter(r => r.status === 'pending' && (r.type === 'profile_change' || r.type === 'merchant_edit' || r.type === 'merchant_delete')).length} color="error" max={99} sx={{ '& .MuiBadge-badge': { right: -8, top: -2 } }}>
+              <Badge badgeContent={
+                changeRequests.filter(r => r.status === 'pending' && (r.type === 'profile_change' || r.type === 'merchant_edit' || r.type === 'merchant_delete')).length +
+                tlChangeRequests.filter(r => r.status === 'pending').length +
+                managerChangeRequests.filter(r => r.status === 'pending').length
+              } color="error" max={99} sx={{ '& .MuiBadge-badge': { right: -8, top: -2 } }}>
                 <Box sx={{ pr: 2 }}>Change Requests</Box>
-              </Badge>
-            } />
-            <Tab value="tlpending" label={
-              <Badge badgeContent={tlPending.length} color="error" max={99} sx={{ '& .MuiBadge-badge': { right: -8, top: -2 } }}>
-                <Box sx={{ pr: 2 }}>TL Approvals</Box>
-              </Badge>
-            } />
-            <Tab value="tlchangereq" label={
-              <Badge badgeContent={tlChangeRequests.filter(r => r.status === 'pending').length} color="error" max={99} sx={{ '& .MuiBadge-badge': { right: -8, top: -2 } }}>
-                <Box sx={{ pr: 2 }}>TL Change Requests</Box>
-              </Badge>
-            } />
-            <Tab value="managerchangereq" label={
-              <Badge badgeContent={managerChangeRequests.filter(r => r.status === 'pending').length} color="error" max={99} sx={{ '& .MuiBadge-badge': { right: -8, top: -2 } }}>
-                <Box sx={{ pr: 2 }}>Manager Change Requests</Box>
               </Badge>
             } />
           </Tabs>
@@ -542,9 +578,343 @@ const rejectManagerChangeReq = async (id) => {
             </Box>
           ) : (
             <>
-              {tab === 'pending'  && tableFor(pending,  true,  '⏳ Pending Approval')}
-              {tab === 'approved' && tableFor(approved, false, '✓ Approved Employees')}
-              {tab === 'rejected' && tableFor(rejected, false, '✗ Rejected Registrations')}
+              {tab === 'pending' && (() => {
+                return (
+                  <Box>
+                    {/* Sub-tabs */}
+                    <Box sx={{ display: 'flex', gap: 1, px: 3, pt: 2, pb: 1, flexWrap: 'wrap' }}>
+                      {[
+                        { key: 'fse',     label: 'FSE',     count: pending.length },
+                        { key: 'tl',      label: 'TL',      count: tlPending.length },
+                        { key: 'manager', label: 'Manager', count: managerPending.length },
+                      ].map(s => (
+                        <Badge key={s.key} badgeContent={s.count} color="warning" max={99}
+                          sx={{ '& .MuiBadge-badge': { right: -4, top: -4, fontSize: 10, minWidth: 18, height: 18 } }}>
+                          <Button size="small"
+                            variant={pendingSubTab === s.key ? 'contained' : 'outlined'}
+                            onClick={() => setPendingSubTab(s.key)}
+                            sx={{
+                              fontWeight: 700, fontSize: 12, borderRadius: 20,
+                              bgcolor: pendingSubTab === s.key ? BRAND.primary : 'transparent',
+                              color: pendingSubTab === s.key ? '#fff' : BRAND.primary,
+                              borderColor: BRAND.primary,
+                              '&:hover': { bgcolor: pendingSubTab === s.key ? BRAND.primaryMid : '#e8f5ee' },
+                            }}>
+                            {s.label}
+                          </Button>
+                        </Badge>
+                      ))}
+                    </Box>
+                    {/* FSE Pending */}
+                    {pendingSubTab === 'fse' && tableFor(pending, true, '⏳ FSE Pending Approval')}
+                    {/* TL Pending */}
+                    {pendingSubTab === 'tl' && (
+                      <Box>
+                        <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+                          <Typography variant="subtitle1" fontWeight={700} sx={{ color: BRAND.primary }}>⏳ TL Pending Approvals</Typography>
+                        </Box>
+                        {tlReqLoading ? (
+                          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress size={28} sx={{ color: BRAND.primary }} /></Box>
+                        ) : tlPending.length === 0 ? (
+                          <Box sx={{ textAlign: 'center', py: 5, color: 'text.secondary' }}>
+                            <PersonIcon sx={{ fontSize: 40, opacity: 0.3, mb: 1 }} />
+                            <Typography variant="body2">No pending TL approvals</Typography>
+                          </Box>
+                        ) : (
+                          <TableContainer sx={{ overflowX: 'auto' }}>
+                            <Table size="small">
+                              <TableHead>
+                                <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider', py: 1.5 } }}>
+                                  <TableCell>Name</TableCell>
+                                  <TableCell>Email</TableCell>
+                                  <TableCell>Phone</TableCell>
+                                  <TableCell>Location</TableCell>
+                                  <TableCell>Reporting Manager</TableCell>
+                                  <TableCell>Actions</TableCell>
+                                </TableRow>
+                              </TableHead>
+                              <TableBody>
+                                {tlPending.map(tl => (
+                                  <TableRow key={tl._id} hover sx={{ '&:last-child td': { border: 0 } }}>
+                                    <TableCell><Typography variant="body2" fontWeight={700}>{tl.name}</Typography></TableCell>
+                                    <TableCell><Typography variant="caption" color="text.secondary">{tl.email}</Typography></TableCell>
+                                    <TableCell><Typography variant="body2">{tl.phone}</Typography></TableCell>
+                                    <TableCell><Typography variant="body2">{tl.location}</Typography></TableCell>
+                                    <TableCell><Typography variant="body2">{tl.reportingManager}</Typography></TableCell>
+                                    <TableCell>
+                                      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                        <Button size="small" variant="contained" startIcon={<CheckCircleIcon />}
+                                          onClick={() => approveTL(tl._id)}
+                                          sx={{ bgcolor: BRAND.primary, fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: BRAND.primaryMid } }}>
+                                          Approve
+                                        </Button>
+                                        <Button size="small" variant="outlined" startIcon={<CancelIcon />}
+                                          onClick={() => rejectTL(tl._id)}
+                                          sx={{ color: '#c62828', borderColor: '#c62828', fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: '#fdecea' } }}>
+                                          Reject
+                                        </Button>
+                                      </Box>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </TableContainer>
+                        )}
+                      </Box>
+                    )}
+                  </Box>
+                );
+              })()}
+              {tab === 'approved' && (() => {
+                const q = approvedSearch.toLowerCase().trim();
+                const matchFSE = (e) => !q || (e.newJoinerName||'').toLowerCase().includes(q) || (e.email||'').toLowerCase().includes(q) || (e.location||'').toLowerCase().includes(q) || (e.reportingManager||'').toLowerCase().includes(q);
+                const matchTL  = (e) => !q || (e.name||'').toLowerCase().includes(q) || (e.email||'').toLowerCase().includes(q) || (e.location||'').toLowerCase().includes(q) || (e.reportingManager||'').toLowerCase().includes(q);
+                const fseApproved      = approved.filter(e => (e.position || '').toLowerCase() === 'fse').filter(matchFSE);
+                const tlApproved       = tlApprovedList.filter(matchTL);
+                const managerApproved  = approved.filter(e => (e.position || '').toLowerCase() === 'manager').filter(matchFSE);
+                const approvedNonTL    = approved.filter(e => !['tl', 'team lead', 'team leader'].includes((e.position || '').toLowerCase())).filter(matchFSE);
+                const allApproved      = [...approvedNonTL, ...tlApprovedList.filter(matchTL)];
+                const subList =
+                  approvedSubTab === 'fse'     ? fseApproved :
+                  approvedSubTab === 'tl'      ? tlApproved  :
+                  approvedSubTab === 'manager' ? managerApproved : allApproved;
+                return (
+                  <Box>
+                    {/* Sub-tabs + Search */}
+                    <Box sx={{ display: 'flex', gap: 1, px: 3, pt: 2, pb: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+                      {[
+                        { key: 'all',     label: 'All',     count: allApproved.length },
+                        { key: 'fse',     label: 'FSE',     count: fseApproved.length },
+                        { key: 'tl',      label: 'TL',      count: tlApproved.length },
+                        { key: 'manager', label: 'Manager', count: managerApproved.length },
+                      ].map(s => (
+                        <Button key={s.key} size="small"
+                          variant={approvedSubTab === s.key ? 'contained' : 'outlined'}
+                          onClick={() => setApprovedSubTab(s.key)}
+                          sx={{
+                            fontWeight: 700, fontSize: 12, borderRadius: 20,
+                            bgcolor: approvedSubTab === s.key ? BRAND.primary : 'transparent',
+                            color: approvedSubTab === s.key ? '#fff' : BRAND.primary,
+                            borderColor: BRAND.primary,
+                            '&:hover': { bgcolor: approvedSubTab === s.key ? BRAND.primaryMid : '#e8f5ee' },
+                          }}>
+                          {s.label} ({s.count})
+                        </Button>
+                      ))}
+                      <TextField size="small" placeholder="Search by name, email, location…"
+                        value={approvedSearch} onChange={e => setApprovedSearch(e.target.value)}
+                        sx={{ ml: 'auto', minWidth: 300, '& .MuiOutlinedInput-root': { borderRadius: 20, fontSize: 14 } }}
+                        InputProps={{ startAdornment: <span style={{ marginRight: 6, color: '#aaa' }}>🔍</span> }} />
+                    </Box>
+                    {/* TL approved uses a simpler table since TL data shape differs */}
+                    {approvedSubTab === 'tl' ? (
+                      <Box>
+                        <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <Typography variant="subtitle1" fontWeight={700} sx={{ color: BRAND.primary }}>✓ TL Approved Employees</Typography>
+                          <Typography variant="caption" color="text.secondary">{tlApproved.length} record{tlApproved.length !== 1 ? 's' : ''}</Typography>
+                        </Box>
+                        {tlApproved.length === 0 ? (
+                          <Box sx={{ textAlign: 'center', py: 5, color: 'text.secondary' }}>
+                            <PersonIcon sx={{ fontSize: 40, opacity: 0.3, mb: 1 }} />
+                            <Typography variant="body2">No approved TLs found</Typography>
+                          </Box>
+                        ) : (
+                          <TableContainer sx={{ overflowX: 'auto' }}>
+                            <Table size="small">
+                              <TableHead>
+                                <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider', py: 1.5 } }}>
+                                  <TableCell>Employee</TableCell>
+                                  <TableCell>Position</TableCell>
+                                  <TableCell>Location</TableCell>
+                                  <TableCell>Reporting Manager</TableCell>
+                                  <TableCell>Phone</TableCell>
+                                  <TableCell>Registered On</TableCell>
+                                  <TableCell>Status</TableCell>
+                                  <TableCell>Actions</TableCell>
+                                </TableRow>
+                              </TableHead>
+                              <TableBody>
+                                {tlApproved.map(tl => (
+                                  <TableRow key={tl._id} hover sx={{ '&:last-child td': { border: 0 } }}>
+                                    <TableCell>
+                                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                        <Avatar sx={{ bgcolor: BRAND.primary, width: 36, height: 36, fontSize: 13, fontWeight: 700 }}>
+                                          {initials(tl.name)}
+                                        </Avatar>
+                                        <Box>
+                                          <Typography variant="body2" fontWeight={700} sx={{ color: 'text.primary' }}>{tl.name}</Typography>
+                                          <Typography variant="caption" sx={{ color: 'text.secondary' }}>{tl.email}</Typography>
+                                        </Box>
+                                      </Box>
+                                    </TableCell>
+                                    <TableCell><Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 500 }}>{tl.position || 'Team Lead'}</Typography></TableCell>
+                                    <TableCell><Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 500 }}>{tl.location || '–'}</Typography></TableCell>
+                                    <TableCell><Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 500 }}>{tl.reportingManager || '–'}</Typography></TableCell>
+                                    <TableCell><Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 500 }}>{tl.phone}</Typography></TableCell>
+                                    <TableCell>
+                                      <Typography variant="caption" sx={{ color: 'text.primary', fontWeight: 500 }}>
+                                        {tl.createdAt ? new Date(tl.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '–'}
+                                      </Typography>
+                                    </TableCell>
+                                    <TableCell><StatusChip status="approved" /></TableCell>
+                                    <TableCell>
+                                      <Tooltip title="Edit TL details">
+                                        <Button size="small" variant="outlined" startIcon={<EditIcon />}
+                                          onClick={() => openEdit({ ...tl, newJoinerName: tl.name, newJoinerPhone: tl.phone, newJoinerEmailId: tl.email })}
+                                          sx={{ color: BRAND.primary, borderColor: BRAND.primary, fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: BRAND.primaryLight } }}>
+                                          Edit
+                                        </Button>
+                                      </Tooltip>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </TableContainer>
+                        )}
+                      </Box>
+                    ) : (
+                      tableFor(subList, false, `✓ ${
+                        approvedSubTab === 'fse' ? 'FSE' :
+                        approvedSubTab === 'manager' ? 'Manager' : 'All'
+                      } Approved Employees`)
+                    )}
+                  </Box>
+                );
+              })()}
+              {tab === 'rejected' && (() => {
+                const fseRejected     = rejected;
+                const tlRejected      = tlRejectedList;
+                const managerRejected = managerRejectedList;
+                return (
+                  <Box>
+                    {/* Sub-tabs */}
+                    <Box sx={{ display: 'flex', gap: 1, px: 3, pt: 2, pb: 1, flexWrap: 'wrap' }}>
+                      {[
+                        { key: 'fse',     label: 'FSE',     count: fseRejected.length },
+                        { key: 'tl',      label: 'TL',      count: tlRejected.length },
+                        { key: 'manager', label: 'Manager', count: managerRejected.length },
+                      ].map(s => (
+                        <Button key={s.key} size="small"
+                          variant={rejectedSubTab === s.key ? 'contained' : 'outlined'}
+                          onClick={() => setRejectedSubTab(s.key)}
+                          sx={{
+                            fontWeight: 700, fontSize: 12, borderRadius: 20,
+                            bgcolor: rejectedSubTab === s.key ? '#c62828' : 'transparent',
+                            color: rejectedSubTab === s.key ? '#fff' : '#c62828',
+                            borderColor: '#c62828',
+                            '&:hover': { bgcolor: rejectedSubTab === s.key ? '#b71c1c' : '#fdecea' },
+                          }}>
+                          {s.label} ({s.count})
+                        </Button>
+                      ))}
+                    </Box>
+                    {/* FSE Rejected */}
+                    {rejectedSubTab === 'fse' && tableFor(fseRejected, false, '✗ FSE Rejected Registrations')}
+                    {/* TL Rejected */}
+                    {rejectedSubTab === 'tl' && (
+                      <Box>
+                        <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <Typography variant="subtitle1" fontWeight={700} sx={{ color: '#c62828' }}>✗ TL Rejected Registrations</Typography>
+                          <Typography variant="caption" color="text.secondary">{tlRejected.length} record{tlRejected.length !== 1 ? 's' : ''}</Typography>
+                        </Box>
+                        {tlRejected.length === 0 ? (
+                          <Box sx={{ textAlign: 'center', py: 5, color: 'text.secondary' }}>
+                            <PersonIcon sx={{ fontSize: 40, opacity: 0.3, mb: 1 }} />
+                            <Typography variant="body2">No rejected TLs</Typography>
+                          </Box>
+                        ) : (
+                          <TableContainer sx={{ overflowX: 'auto' }}>
+                            <Table size="small">
+                              <TableHead>
+                                <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider', py: 1.5 } }}>
+                                  <TableCell>Employee</TableCell>
+                                  <TableCell>Position</TableCell>
+                                  <TableCell>Location</TableCell>
+                                  <TableCell>Reporting Manager</TableCell>
+                                  <TableCell>Phone</TableCell>
+                                  <TableCell>Registered On</TableCell>
+                                  <TableCell>Status</TableCell>
+                                </TableRow>
+                              </TableHead>
+                              <TableBody>
+                                {tlRejected.map(tl => (
+                                  <TableRow key={tl._id} hover sx={{ '&:last-child td': { border: 0 } }}>
+                                    <TableCell>
+                                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                        <Avatar sx={{ bgcolor: '#c62828', width: 36, height: 36, fontSize: 13, fontWeight: 700 }}>{initials(tl.name)}</Avatar>
+                                        <Box>
+                                          <Typography variant="body2" fontWeight={700} sx={{ color: 'text.primary' }}>{tl.name}</Typography>
+                                          <Typography variant="caption" sx={{ color: 'text.secondary' }}>{tl.email}</Typography>
+                                        </Box>
+                                      </Box>
+                                    </TableCell>
+                                    <TableCell><Typography variant="body2">{tl.position || 'Team Lead'}</Typography></TableCell>
+                                    <TableCell><Typography variant="body2">{tl.location || '–'}</Typography></TableCell>
+                                    <TableCell><Typography variant="body2">{tl.reportingManager || '–'}</Typography></TableCell>
+                                    <TableCell><Typography variant="body2">{tl.phone}</Typography></TableCell>
+                                    <TableCell><Typography variant="caption">{tl.createdAt ? new Date(tl.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '–'}</Typography></TableCell>
+                                    <TableCell><StatusChip status="rejected" /></TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </TableContainer>
+                        )}
+                      </Box>
+                    )}
+                    {/* Manager Rejected */}
+                    {rejectedSubTab === 'manager' && (
+                      <Box>
+                        <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <Typography variant="subtitle1" fontWeight={700} sx={{ color: '#c62828' }}>✗ Manager Rejected Registrations</Typography>
+                          <Typography variant="caption" color="text.secondary">{managerRejected.length} record{managerRejected.length !== 1 ? 's' : ''}</Typography>
+                        </Box>
+                        {managerRejected.length === 0 ? (
+                          <Box sx={{ textAlign: 'center', py: 5, color: 'text.secondary' }}>
+                            <PersonIcon sx={{ fontSize: 40, opacity: 0.3, mb: 1 }} />
+                            <Typography variant="body2">No rejected managers</Typography>
+                          </Box>
+                        ) : (
+                          <TableContainer sx={{ overflowX: 'auto' }}>
+                            <Table size="small">
+                              <TableHead>
+                                <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider', py: 1.5 } }}>
+                                  <TableCell>Employee</TableCell>
+                                  <TableCell>Location</TableCell>
+                                  <TableCell>Phone</TableCell>
+                                  <TableCell>Registered On</TableCell>
+                                  <TableCell>Status</TableCell>
+                                </TableRow>
+                              </TableHead>
+                              <TableBody>
+                                {managerRejected.map(m => (
+                                  <TableRow key={m._id} hover sx={{ '&:last-child td': { border: 0 } }}>
+                                    <TableCell>
+                                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                        <Avatar sx={{ bgcolor: '#c62828', width: 36, height: 36, fontSize: 13, fontWeight: 700 }}>{initials(m.name)}</Avatar>
+                                        <Box>
+                                          <Typography variant="body2" fontWeight={700} sx={{ color: 'text.primary' }}>{m.name}</Typography>
+                                          <Typography variant="caption" sx={{ color: 'text.secondary' }}>{m.email}</Typography>
+                                        </Box>
+                                      </Box>
+                                    </TableCell>
+                                    <TableCell><Typography variant="body2">{m.location || '–'}</Typography></TableCell>
+                                    <TableCell><Typography variant="body2">{m.phone || '–'}</Typography></TableCell>
+                                    <TableCell><Typography variant="caption">{m.createdAt ? new Date(m.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '–'}</Typography></TableCell>
+                                    <TableCell><StatusChip status="rejected" /></TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </TableContainer>
+                        )}
+                      </Box>
+                    )}
+                  </Box>
+                );
+              })()}
               {tab === 'posreq'   && (
                 <Box>
                   <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -610,239 +980,195 @@ const rejectManagerChangeReq = async (id) => {
               )}
               {tab === 'changereq' && (
                 <Box>
-                  <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Typography variant="subtitle1" fontWeight={700} sx={{ color: BRAND.primary }}>🔔 Profile & Merchant Change Requests</Typography>
-                    <Typography variant="caption" color="text.secondary">{changeRequests.filter(r => r.type === 'profile_change' || r.type === 'merchant_edit' || r.type === 'merchant_delete').length} total</Typography>
+                  {/* Sub-tabs + Status Filter */}
+                  <Box sx={{ display: 'flex', gap: 1, px: 3, pt: 2, pb: 1, flexWrap: 'wrap', alignItems: 'center' }}>
+                    {[
+                      { key: 'fse',     label: 'FSE',     count: changeRequests.filter(r => r.status === 'pending' && (r.type === 'profile_change' || r.type === 'merchant_edit' || r.type === 'merchant_delete')).length },
+                      { key: 'tl',      label: 'TL',      count: tlChangeRequests.filter(r => r.status === 'pending').length },
+                      { key: 'manager', label: 'Manager', count: managerChangeRequests.filter(r => r.status === 'pending').length },
+                    ].map(s => (
+                      <Badge key={s.key} badgeContent={s.count} color="error" max={99}
+                        sx={{ '& .MuiBadge-badge': { right: -4, top: -4, fontSize: 10, minWidth: 18, height: 18 } }}>
+                        <Button size="small"
+                          variant={changeSubTab === s.key ? 'contained' : 'outlined'}
+                          onClick={() => setChangeSubTab(s.key)}
+                          sx={{
+                            fontWeight: 700, fontSize: 12, borderRadius: 20,
+                            bgcolor: changeSubTab === s.key ? BRAND.primary : 'transparent',
+                            color: changeSubTab === s.key ? '#fff' : BRAND.primary,
+                            borderColor: BRAND.primary,
+                            '&:hover': { bgcolor: changeSubTab === s.key ? BRAND.primaryMid : '#e8f5ee' },
+                          }}>
+                          {s.label}
+                        </Button>
+                      </Badge>
+                    ))}
+                    {/* Status Filter Dropdown */}
+                    <TextField select size="small" value={changeStatusFilter}
+                      onChange={e => setChangeStatusFilter(e.target.value)}
+                      sx={{ ml: 1, minWidth: 130, '& .MuiOutlinedInput-root': { borderRadius: 20, fontSize: 12, fontWeight: 700 } }}>
+                      <MenuItem value="all">All Status</MenuItem>
+                      <MenuItem value="pending">Pending</MenuItem>
+                      <MenuItem value="approved">Approved</MenuItem>
+                      <MenuItem value="rejected">Rejected</MenuItem>
+                    </TextField>
+                    {/* Search Bar */}
+                    <TextField size="small" placeholder="Search by name, reason…"
+                      value={changeSearch} onChange={e => setChangeSearch(e.target.value)}
+                      sx={{ ml: 'auto', minWidth: 300, '& .MuiOutlinedInput-root': { borderRadius: 20, fontSize: 14 } }}
+                      InputProps={{ startAdornment: <span style={{ marginRight: 6, color: '#aaa' }}>🔍</span> }} />
                   </Box>
-                  {changeReqLoading ? (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress size={28} sx={{ color: BRAND.primary }} /></Box>
-                  ) : changeRequests.length === 0 ? (
-                    <Box sx={{ textAlign: 'center', py: 5, color: 'text.secondary' }}><Typography variant="body2">No change requests</Typography></Box>
-                  ) : (
-                    <TableContainer sx={{ overflowX: 'auto' }}>
-                      <Table size="small">
-                        <TableHead>
-                          <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider', py: 1.5, bgcolor: 'transparent' } }}>
-                            <TableCell>Employee</TableCell><TableCell>Type</TableCell><TableCell>Details</TableCell>
-                            <TableCell>Reason</TableCell><TableCell>Date</TableCell><TableCell>Status</TableCell><TableCell>Actions</TableCell>
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                        {changeRequests.filter(r => r.type === 'profile_change' || r.type === 'merchant_edit' || r.type === 'merchant_delete').map(r => {
-                            const typeLabel = r.type === 'profile_change' ? '👤 Profile Change' : r.type === 'merchant_edit' ? '✏ Merchant Edit' : '🗑 Merchant Delete';
-                            const details   = r.type === 'profile_change' ? Object.entries(r.profileChanges || {}).map(([k,v]) => `${k}: ${v}`).slice(0,3).join(', ') : (r.merchantName || '–');
-                            return (
-                              <TableRow key={r._id} hover sx={{ '&:last-child td': { border: 0 } }}>
-                                <TableCell><Typography variant="body2" fontWeight={700} sx={{ color: 'text.primary' }}>{r.employeeName}</Typography></TableCell>
-                                <TableCell><Chip label={typeLabel} size="small" sx={{ bgcolor: 'action.hover', fontWeight: 600, fontSize: 11 }} /></TableCell>
-                                <TableCell><Typography variant="caption" sx={{ color: 'text.primary', maxWidth: 180, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{details}</Typography></TableCell>
-                                <TableCell><Typography variant="caption" color="text.secondary">{r.reason || '–'}</Typography></TableCell>
-                                <TableCell><Typography variant="caption" color="text.secondary">{new Date(r.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</Typography></TableCell>
-                                <TableCell><StatusChip status={r.status} /></TableCell>
-                                <TableCell>
-                                  {r.status === 'pending' ? (
-                                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                                      <Button size="small" variant="contained" startIcon={<CheckCircleIcon />} onClick={() => approveChangeReq(r._id)}
-                                        sx={{ bgcolor: BRAND.primary, fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: BRAND.primaryMid } }}>Approve</Button>
-                                      <Button size="small" variant="outlined" startIcon={<CancelIcon />} onClick={() => rejectChangeReq(r._id)}
-                                        sx={{ color: '#c62828', borderColor: '#c62828', fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: '#fdecea' } }}>Reject</Button>
-                                    </Box>
-                                  ) : <Typography variant="caption" color="text.secondary">–</Typography>}
-                                </TableCell>
+
+                  {/* FSE Change Requests */}
+                  {changeSubTab === 'fse' && (
+                    <Box>
+                      <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Typography variant="subtitle1" fontWeight={700} sx={{ color: BRAND.primary }}>🔔 FSE Profile & Merchant Change Requests</Typography>
+                        <Typography variant="caption" color="text.secondary">{changeRequests.filter(r => r.type === 'profile_change' || r.type === 'merchant_edit' || r.type === 'merchant_delete').length} total</Typography>
+                      </Box>
+                      {changeReqLoading ? (
+                        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress size={28} sx={{ color: BRAND.primary }} /></Box>
+                      ) : changeRequests.length === 0 ? (
+                        <Box sx={{ textAlign: 'center', py: 5, color: 'text.secondary' }}><Typography variant="body2">No change requests</Typography></Box>
+                      ) : (
+                        <TableContainer sx={{ overflowX: 'auto' }}>
+                          <Table size="small">
+                            <TableHead>
+                              <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider', py: 1.5, bgcolor: 'transparent' } }}>
+                                <TableCell>Employee</TableCell><TableCell>Type</TableCell><TableCell>Details</TableCell>
+                                <TableCell>Reason</TableCell><TableCell>Date</TableCell><TableCell>Status</TableCell><TableCell>Actions</TableCell>
                               </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
-                    </TableContainer>
+                            </TableHead>
+                            <TableBody>
+                              {changeRequests.filter(r => (r.type === 'profile_change' || r.type === 'merchant_edit' || r.type === 'merchant_delete') && (changeStatusFilter === 'all' || r.status === changeStatusFilter) && (!changeSearch || (r.employeeName||'').toLowerCase().includes(changeSearch.toLowerCase()) || (r.reason||'').toLowerCase().includes(changeSearch.toLowerCase()))).map(r => {
+                                const typeLabel = r.type === 'profile_change' ? '👤 Profile Change' : r.type === 'merchant_edit' ? '✏ Merchant Edit' : '🗑 Merchant Delete';
+                                const details   = r.type === 'profile_change' ? Object.entries(r.profileChanges || {}).map(([k,v]) => `${k}: ${v}`).slice(0,3).join(', ') : (r.merchantName || '–');
+                                return (
+                                  <TableRow key={r._id} hover sx={{ '&:last-child td': { border: 0 } }}>
+                                    <TableCell><Typography variant="body2" fontWeight={700} sx={{ color: 'text.primary' }}>{r.employeeName}</Typography></TableCell>
+                                    <TableCell><Chip label={typeLabel} size="small" sx={{ bgcolor: 'action.hover', fontWeight: 600, fontSize: 11 }} /></TableCell>
+                                    <TableCell><Typography variant="caption" sx={{ color: 'text.primary', maxWidth: 180, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{details}</Typography></TableCell>
+                                    <TableCell><Typography variant="caption" color="text.secondary">{r.reason || '–'}</Typography></TableCell>
+                                    <TableCell><Typography variant="caption" color="text.secondary">{new Date(r.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</Typography></TableCell>
+                                    <TableCell><StatusChip status={r.status} /></TableCell>
+                                    <TableCell>
+                                      {r.status === 'pending' ? (
+                                        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                          <Button size="small" variant="contained" startIcon={<CheckCircleIcon />} onClick={() => approveChangeReq(r._id)}
+                                            sx={{ bgcolor: BRAND.primary, fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: BRAND.primaryMid } }}>Approve</Button>
+                                          <Button size="small" variant="outlined" startIcon={<CancelIcon />} onClick={() => rejectChangeReq(r._id)}
+                                            sx={{ color: '#c62828', borderColor: '#c62828', fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: '#fdecea' } }}>Reject</Button>
+                                        </Box>
+                                      ) : <Typography variant="caption" color="text.secondary">–</Typography>}
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                        </TableContainer>
+                      )}
+                    </Box>
                   )}
-                </Box>
-              )}
-              {tab === 'tlpending' && (
-  <Box>
-    <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
-      <Typography variant="subtitle1" fontWeight={700} sx={{ color: BRAND.primary }}>⏳ TL Pending Approvals</Typography>
-    </Box>
-    {tlReqLoading ? (
-      <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress size={28} sx={{ color: BRAND.primary }} /></Box>
-    ) : tlPending.length === 0 ? (
-      <Box sx={{ textAlign: 'center', py: 5, color: 'text.secondary' }}><Typography variant="body2">No pending TL approvals</Typography></Box>
-    ) : (
-      <TableContainer sx={{ overflowX: 'auto' }}>
-        <Table size="small">
-          <TableHead>
-            <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider', py: 1.5 } }}>
-              <TableCell>Name</TableCell>
-              <TableCell>Email</TableCell>
-              <TableCell>Phone</TableCell>
-              <TableCell>Location</TableCell>
-              <TableCell>Reporting Manager</TableCell>
-              <TableCell>Actions</TableCell>
-            </TableRow>
-          </TableHead>
-          <TableBody>
-            {tlPending.map(tl => (
-              <TableRow key={tl._id} hover sx={{ '&:last-child td': { border: 0 } }}>
-                <TableCell><Typography variant="body2" fontWeight={700}>{tl.name}</Typography></TableCell>
-                <TableCell><Typography variant="caption" color="text.secondary">{tl.email}</Typography></TableCell>
-                <TableCell><Typography variant="body2">{tl.phone}</Typography></TableCell>
-                <TableCell><Typography variant="body2">{tl.location}</Typography></TableCell>
-                <TableCell><Typography variant="body2">{tl.reportingManager}</Typography></TableCell>
-                <TableCell>
-                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                    <Button size="small" variant="contained" startIcon={<CheckCircleIcon />}
-                      onClick={() => approveTL(tl._id)}
-                      sx={{ bgcolor: BRAND.primary, fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: BRAND.primaryMid } }}>
-                      Approve
-                    </Button>
-                    <Button size="small" variant="outlined" startIcon={<CancelIcon />}
-                      onClick={() => rejectTL(tl._id)}
-                      sx={{ color: '#c62828', borderColor: '#c62828', fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: '#fdecea' } }}>
-                      Reject
-                    </Button>
-                  </Box>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </TableContainer>
-    )}
-  </Box>
-)}
-              {tab === 'tlchangereq' && (
-                <Box>
-                  <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Typography variant="subtitle1" fontWeight={700} sx={{ color: BRAND.primary }}>🔔 Team Leader Profile Change Requests</Typography>
-                    <Typography variant="caption" color="text.secondary">{tlChangeRequests.length} total</Typography>
-                  </Box>
-                  {tlChangeReqLoading ? (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress size={28} sx={{ color: BRAND.primary }} /></Box>
-                  ) : tlChangeRequests.length === 0 ? (
-                    <Box sx={{ textAlign: 'center', py: 5, color: 'text.secondary' }}><Typography variant="body2">No TL change requests</Typography></Box>
-                  ) : (
-                    <TableContainer sx={{ overflowX: 'auto' }}>
-                      <Table size="small">
-                        <TableHead>
-                          <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider', py: 1.5, bgcolor: 'transparent' } }}>
-                            <TableCell>Team Leader</TableCell>
-                            <TableCell>Changes</TableCell>
-                            <TableCell>Reason</TableCell>
-                            <TableCell>Requested On</TableCell>
-                            <TableCell>Status</TableCell>
-                            <TableCell>Actions</TableCell>
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {tlChangeRequests.map(r => {
-                            const changes = Object.entries(r.changes || {})
-                              .map(([key, value]) => `${key}: ${value}`)
-                              .join(', ');
-                            return (
-                              <TableRow key={r._id} hover sx={{ '&:last-child td': { border: 0 } }}>
-                                <TableCell><Typography variant="body2" fontWeight={700} sx={{ color: 'text.primary' }}>{r.tlName}</Typography></TableCell>
-                                <TableCell>
-                                  <Typography variant="caption" sx={{ color: 'text.primary', maxWidth: 250, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {changes || '–'}
-                                  </Typography>
-                                </TableCell>
-                                <TableCell><Typography variant="caption" color="text.secondary">{r.reason || '–'}</Typography></TableCell>
-                                <TableCell>
-                                  <Typography variant="caption" color="text.secondary">
-                                    {new Date(r.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                                  </Typography>
-                                </TableCell>
-                                <TableCell><StatusChip status={r.status} /></TableCell>
-                                <TableCell>
-                                  {r.status === 'pending' ? (
-                                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                                      <Button size="small" variant="contained" startIcon={<CheckCircleIcon />}
-                                        onClick={() => approveTlChangeReq(r._id)}
-                                        sx={{ bgcolor: BRAND.primary, fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: BRAND.primaryMid } }}>
-                                        Approve
-                                      </Button>
-                                      <Button size="small" variant="outlined" startIcon={<CancelIcon />}
-                                        onClick={() => rejectTlChangeReq(r._id)}
-                                        sx={{ color: '#c62828', borderColor: '#c62828', fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: '#fdecea' } }}>
-                                        Reject
-                                      </Button>
-                                    </Box>
-                                  ) : <Typography variant="caption" color="text.secondary">–</Typography>}
-                                </TableCell>
+
+                  {/* TL Change Requests */}
+                  {changeSubTab === 'tl' && (
+                    <Box>
+                      <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Typography variant="subtitle1" fontWeight={700} sx={{ color: BRAND.primary }}>🔔 Team Leader Profile Change Requests</Typography>
+                        <Typography variant="caption" color="text.secondary">{tlChangeRequests.length} total</Typography>
+                      </Box>
+                      {tlChangeReqLoading ? (
+                        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress size={28} sx={{ color: BRAND.primary }} /></Box>
+                      ) : tlChangeRequests.length === 0 ? (
+                        <Box sx={{ textAlign: 'center', py: 5, color: 'text.secondary' }}><Typography variant="body2">No TL change requests</Typography></Box>
+                      ) : (
+                        <TableContainer sx={{ overflowX: 'auto' }}>
+                          <Table size="small">
+                            <TableHead>
+                              <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider', py: 1.5, bgcolor: 'transparent' } }}>
+                                <TableCell>Team Leader</TableCell><TableCell>Changes</TableCell><TableCell>Reason</TableCell>
+                                <TableCell>Requested On</TableCell><TableCell>Status</TableCell><TableCell>Actions</TableCell>
                               </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
-                    </TableContainer>
+                            </TableHead>
+                            <TableBody>
+                              {tlChangeRequests.filter(r => (changeStatusFilter === 'all' || r.status === changeStatusFilter) && (!changeSearch || (r.tlName||'').toLowerCase().includes(changeSearch.toLowerCase()) || (r.reason||'').toLowerCase().includes(changeSearch.toLowerCase()))).map(r => {
+                                const changes = Object.entries(r.changes || {}).map(([key, value]) => `${key}: ${value}`).join(', ');
+                                return (
+                                  <TableRow key={r._id} hover sx={{ '&:last-child td': { border: 0 } }}>
+                                    <TableCell><Typography variant="body2" fontWeight={700} sx={{ color: 'text.primary' }}>{r.tlName}</Typography></TableCell>
+                                    <TableCell><Typography variant="caption" sx={{ color: 'text.primary', maxWidth: 250, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{changes || '–'}</Typography></TableCell>
+                                    <TableCell><Typography variant="caption" color="text.secondary">{r.reason || '–'}</Typography></TableCell>
+                                    <TableCell><Typography variant="caption" color="text.secondary">{new Date(r.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</Typography></TableCell>
+                                    <TableCell><StatusChip status={r.status} /></TableCell>
+                                    <TableCell>
+                                      {r.status === 'pending' ? (
+                                        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                          <Button size="small" variant="contained" startIcon={<CheckCircleIcon />} onClick={() => approveTlChangeReq(r._id)}
+                                            sx={{ bgcolor: BRAND.primary, fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: BRAND.primaryMid } }}>Approve</Button>
+                                          <Button size="small" variant="outlined" startIcon={<CancelIcon />} onClick={() => rejectTlChangeReq(r._id)}
+                                            sx={{ color: '#c62828', borderColor: '#c62828', fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: '#fdecea' } }}>Reject</Button>
+                                        </Box>
+                                      ) : <Typography variant="caption" color="text.secondary">–</Typography>}
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                        </TableContainer>
+                      )}
+                    </Box>
                   )}
-                </Box>
-              )}
-              {tab === 'managerchangereq' && (
-                <Box>
-                  <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Typography variant="subtitle1" fontWeight={700} sx={{ color: BRAND.primary }}>🔔 Manager Profile Change Requests</Typography>
-                    <Typography variant="caption" color="text.secondary">{managerChangeRequests.length} total</Typography>
-                  </Box>
-                  {managerChangeReqLoading ? (
-                    <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress size={28} sx={{ color: BRAND.primary }} /></Box>
-                  ) : managerChangeRequests.length === 0 ? (
-                    <Box sx={{ textAlign: 'center', py: 5, color: 'text.secondary' }}><Typography variant="body2">No manager change requests</Typography></Box>
-                  ) : (
-                    <TableContainer sx={{ overflowX: 'auto' }}>
-                      <Table size="small">
-                        <TableHead>
-                          <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider', py: 1.5, bgcolor: 'transparent' } }}>
-                            <TableCell>Manager</TableCell>
-                            <TableCell>Changes</TableCell>
-                            <TableCell>Reason</TableCell>
-                            <TableCell>Requested On</TableCell>
-                            <TableCell>Status</TableCell>
-                            <TableCell>Actions</TableCell>
-                          </TableRow>
-                        </TableHead>
-                        <TableBody>
-                          {managerChangeRequests.map(r => {
-                            const changes = Object.entries(r.changes || {})
-                              .map(([key, value]) => `${key}: ${value}`)
-                              .join(', ');
-                            return (
-                              <TableRow key={r._id} hover sx={{ '&:last-child td': { border: 0 } }}>
-                                <TableCell><Typography variant="body2" fontWeight={700} sx={{ color: 'text.primary' }}>{r.managerName}</Typography></TableCell>
-                                <TableCell>
-                                  <Typography variant="caption" sx={{ color: 'text.primary', maxWidth: 250, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {changes || '–'}
-                                  </Typography>
-                                </TableCell>
-                                <TableCell><Typography variant="caption" color="text.secondary">{r.reason || '–'}</Typography></TableCell>
-                                <TableCell>
-                                  <Typography variant="caption" color="text.secondary">
-                                    {new Date(r.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
-                                  </Typography>
-                                </TableCell>
-                                <TableCell><StatusChip status={r.status} /></TableCell>
-                                <TableCell>
-                                  {r.status === 'pending' ? (
-                                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                                      <Button size="small" variant="contained" startIcon={<CheckCircleIcon />}
-                                        onClick={() => approveManagerChangeReq(r._id)}
-                                        sx={{ bgcolor: BRAND.primary, fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: BRAND.primaryMid } }}>
-                                        Approve
-                                      </Button>
-                                      <Button size="small" variant="outlined" startIcon={<CancelIcon />}
-                                        onClick={() => rejectManagerChangeReq(r._id)}
-                                        sx={{ color: '#c62828', borderColor: '#c62828', fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: '#fdecea' } }}>
-                                        Reject
-                                      </Button>
-                                    </Box>
-                                  ) : <Typography variant="caption" color="text.secondary">–</Typography>}
-                                </TableCell>
+
+                  {/* Manager Change Requests */}
+                  {changeSubTab === 'manager' && (
+                    <Box>
+                      <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Typography variant="subtitle1" fontWeight={700} sx={{ color: BRAND.primary }}>🔔 Manager Profile Change Requests</Typography>
+                        <Typography variant="caption" color="text.secondary">{managerChangeRequests.length} total</Typography>
+                      </Box>
+                      {managerChangeReqLoading ? (
+                        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress size={28} sx={{ color: BRAND.primary }} /></Box>
+                      ) : managerChangeRequests.length === 0 ? (
+                        <Box sx={{ textAlign: 'center', py: 5, color: 'text.secondary' }}><Typography variant="body2">No manager change requests</Typography></Box>
+                      ) : (
+                        <TableContainer sx={{ overflowX: 'auto' }}>
+                          <Table size="small">
+                            <TableHead>
+                              <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider', py: 1.5, bgcolor: 'transparent' } }}>
+                                <TableCell>Manager</TableCell><TableCell>Changes</TableCell><TableCell>Reason</TableCell>
+                                <TableCell>Requested On</TableCell><TableCell>Status</TableCell><TableCell>Actions</TableCell>
                               </TableRow>
-                            );
-                          })}
-                        </TableBody>
-                      </Table>
-                    </TableContainer>
+                            </TableHead>
+                            <TableBody>
+                              {managerChangeRequests.filter(r => (changeStatusFilter === 'all' || r.status === changeStatusFilter) && (!changeSearch || (r.managerName||'').toLowerCase().includes(changeSearch.toLowerCase()) || (r.reason||'').toLowerCase().includes(changeSearch.toLowerCase()))).map(r => {
+                                const changes = Object.entries(r.changes || {}).map(([key, value]) => `${key}: ${value}`).join(', ');
+                                return (
+                                  <TableRow key={r._id} hover sx={{ '&:last-child td': { border: 0 } }}>
+                                    <TableCell><Typography variant="body2" fontWeight={700} sx={{ color: 'text.primary' }}>{r.managerName}</Typography></TableCell>
+                                    <TableCell><Typography variant="caption" sx={{ color: 'text.primary', maxWidth: 250, display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{changes || '–'}</Typography></TableCell>
+                                    <TableCell><Typography variant="caption" color="text.secondary">{r.reason || '–'}</Typography></TableCell>
+                                    <TableCell><Typography variant="caption" color="text.secondary">{new Date(r.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</Typography></TableCell>
+                                    <TableCell><StatusChip status={r.status} /></TableCell>
+                                    <TableCell>
+                                      {r.status === 'pending' ? (
+                                        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                          <Button size="small" variant="contained" startIcon={<CheckCircleIcon />} onClick={() => approveManagerChangeReq(r._id)}
+                                            sx={{ bgcolor: BRAND.primary, fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: BRAND.primaryMid } }}>Approve</Button>
+                                          <Button size="small" variant="outlined" startIcon={<CancelIcon />} onClick={() => rejectManagerChangeReq(r._id)}
+                                            sx={{ color: '#c62828', borderColor: '#c62828', fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: '#fdecea' } }}>Reject</Button>
+                                        </Box>
+                                      ) : <Typography variant="caption" color="text.secondary">–</Typography>}
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                        </TableContainer>
+                      )}
+                    </Box>
                   )}
                 </Box>
               )}
@@ -880,10 +1206,15 @@ const rejectManagerChangeReq = async (id) => {
               value={editForm.location || ''}
               onChange={e => setEditForm(f => ({ ...f, location: e.target.value }))} />
 
-            <TextField fullWidth label="Reporting Manager" size="small"
+            <TextField select fullWidth label="Reporting Manager" size="small"
               value={editForm.reportingManager || ''}
               onChange={e => setEditForm(f => ({ ...f, reportingManager: e.target.value }))}
-              sx={{ gridColumn: '1/-1' }} />
+              sx={{ gridColumn: '1/-1' }}>
+              <MenuItem value="">-- Select TL --</MenuItem>
+              {tlApprovedList.map(tl => (
+                <MenuItem key={tl._id} value={tl.name}>{tl.name}</MenuItem>
+              ))}
+            </TextField>
 
             <TextField fullWidth label="Phone Number" size="small"
               value={editForm.newJoinerPhone || ''}
