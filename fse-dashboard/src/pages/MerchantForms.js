@@ -1473,6 +1473,7 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
 export default function MerchantForms() {
   const [forms,      setForms]      = useState([]);
   const [duplicates, setDuplicates] = useState([]);
+  const [roleFilter, setRoleFilter] = useState('FSE'); // 🔥 NEW: Role filter (FSE or TL)
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState('');
   const [search,     setSearch]     = useState('');
@@ -1633,15 +1634,21 @@ export default function MerchantForms() {
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
+      console.log('🔄 Loading forms with role:', roleFilter); // 🔥 DEBUG
+      const apiUrl = `${EMP_API}/forms/admin/all?role=${roleFilter}`;
+      console.log('📡 API URL:', apiUrl); // 🔥 DEBUG
+      
       const [formsRes, dupRes, ptsRes, empRes, tlRes] = await Promise.all([
-        fetch(`${EMP_API}/forms/admin/all`),
+        fetch(apiUrl),
         fetch(`${EMP_API}/forms/admin/duplicates`),
         fetch(`${EMP_API}/forms/admin/employee-points`),
         fetch(`${EMP_API}/auth/all-employees`),
         fetch(`${EMP_API}/tl/approved-list`),
       ]);
       if (!formsRes.ok) throw new Error('Failed to load merchant forms');
-      setForms(await formsRes.json());
+      const formsData = await formsRes.json();
+      console.log(`✅ Loaded ${formsData.length} ${roleFilter} forms`); // 🔥 DEBUG
+      setForms(formsData);
       setDuplicates(dupRes.ok ? await dupRes.json() : []);
       setEmpPoints(ptsRes.ok ? await ptsRes.json() : []);
       setEmployees(empRes.ok ? await empRes.json() : []);
@@ -1649,11 +1656,12 @@ export default function MerchantForms() {
       setTeamLeaders(tlData);
       setTls(tlData); // Also set for meetings component
     } catch (err) {
+      console.error('❌ Error loading forms:', err); // 🔥 DEBUG
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [roleFilter]); // 🔥 Add roleFilter dependency so it reloads when role changes
 
   const loadPointsActivity = useCallback(async () => {
     setActivityLoading(true);
@@ -2332,7 +2340,7 @@ useEffect(() => {
     }
   }, []); // Run once on mount
 
-  // Compute verification KPI counts from global map
+  // Compute verification KPI counts from global map - Dynamic based on roleFilter
   const verifyKpiCounts = useMemo(() => {
     const counts = { 'Fully Verified': 0, 'Critical Failure': 0, 'Partially Done': 0, 'Not Found': 0 };
     filteredForms.forEach(f => {
@@ -2342,10 +2350,14 @@ useEffect(() => {
       else if (status === 'Partially Done') counts['Partially Done']++;
       else counts['Not Found']++;
     });
+    
+    // 🔥 Log verification KPI counts for debugging
+    console.log(`📊 Verification KPIs for ${roleFilter}:`, counts);
+    
     return counts;
-  }, [grouped, globalVerifyMap]); // eslint-disable-line
+  }, [filteredForms, globalVerifyMap, roleFilter]); // eslint-disable-line
 
-  // Breakdown by product for the clicked KPI
+  // Breakdown by product for the clicked KPI - Dynamic based on roleFilter
   const verifyBreakdown = useMemo(() => {
     if (!verifyKpiOpen) return [];
     const productMap = {};
@@ -2361,7 +2373,7 @@ useEffect(() => {
     return Object.entries(productMap)
       .filter(([, v]) => v.matched > 0)
       .sort((a, b) => b[1].matched - a[1].matched);
-  }, [verifyKpiOpen, grouped, globalVerifyMap]); // eslint-disable-line
+  }, [verifyKpiOpen, filteredForms, globalVerifyMap, roleFilter]); // eslint-disable-line
 
 
 
@@ -2494,7 +2506,7 @@ useEffect(() => {
         </Box>
       </Box>
 
-      {/* Summary KPIs */}
+      {/* Summary KPIs - Dynamic based on roleFilter */}
       {(() => {
         const filteredTotal = filteredForms.length;
         const filteredEmps  = groupedEntries.length;
@@ -2512,11 +2524,21 @@ useEffect(() => {
           return globalVerifyMap[key]?.status === 'Fully Verified';
         }).length;
         
+        // 🔥 Log KPI values for debugging
+        console.log(`📊 KPIs for ${roleFilter}:`, {
+          filteredTotal,
+          filteredEmps,
+          priorityPassActive,
+          activeCount,
+          settledCount,
+          formsCount: forms.length
+        });
+        
         return (
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 2, mb: 3 }}>
         {[
-          { label: 'Total Submissions', value: filteredTotal, color: BRAND.primary, bg: '#e6f4ea', key: 'total' },
-          { label: 'Employees',         value: filteredEmps,  color: '#1565c0',     bg: '#e3f2fd', key: 'emp' },
+          { label: `Total ${roleFilter} Submissions`, value: filteredTotal, color: BRAND.primary, bg: '#e6f4ea', key: 'total' },
+          { label: `${roleFilter}s`,         value: filteredEmps,  color: '#1565c0',     bg: '#e3f2fd', key: 'emp' },
           { label: 'Priority Pass Active', value: priorityPassActive, color: '#7c3aed', bg: '#f3e5f5', key: 'priority' },
           { label: 'Cross Duplicates',  value: activeCount,   color: '#c62828',     bg: '#fdecea', key: 'dup' },
           { label: 'Settled Duplicates',value: settledCount,  color: '#2e7d32',     bg: '#e6f4ea', key: 'settled' },
@@ -2704,6 +2726,29 @@ useEffect(() => {
       })()}
       {/* Date Filter */}
 <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', mb: 2 }}>
+  {/* 🔥 NEW: Role Filter */}
+  <Box sx={{ display: 'flex', gap: 0.5, mr: 2, border: `2px solid ${BRAND.primary}`, borderRadius: 1, overflow: 'hidden' }}>
+    {['FSE', 'TL'].map(role => (
+      <Button key={role} size="small"
+        variant={roleFilter === role ? 'contained' : 'text'}
+        onClick={() => {
+          console.log('🔘 Role filter clicked:', role); // 🔥 DEBUG
+          setRoleFilter(role);
+        }}
+        sx={{ 
+          fontWeight: 700, 
+          textTransform: 'uppercase',
+          bgcolor: roleFilter === role ? BRAND.primary : 'transparent',
+          color: roleFilter === role ? '#fff' : BRAND.primary,
+          borderRadius: 0,
+          px: 2,
+          '&:hover': { bgcolor: roleFilter === role ? '#0f3320' : BRAND.primaryLight }
+        }}>
+        {role} Forms
+      </Button>
+    ))}
+  </Box>
+  
   {['all', 'today', 'week'].map(f => (
     <Button key={f} size="small"
       variant={dateFilter === f ? 'contained' : 'outlined'}
