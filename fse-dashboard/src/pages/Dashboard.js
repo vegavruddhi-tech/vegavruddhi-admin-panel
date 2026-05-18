@@ -39,8 +39,12 @@ function OnboardVerifySection({ filteredForms, onboardVerifyMap, onboardVerifyin
     const productMap = {};
     onboardForms.forEach(f => {
       const rawProduct = f.formFillingFor || f.tideProduct || f.brand || '–';
-      const product    = rawProduct.toLowerCase() === 'msme' ? 'Tide MSME' : rawProduct;
-      const s          = onboardVerifyMap[getKey(f)]?.status || 'Not Found';
+      // Normalize: trim and lowercase for grouping
+      const normalized = rawProduct.trim().toLowerCase();
+      const product = normalized === 'msme' ? 'Tide MSME' :
+                     // Capitalize first letter for display
+                     normalized.charAt(0).toUpperCase() + normalized.slice(1);
+      const s = onboardVerifyMap[getKey(f)]?.status || 'Not Found';
       if (!productMap[product]) productMap[product] = { matched: 0, total: 0 };
       productMap[product].total++;
       if (s === status) productMap[product].matched++;
@@ -52,9 +56,12 @@ function OnboardVerifySection({ filteredForms, onboardVerifyMap, onboardVerifyin
     return onboardForms
       .filter(f => {
         const rawProduct = f.formFillingFor || f.tideProduct || f.brand || '–';
-        const normalized = rawProduct.toLowerCase() === 'msme' ? 'Tide MSME' : rawProduct;
+        // Normalize: trim and lowercase for comparison
+        const normalized = rawProduct.trim().toLowerCase();
+        const formProduct = normalized === 'msme' ? 'Tide MSME' :
+                           normalized.charAt(0).toUpperCase() + normalized.slice(1);
         const s = onboardVerifyMap[getKey(f)]?.status || 'Not Found';
-        return normalized === product && s === status;
+        return formProduct === product && s === status;
       })
       .map(f => {
         const emp = (employees || []).find(e => e.newJoinerName === f.employeeName);
@@ -440,10 +447,13 @@ const kpiData = useMemo(() => {
 
   const productMap = {};
   filteredForms.forEach(f => {
-    const product = f.formFillingFor || f.tideProduct || f.brand || 'Other';
-    const normalized = product.toLowerCase() === 'msme' ? 'Tide MSME' : product;
-    if (!productMap[normalized]) productMap[normalized] = 0;
-    productMap[normalized]++;
+    const raw = f.formFillingFor || f.tideProduct || f.brand || '';
+    // Normalize: trim and lowercase for grouping
+    const normalized = raw.trim().toLowerCase();
+    const product = normalized === 'msme' ? 'Tide MSME' :
+                   normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Other';
+    if (!productMap[product]) productMap[product] = 0;
+    productMap[product]++;
   });
 
   const onboarding = filteredForms.filter(f => f.status === 'Ready for Onboarding').length;
@@ -719,8 +729,11 @@ const kpiData = useMemo(() => {
                     const getKey = (f) => { const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim(); return p ? `${f.customerNumber}__${p}` : f.customerNumber; };
                     const map = {};
                     filteredForms.forEach(f => {
-                      const raw = f.formFillingFor || f.tideProduct || f.brand || 'Other';
-                      const product = raw.toLowerCase() === 'msme' ? 'Tide MSME' : raw;
+                      const raw = f.formFillingFor || f.tideProduct || f.brand || '';
+                      // Normalize: trim and lowercase for grouping
+                      const normalized = raw.trim().toLowerCase();
+                      const product = normalized === 'msme' ? 'Tide MSME' :
+                                     normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Other';
                       if (!map[product]) map[product] = { name: product, Total: 0, 'Fully Verified': 0, 'Partially Done': 0, 'Not Found': 0 };
                       map[product].Total++;
                       const s = globalVerifyMap[getKey(f)]?.status || 'Not Found';
@@ -776,7 +789,7 @@ const kpiData = useMemo(() => {
                       if (!data?.name) return;
                       const product = data.name;
                       const getKey = (f) => { const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim(); return p ? `${f.customerNumber}__${p}` : f.customerNumber; };
-                      const rows = filteredForms.filter(f => { const p = f.formFillingFor || f.tideProduct || f.brand || 'Other'; const norm = p.toLowerCase() === 'msme' ? 'Tide MSME' : p; return norm === product && (globalVerifyMap[getKey(f)]?.status || 'Not Found') === 'Fully Verified'; }).map(f => { const emp = employees.find(e => e.newJoinerName === f.employeeName); return { merchant: f.customerName || '–', phone: f.customerNumber || '–', fse: f.employeeName || '–', fseEmail: emp?.email || emp?.newJoinerEmailId || '–', tl: emp?.reportingManager || '–', verification: 'Fully Verified', date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) }; });
+                      const rows = filteredForms.filter(f => { const p = f.formFillingFor || f.tideProduct || f.brand || ''; const normalized = p.trim().toLowerCase(); const norm = normalized === 'msme' ? 'Tide MSME' : (normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Other'); return norm === product && (globalVerifyMap[getKey(f)]?.status || 'Not Found') === 'Fully Verified'; }).map(f => { const emp = employees.find(e => e.newJoinerName === f.employeeName); return { merchant: f.customerName || '–', phone: f.customerNumber || '–', fse: f.employeeName || '–', fseEmail: emp?.email || emp?.newJoinerEmailId || '–', tl: emp?.reportingManager || '–', verification: 'Fully Verified', date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) }; });
                       setChartDrill({ title: `✓ ${product} — Fully Verified`, subtitle: `${rows.length} forms`, color: '#16a34a', cols: ['Merchant', 'Phone', 'FSE', 'FSE Email', 'TL', 'Verification', 'Date'], rows });
                     }} />
                   <Bar dataKey="Partially Done" stackId="a" fill="url(#pdGrad2)" maxBarSize={52} style={{ cursor: 'pointer' }}
@@ -784,7 +797,7 @@ const kpiData = useMemo(() => {
                       if (!data?.name) return;
                       const product = data.name;
                       const getKey = (f) => { const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim(); return p ? `${f.customerNumber}__${p}` : f.customerNumber; };
-                      const rows = filteredForms.filter(f => { const p = f.formFillingFor || f.tideProduct || f.brand || 'Other'; const norm = p.toLowerCase() === 'msme' ? 'Tide MSME' : p; return norm === product && (globalVerifyMap[getKey(f)]?.status || 'Not Found') === 'Partially Done'; }).map(f => { const emp = employees.find(e => e.newJoinerName === f.employeeName); return { merchant: f.customerName || '–', phone: f.customerNumber || '–', fse: f.employeeName || '–', fseEmail: emp?.email || emp?.newJoinerEmailId || '–', tl: emp?.reportingManager || '–', verification: 'Partially Done', date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) }; });
+                      const rows = filteredForms.filter(f => { const p = f.formFillingFor || f.tideProduct || f.brand || ''; const normalized = p.trim().toLowerCase(); const norm = normalized === 'msme' ? 'Tide MSME' : (normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Other'); return norm === product && (globalVerifyMap[getKey(f)]?.status || 'Not Found') === 'Partially Done'; }).map(f => { const emp = employees.find(e => e.newJoinerName === f.employeeName); return { merchant: f.customerName || '–', phone: f.customerNumber || '–', fse: f.employeeName || '–', fseEmail: emp?.email || emp?.newJoinerEmailId || '–', tl: emp?.reportingManager || '–', verification: 'Partially Done', date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) }; });
                       setChartDrill({ title: `◑ ${product} — Partially Done`, subtitle: `${rows.length} forms`, color: '#d97706', cols: ['Merchant', 'Phone', 'FSE', 'FSE Email', 'TL', 'Verification', 'Date'], rows });
                     }} />
                   <Bar dataKey="Not Found" stackId="a" fill="url(#nfGrad2)" radius={[8,8,0,0]} maxBarSize={52} style={{ cursor: 'pointer' }}
@@ -792,7 +805,7 @@ const kpiData = useMemo(() => {
                       if (!data?.name) return;
                       const product = data.name;
                       const getKey = (f) => { const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim(); return p ? `${f.customerNumber}__${p}` : f.customerNumber; };
-                      const rows = filteredForms.filter(f => { const p = f.formFillingFor || f.tideProduct || f.brand || 'Other'; const norm = p.toLowerCase() === 'msme' ? 'Tide MSME' : p; return norm === product && (globalVerifyMap[getKey(f)]?.status || 'Not Found') === 'Not Found'; }).map(f => { const emp = employees.find(e => e.newJoinerName === f.employeeName); return { merchant: f.customerName || '–', phone: f.customerNumber || '–', fse: f.employeeName || '–', fseEmail: emp?.email || emp?.newJoinerEmailId || '–', tl: emp?.reportingManager || '–', verification: 'Not Found', date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) }; });
+                      const rows = filteredForms.filter(f => { const p = f.formFillingFor || f.tideProduct || f.brand || ''; const normalized = p.trim().toLowerCase(); const norm = normalized === 'msme' ? 'Tide MSME' : (normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Other'); return norm === product && (globalVerifyMap[getKey(f)]?.status || 'Not Found') === 'Not Found'; }).map(f => { const emp = employees.find(e => e.newJoinerName === f.employeeName); return { merchant: f.customerName || '–', phone: f.customerNumber || '–', fse: f.employeeName || '–', fseEmail: emp?.email || emp?.newJoinerEmailId || '–', tl: emp?.reportingManager || '–', verification: 'Not Found', date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) }; });
                       setChartDrill({ title: `– ${product} — Not Found`, subtitle: `${rows.length} forms`, color: '#9ca3af', cols: ['Merchant', 'Phone', 'FSE', 'FSE Email', 'TL', 'Verification', 'Date'], rows });
                     }}>
                     <LabelList dataKey="Total" position="top" style={{ fontSize: 11, fontWeight: 800, fill: '#374151' }} />

@@ -64,8 +64,13 @@ function OnboardVerifySection({ filteredForms, onboardVerifyMap, onboardVerifyin
     const productMap = {};
     onboardForms.forEach(f => {
       const rawProduct = f.formFillingFor || f.tideProduct || f.brand || '–';
-      const product    = rawProduct.toLowerCase() === 'msme' ? 'Tide MSME' : rawProduct;
-      const s          = onboardVerifyMap[getKey(f)]?.status || 'Not Found';
+      // Normalize: trim whitespace and convert to lowercase for grouping
+      const normalized = rawProduct.trim().toLowerCase();
+      // Special case for MSME
+      const product = normalized === 'msme' ? 'Tide MSME' : 
+                     // Capitalize first letter for display
+                     normalized.charAt(0).toUpperCase() + normalized.slice(1);
+      const s = onboardVerifyMap[getKey(f)]?.status || 'Not Found';
       if (!productMap[product]) productMap[product] = { matched: 0, total: 0 };
       productMap[product].total++;
       if (s === status) productMap[product].matched++;
@@ -920,7 +925,12 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
     const map = {};
     topFilteredForms.forEach(f => {
       const raw = f.formFillingFor || f.tideProduct || f.brand || 'Other';
-      const product = raw.toLowerCase() === 'msme' ? 'Tide MSME' : raw;
+      // Normalize: trim and lowercase for grouping
+      const normalized = raw.trim().toLowerCase();
+      // Special case for MSME
+      const product = normalized === 'msme' ? 'Tide MSME' :
+                     // Capitalize first letter for display
+                     normalized.charAt(0).toUpperCase() + normalized.slice(1);
       if (!map[product]) map[product] = 0;
       map[product]++;
     });
@@ -949,8 +959,12 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
     topFilteredForms.forEach(f => {
       const raw = f.formFillingFor || f.tideProduct || f.brand || '';
       if (raw) {
-        const normalized = raw.toLowerCase() === 'msme' ? 'Tide MSME' : raw;
-        productSet.add(normalized);
+        // Normalize: trim and lowercase for grouping
+        const normalized = raw.trim().toLowerCase();
+        const product = normalized === 'msme' ? 'Tide MSME' :
+                       // Capitalize first letter for display
+                       normalized.charAt(0).toUpperCase() + normalized.slice(1);
+        productSet.add(product);
       }
     });
 
@@ -960,8 +974,12 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
       // Get forms for this product
       const productForms = topFilteredForms.filter(f => {
         const raw = f.formFillingFor || f.tideProduct || f.brand || '';
-        const normalized = raw.toLowerCase() === 'msme' ? 'Tide MSME' : raw;
-        return normalized === product;
+        // Normalize: trim and lowercase for comparison
+        const normalized = raw.trim().toLowerCase();
+        const formProduct = normalized === 'msme' ? 'Tide MSME' :
+                           // Capitalize first letter for display
+                           normalized.charAt(0).toUpperCase() + normalized.slice(1);
+        return formProduct === product;
       });
 
       // Build day-by-day map
@@ -996,8 +1014,12 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
     topFilteredForms.forEach(f => {
       const raw = f.formFillingFor || f.tideProduct || f.brand || '';
       if (raw) {
-        const normalized = raw.toLowerCase() === 'msme' ? 'Tide MSME' : raw;
-        productSet.add(normalized);
+        // Normalize: trim and lowercase for grouping
+        const normalized = raw.trim().toLowerCase();
+        const product = normalized === 'msme' ? 'Tide MSME' :
+                       // Capitalize first letter for display
+                       normalized.charAt(0).toUpperCase() + normalized.slice(1);
+        productSet.add(product);
       }
     });
     
@@ -1034,9 +1056,11 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
     const tlMap = {};
 
     topFilteredForms.forEach(f => {
-      const product = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase() === 'msme' 
-        ? 'Tide MSME' 
-        : (f.formFillingFor || f.tideProduct || f.brand || 'Other');
+      const raw = f.formFillingFor || f.tideProduct || f.brand || '';
+      // Normalize: trim and lowercase for grouping
+      const normalized = raw.trim().toLowerCase();
+      const product = normalized === 'msme' ? 'Tide MSME' :
+                     normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Other';
       
       const empName = f.employeeName || 'Unknown';
       const emp = mongoEmployees.find(e => e.newJoinerName === empName);
@@ -1558,8 +1582,11 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
                 onClick={() => {
                   const rows = topFilteredForms
                     .filter(f => {
-                      const raw = f.formFillingFor || f.tideProduct || f.brand || 'Other';
-                      const product = raw.toLowerCase() === 'msme' ? 'Tide MSME' : raw;
+                      const raw = f.formFillingFor || f.tideProduct || f.brand || '';
+                      // Normalize: trim and lowercase for comparison
+                      const normalized = raw.trim().toLowerCase();
+                      const product = normalized === 'msme' ? 'Tide MSME' :
+                                     normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Other';
                       return product === k.product;
                     })
                     .map(f => ({
