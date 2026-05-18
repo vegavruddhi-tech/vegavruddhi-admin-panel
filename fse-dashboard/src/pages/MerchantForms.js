@@ -637,6 +637,95 @@ function DuplicatePanel({ duplicates, open, onClose, onNotify, notifying, onSett
   );
 }
 
+// ── Filled Late Panel ─────────────────────────────────────────
+function FilledLatePanel({ filledLateForms, open, onClose, onResolve, resolving }) {
+  const [resolveNote, setResolveNote] = useState({});
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#e65100', fontWeight: 800, pb: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <WarningAmberIcon /> Unfilled Forms Now Filled by FSEs
+        </Box>
+        <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
+      </DialogTitle>
+
+      <DialogContent dividers sx={{ p: 2 }}>
+        {filledLateForms.length === 0 ? (
+          <Typography color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>
+            No filled late forms. All unfilled forms are still pending.
+          </Typography>
+        ) : (
+          filledLateForms.map((form, i) => (
+            <Card key={form._id} sx={{ mb: 2, border: `1.5px solid #ffe0b2`, borderRadius: 2, bgcolor: '#fffaf0' }}>
+              <CardContent sx={{ pb: '12px !important' }}>
+                {/* Header row */}
+                <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap', mb: 1 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                    <WarningAmberIcon sx={{ color: '#e65100', fontSize: 18 }} />
+                    <Typography fontWeight={800} sx={{ color: '#e65100' }}>
+                      {form.customerName || form.customerPhone}
+                    </Typography>
+                    <Typography variant="caption" color="text.secondary">({form.customerPhone})</Typography>
+                    <ProductChip product={form.product} />
+                  </Box>
+                  {/* Resolve button */}
+                  <Tooltip title="Remove from unfilled list - FSE's form will remain visible">
+                    <Button size="small" variant="contained"
+                      disabled={resolving === i}
+                      startIcon={resolving === i ? <CircularProgress size={12} sx={{ color: 'inherit' }} /> : null}
+                      onClick={() => onResolve(form, i, resolveNote[i] || '')}
+                      sx={{ bgcolor: BRAND.primary, fontWeight: 700, fontSize: 11,
+                        '&:hover': { bgcolor: '#0f3320' } }}>
+                      {resolving === i ? 'Resolving…' : '✓ Resolve & Remove'}
+                    </Button>
+                  </Tooltip>
+                </Box>
+
+                {/* Details */}
+                <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 1 }}>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary" display="block">Originally Unfilled</Typography>
+                    <Typography variant="body2" fontWeight={600}>
+                      {form.expectedMonth} {form.expectedYear}
+                    </Typography>
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary" display="block">Filled By</Typography>
+                    <Chip 
+                      avatar={<Avatar sx={{ bgcolor: BRAND.primary, fontSize: 11 }}>{initials(form.filledByEmployee)}</Avatar>}
+                      label={form.filledByEmployee} 
+                      size="small" 
+                      sx={{ fontWeight: 600 }} 
+                    />
+                  </Box>
+                  <Box>
+                    <Typography variant="caption" color="text.secondary" display="block">Filled On</Typography>
+                    <Typography variant="body2" fontWeight={600}>
+                      {form.filledAt ? new Date(form.filledAt).toLocaleDateString('en-IN', { 
+                        day: 'numeric', month: 'short', year: 'numeric' 
+                      }) : '–'}
+                    </Typography>
+                  </Box>
+                </Box>
+
+                {/* Note field */}
+                <TextField size="small" fullWidth placeholder="Add resolution note (optional)…"
+                  value={resolveNote[i] || ''}
+                  onChange={e => setResolveNote(prev => ({ ...prev, [i]: e.target.value }))}
+                  sx={{ '& .MuiOutlinedInput-root': { fontSize: 12 } }} />
+              </CardContent>
+            </Card>
+          ))
+        )}
+      </DialogContent>
+      <DialogActions>
+        <Button onClick={onClose} sx={{ color: BRAND.primary, fontWeight: 700 }}>Close</Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
 // ── Verification status chip ──────────────────────────────────
 function VerifyChip({ status, onClick }) {
   const map = {
@@ -1158,8 +1247,11 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
                 // Only count if this specific form is Fully Verified
                 if (verificationStatus === 'Fully Verified') {
                   // ✅ FIXED: Use same priority order as backend
-                  const rawProduct = form.formFillingFor || form.tideProduct || form.brand || 'Other';
-                  const product = rawProduct.toLowerCase() === 'msme' ? 'Tide MSME' : rawProduct;
+                  const rawProduct = form.formFillingFor || form.tideProduct || form.brand || '';
+                  // Normalize: trim and lowercase for grouping
+                  const normalized = rawProduct.trim().toLowerCase();
+                  const product = normalized === 'msme' ? 'Tide MSME' :
+                                 normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Other';
                   
                   // Count every verified form (no deduplication)
                   if (!productBreakdown[product]) productBreakdown[product] = 0;
@@ -1203,8 +1295,11 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
               
               if (verificationStatus === 'Fully Verified') {
                 // ✅ FIXED: Use same priority order as backend
-                const rawProduct = form.formFillingFor || form.tideProduct || form.brand || 'Other';
-                const product = rawProduct.toLowerCase() === 'msme' ? 'Tide MSME' : rawProduct;
+                const rawProduct = form.formFillingFor || form.tideProduct || form.brand || '';
+                // Normalize: trim and lowercase for grouping
+                const normalized = rawProduct.trim().toLowerCase();
+                const product = normalized === 'msme' ? 'Tide MSME' :
+                               normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Other';
                 
                 // Count every verified form (no deduplication)
                 if (!productBreakdown[product]) productBreakdown[product] = 0;
@@ -1259,8 +1354,11 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
                 // Filter by selected product chip
                 if (!filterProduct) return true; // Show all if no filter
                 // ✅ FIXED: Use same priority order as backend
-                const rawProduct = f.formFillingFor || f.tideProduct || f.brand || 'Other';
-                const product = rawProduct.toLowerCase() === 'msme' ? 'Tide MSME' : rawProduct;
+                const rawProduct = f.formFillingFor || f.tideProduct || f.brand || '';
+                // Normalize: trim and lowercase for comparison
+                const normalized = rawProduct.trim().toLowerCase();
+                const product = normalized === 'msme' ? 'Tide MSME' :
+                               normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Other';
                 return product === filterProduct;
               })
               .map(f => {
@@ -1473,11 +1571,12 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
 export default function MerchantForms() {
   const [forms,      setForms]      = useState([]);
   const [duplicates, setDuplicates] = useState([]);
-  const [roleFilter, setRoleFilter] = useState('FSE'); // 🔥 NEW: Role filter (FSE or TL)
+  const [roleFilter, setRoleFilter] = useState('FSE'); // 🔥 NEW: Role filter (FSE, TL, or ALL)
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState('');
   const [search,     setSearch]     = useState('');
   const [dupOpen,    setDupOpen]    = useState(false);
+  const [filledLateOpen, setFilledLateOpen] = useState(false); // 🔥 NEW: Filled late dialog
   const [settledOpen,setSettledOpen]= useState(false);
   const [exporting,  setExporting]  = useState(false);
   const [exportAnchor, setExportAnchor] = useState(null);
@@ -1486,6 +1585,7 @@ export default function MerchantForms() {
   const [notifying,  setNotifying]  = useState(null); // index of dup being notified
   const [notifySnack, setNotifySnack] = useState('');
   const [settling,   setSettling]   = useState(null); // index of dup being settled
+  const [resolving,  setResolving]  = useState(null); // 🔥 NEW: index of filled late form being resolved
   const [empPoints,  setEmpPoints]  = useState([]);   // [{_id, newJoinerName, pointsAdjustment}]
   const [editPtsOpen,  setEditPtsOpen]  = useState(false);
   const [editPtsEmp,   setEditPtsEmp]   = useState(null); // {empName, empData, autoPoints}
@@ -1609,6 +1709,8 @@ export default function MerchantForms() {
   const [employees,        setEmployees]        = useState([]); // Employee data with phone and TL
   const [teamLeaders,      setTeamLeaders]      = useState([]); // TL data
   const [tls,              setTls]              = useState([]); // TL data for meetings
+  const [unfilledForms,    setUnfilledForms]    = useState([]); // Unfilled forms from sheet
+  const [filledLateForms,  setFilledLateForms]  = useState([]); // 🔥 NEW: Forms filled after being marked unfilled
 
   // ── Update verification map when modal fetches fresh data ────
   const handleUpdateVerifyMap = useCallback((vKey, verificationData) => {
@@ -1635,19 +1737,64 @@ export default function MerchantForms() {
     setLoading(true); setError('');
     try {
       console.log('🔄 Loading forms with role:', roleFilter); // 🔥 DEBUG
-      const apiUrl = `${EMP_API}/forms/admin/all?role=${roleFilter}`;
-      console.log('📡 API URL:', apiUrl); // 🔥 DEBUG
       
-      const [formsRes, dupRes, ptsRes, empRes, tlRes] = await Promise.all([
-        fetch(apiUrl),
+      let formsData = [];
+      
+      if (roleFilter === 'UNFILLED') {
+        // 🔥 NEW: Fetch unfilled forms
+        console.log('📡 Fetching unfilled forms');
+        const unfilledRes = await fetch(`${EMP_API}/unfilled-forms/list?month=${selectedMonth}&year=${selectedYear}`);
+        if (!unfilledRes.ok) throw new Error('Failed to load unfilled forms');
+        const unfilledData = await unfilledRes.json();
+        setUnfilledForms(unfilledData.unfilledForms || []);
+        console.log(`✅ Loaded ${unfilledData.unfilledForms?.length || 0} unfilled forms`);
+        
+        // Don't load regular forms for unfilled view
+        setForms([]);
+        setDuplicates([]);
+        setEmpPoints([]);
+        setEmployees([]);
+        setTeamLeaders([]);
+        setTls([]);
+        setLoading(false);
+        return;
+      } else if (roleFilter === 'ALL') {
+        // 🔥 NEW: Fetch both FSE and TL forms for ALL view
+        console.log('📡 Fetching both FSE and TL forms for ALL view');
+        const [fseRes, tlRes] = await Promise.all([
+          fetch(`${EMP_API}/forms/admin/all?role=FSE`),
+          fetch(`${EMP_API}/forms/admin/all?role=TL`)
+        ]);
+        
+        const fseData = fseRes.ok ? await fseRes.json() : [];
+        const tlData = tlRes.ok ? await tlRes.json() : [];
+        
+        // Combine and deduplicate by form ID
+        const formMap = new Map();
+        [...fseData, ...tlData].forEach(form => {
+          if (!formMap.has(form._id)) {
+            formMap.set(form._id, form);
+          }
+        });
+        formsData = Array.from(formMap.values());
+        console.log(`✅ Loaded ${fseData.length} FSE + ${tlData.length} TL = ${formsData.length} total forms`);
+      } else {
+        // Regular FSE or TL only
+        const apiUrl = `${EMP_API}/forms/admin/all?role=${roleFilter}`;
+        console.log('📡 API URL:', apiUrl);
+        const formsRes = await fetch(apiUrl);
+        if (!formsRes.ok) throw new Error('Failed to load merchant forms');
+        formsData = await formsRes.json();
+        console.log(`✅ Loaded ${formsData.length} ${roleFilter} forms`);
+      }
+      
+      const [dupRes, ptsRes, empRes, tlRes] = await Promise.all([
         fetch(`${EMP_API}/forms/admin/duplicates`),
         fetch(`${EMP_API}/forms/admin/employee-points`),
         fetch(`${EMP_API}/auth/all-employees`),
         fetch(`${EMP_API}/tl/approved-list`),
       ]);
-      if (!formsRes.ok) throw new Error('Failed to load merchant forms');
-      const formsData = await formsRes.json();
-      console.log(`✅ Loaded ${formsData.length} ${roleFilter} forms`); // 🔥 DEBUG
+      
       setForms(formsData);
       setDuplicates(dupRes.ok ? await dupRes.json() : []);
       setEmpPoints(ptsRes.ok ? await ptsRes.json() : []);
@@ -1661,7 +1808,7 @@ export default function MerchantForms() {
     } finally {
       setLoading(false);
     }
-  }, [roleFilter]); // 🔥 Add roleFilter dependency so it reloads when role changes
+  }, [roleFilter, selectedMonth, selectedYear]); // 🔥 Add dependencies
 
   const loadPointsActivity = useCallback(async () => {
     setActivityLoading(true);
@@ -1704,6 +1851,38 @@ export default function MerchantForms() {
       setSettling(null);
     }
   }, []);
+
+  // 🔥 NEW: Handle resolving filled late forms
+  const handleResolveFilledLate = useCallback(async (form, idx, note) => {
+    setResolving(idx);
+    try {
+      const res = await fetch(`${EMP_API}/unfilled-forms/${form._id}/resolve`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          resolvedBy: 'admin',
+          notes: note || 'Filled by FSE - removed from unfilled list'
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setNotifySnack('✓ Form removed from unfilled list. FSE\'s submission remains visible.');
+        // Refresh filled late forms list
+        const refreshRes = await fetch(`${EMP_API}/unfilled-forms/filled-late?month=${selectedMonth}&year=${selectedYear}`);
+        if (refreshRes.ok) {
+          const refreshData = await refreshRes.json();
+          setFilledLateForms(refreshData.filledLateForms || []);
+        }
+        load(); // refresh main forms list
+      } else {
+        setNotifySnack(`Error: ${data.message || data.error}`);
+      }
+    } catch {
+      setNotifySnack('Failed to resolve. Please try again.');
+    } finally {
+      setResolving(null);
+    }
+  }, [selectedMonth, selectedYear, load]);
 
   const handleEditPoints = useCallback(async (empName, empData, autoPoints, productBreakdown = {}) => {
     console.log('🔧 handleEditPoints called:', { empName, empData: empData?._id, autoPoints, productBreakdown });
@@ -2019,6 +2198,22 @@ export default function MerchantForms() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // 🔥 NEW: Fetch filled late forms for notification badge
+  useEffect(() => {
+    const fetchFilledLate = async () => {
+      try {
+        const res = await fetch(`${EMP_API}/unfilled-forms/filled-late?month=${selectedMonth}&year=${selectedYear}`);
+        if (res.ok) {
+          const data = await res.json();
+          setFilledLateForms(data.filledLateForms || []);
+        }
+      } catch (err) {
+        console.error('Failed to fetch filled late forms:', err);
+      }
+    };
+    fetchFilledLate();
+  }, [selectedMonth, selectedYear]);
 
   // Set of phone+product combinations that are cross-employee duplicates
   const duplicatePhones = useMemo(() => {
@@ -2364,7 +2559,11 @@ useEffect(() => {
     filteredForms.forEach(f => {
       const status  = globalVerifyMap[getFormKey(f)]?.status || 'Not Found';
       const rawProduct = f.formFillingFor || f.tideProduct || f.brand || '–';
-      const product = rawProduct.toLowerCase() === 'msme' ? 'Tide MSME' : rawProduct;
+      // Normalize: trim and lowercase for grouping
+      const normalized = rawProduct.trim().toLowerCase();
+      const product = normalized === 'msme' ? 'Tide MSME' :
+                     // Capitalize first letter for display
+                     normalized.charAt(0).toUpperCase() + normalized.slice(1);
 
       if (!productMap[product]) productMap[product] = { total: 0, matched: 0 };
       productMap[product].total++;
@@ -2398,6 +2597,19 @@ useEffect(() => {
                   bgcolor: totalDupCount > 0 ? '#fdecea' : 'transparent',
                   '&:hover': { bgcolor: totalDupCount > 0 ? '#ffcdd2' : BRAND.primaryLight } }}>
                 <NotificationsIcon />
+              </IconButton>
+            </Badge>
+          </Tooltip>
+
+          {/* 🔥 NEW: Filled Late Forms Notification */}
+          <Tooltip title={filledLateForms.length > 0 ? `${filledLateForms.length} unfilled form(s) now filled by FSEs` : 'No filled late forms'}>
+            <Badge badgeContent={filledLateForms.length} color="warning" max={99}>
+              <IconButton onClick={() => setFilledLateOpen(true)}
+                sx={{ border: `1.5px solid ${filledLateForms.length > 0 ? '#e65100' : BRAND.primaryLight}`,
+                  color: filledLateForms.length > 0 ? '#e65100' : BRAND.primary,
+                  bgcolor: filledLateForms.length > 0 ? '#fff3e0' : 'transparent',
+                  '&:hover': { bgcolor: filledLateForms.length > 0 ? '#ffe0b2' : BRAND.primaryLight } }}>
+                <WarningAmberIcon />
               </IconButton>
             </Badge>
           </Tooltip>
@@ -2508,8 +2720,65 @@ useEffect(() => {
 
       {/* Summary KPIs - Dynamic based on roleFilter */}
       {(() => {
+        // 🔥 NEW: Show unfilled-specific KPIs when in UNFILLED mode
+        if (roleFilter === 'UNFILLED') {
+          const totalUnfilled = unfilledForms.filter(f => f.status === 'unfilled').length;
+          const filledLateCount = filledLateForms.length;
+          
+          // Count by product
+          const productBreakdown = {};
+          unfilledForms.forEach(f => {
+            if (f.status === 'unfilled') {
+              productBreakdown[f.product] = (productBreakdown[f.product] || 0) + 1;
+            }
+          });
+          
+          return (
+            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 2, mb: 3 }}>
+              {[
+                { label: 'Total UNFILLED Submissions', value: totalUnfilled, color: '#e65100', bg: '#fff3e0', key: 'unfilled' },
+                { label: 'UNFILLEDs', value: 1, color: '#1565c0', bg: '#e3f2fd', key: 'emp', subtitle: 'Dheeraj Anand' },
+                { label: 'Filled Late (needs review)', value: filledLateCount, color: '#f57f17', bg: '#fff8e1', key: 'filled_late', clickable: filledLateCount > 0 },
+                { label: 'Tide Insurance', value: productBreakdown['Tide Insurance'] || 0, color: '#006064', bg: '#e0f7fa', key: 'tide_ins' },
+                { label: 'Tide', value: productBreakdown['Tide'] || 0, color: '#1565c0', bg: '#e3f2fd', key: 'tide' },
+              ].map(k => (
+                <Card key={k.label}
+                  onClick={k.clickable ? () => setFilledLateOpen(true) : undefined}
+                  sx={{
+                    borderRadius: 3,
+                    border: `1.5px solid ${k.color}20`,
+                    cursor: k.clickable ? 'pointer' : 'default',
+                    transition: 'box-shadow 0.2s, transform 0.15s',
+                    ...(k.clickable && { '&:hover': { boxShadow: `0 4px 20px ${k.color}30`, transform: 'translateY(-2px)' } }),
+                  }}>
+                  <CardContent sx={{ py: 2 }}>
+                    <Typography variant="h4" fontWeight={800} sx={{ color: k.color }}>{k.value}</Typography>
+                    <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                      {k.label}
+                      {k.clickable && (
+                        <Typography component="span" variant="caption" sx={{ ml: 1, color: k.color, fontWeight: 700 }}>
+                          (click to view)
+                        </Typography>
+                      )}
+                      {k.subtitle && (
+                        <Typography component="span" variant="caption" sx={{ display: 'block', mt: 0.5, color: k.color, opacity: 0.8 }}>
+                          {k.subtitle}
+                        </Typography>
+                      )}
+                    </Typography>
+                  </CardContent>
+                </Card>
+              ))}
+            </Box>
+          );
+        }
+        
+        // Regular KPIs for FSE/TL/ALL modes
         const filteredTotal = filteredForms.length;
-        const filteredEmps  = groupedEntries.length;
+        // For ALL view, count unique FSEs from all forms (not just groupedEntries)
+        const filteredEmps  = roleFilter === 'ALL' 
+          ? new Set(filteredForms.map(f => f.employeeName).filter(Boolean)).size 
+          : groupedEntries.length;
         
         // Calculate Priority Pass Active count (Tide merchants verified in selected month with active Priority Pass in future months)
         // This requires checking future months, so we'll use a simpler approach for now
@@ -2537,8 +2806,8 @@ useEffect(() => {
         return (
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 2, mb: 3 }}>
         {[
-          { label: `Total ${roleFilter} Submissions`, value: filteredTotal, color: BRAND.primary, bg: '#e6f4ea', key: 'total' },
-          { label: `${roleFilter}s`,         value: filteredEmps,  color: '#1565c0',     bg: '#e3f2fd', key: 'emp' },
+          { label: roleFilter === 'ALL' ? 'Total Submissions' : `Total ${roleFilter} Submissions`, value: filteredTotal, color: BRAND.primary, bg: '#e6f4ea', key: 'total' },
+          { label: roleFilter === 'ALL' ? 'Total FSEs' : `${roleFilter}s`, value: filteredEmps, color: '#1565c0', bg: '#e3f2fd', key: 'emp' },
           { label: 'Priority Pass Active', value: priorityPassActive, color: '#7c3aed', bg: '#f3e5f5', key: 'priority' },
           { label: 'Cross Duplicates',  value: activeCount,   color: '#c62828',     bg: '#fdecea', key: 'dup' },
           { label: 'Settled Duplicates',value: settledCount,  color: '#2e7d32',     bg: '#e6f4ea', key: 'settled' },
@@ -2667,7 +2936,10 @@ useEffect(() => {
       {drillProduct && (() => {
         const drillForms = filteredForms.filter(f => {
           const rawProduct = f.formFillingFor || f.tideProduct || f.brand || '–';
-          const product = rawProduct.toLowerCase() === 'msme' ? 'Tide MSME' : rawProduct;
+          // Normalize: trim and lowercase for comparison
+          const normalized = rawProduct.trim().toLowerCase();
+          const product = normalized === 'msme' ? 'Tide MSME' :
+                         normalized.charAt(0).toUpperCase() + normalized.slice(1);
           const status  = globalVerifyMap[getFormKey(f)]?.status || 'Not Found';
           return product === drillProduct.product && status === drillProduct.status;
         });
@@ -2728,7 +3000,7 @@ useEffect(() => {
 <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', mb: 2 }}>
   {/* 🔥 NEW: Role Filter */}
   <Box sx={{ display: 'flex', gap: 0.5, mr: 2, border: `2px solid ${BRAND.primary}`, borderRadius: 1, overflow: 'hidden' }}>
-    {['FSE', 'TL'].map(role => (
+    {['FSE', 'TL', 'ALL', 'UNFILLED'].map(role => (
       <Button key={role} size="small"
         variant={roleFilter === role ? 'contained' : 'text'}
         onClick={() => {
@@ -2744,7 +3016,7 @@ useEffect(() => {
           px: 2,
           '&:hover': { bgcolor: roleFilter === role ? '#0f3320' : BRAND.primaryLight }
         }}>
-        {role} Forms
+        {role === 'UNFILLED' ? '⚠️ Unfilled' : `${role} Forms`}
       </Button>
     ))}
   </Box>
@@ -2864,6 +3136,68 @@ useEffect(() => {
             <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
               <CircularProgress sx={{ color: BRAND.primary }} />
             </Box>
+          ) : roleFilter === 'UNFILLED' ? (
+            // 🔥 NEW: Display unfilled forms grouped by assigned person (Dheeraj Anand)
+            unfilledForms.length === 0 ? (
+              <Card sx={{ textAlign: 'center', py: 6, border: `1.5px dashed ${BRAND.primaryLight}` }}>
+                <Typography color="text.secondary">✅ No unfilled forms for {selectedMonth} {selectedYear}!</Typography>
+              </Card>
+            ) : (
+              <Card sx={{ mb: 3, border: `2px solid #ff9800`, borderRadius: 2 }}>
+                <CardContent>
+                  {/* Header */}
+                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <Avatar sx={{ bgcolor: '#ff9800', width: 40, height: 40 }}>DA</Avatar>
+                      <Box>
+                        <Typography variant="h6" fontWeight={800}>Dheeraj Anand</Typography>
+                        <Typography variant="caption" color="text.secondary">
+                          {unfilledForms.length} unfilled form{unfilledForms.length !== 1 ? 's' : ''} · {selectedMonth} {selectedYear}
+                        </Typography>
+                      </Box>
+                    </Box>
+                    <Chip 
+                      label={`⚠️ ${unfilledForms.length} Unfilled`} 
+                      sx={{ bgcolor: '#fff3e0', color: '#e65100', fontWeight: 700, fontSize: 13 }} 
+                    />
+                  </Box>
+
+                  {/* Unfilled Forms Table */}
+                  <TableContainer>
+                    <Table size="small">
+                      <TableHead>
+                        <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', color: 'text.secondary', bgcolor: '#f9f9f9' } }}>
+                          <TableCell>#</TableCell>
+                          <TableCell>Customer Name</TableCell>
+                          <TableCell>Phone</TableCell>
+                          <TableCell>Product</TableCell>
+                          <TableCell>Sheet Tab</TableCell>
+                          <TableCell>Status</TableCell>
+                        </TableRow>
+                      </TableHead>
+                      <TableBody>
+                        {unfilledForms.map((form, idx) => (
+                          <TableRow key={form._id} hover>
+                            <TableCell sx={{ color: 'text.secondary', fontSize: 11 }}>{idx + 1}</TableCell>
+                            <TableCell sx={{ fontWeight: 700 }}>{form.customerName || '–'}</TableCell>
+                            <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>{form.customerPhone}</TableCell>
+                            <TableCell><ProductChip product={form.product} /></TableCell>
+                            <TableCell sx={{ color: 'text.secondary', fontSize: 11 }}>{form.sheetTabName}</TableCell>
+                            <TableCell>
+                              <Chip 
+                                label="Unfilled" 
+                                size="small" 
+                                sx={{ bgcolor: '#fdecea', color: '#c62828', fontWeight: 700, fontSize: 10 }} 
+                              />
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </TableContainer>
+                </CardContent>
+              </Card>
+            )
           ) : groupedEntries.length === 0 ? (
             <Card sx={{ textAlign: 'center', py: 6, border: `1.5px dashed ${BRAND.primaryLight}` }}>
               <Typography color="text.secondary">No merchant forms found.</Typography>
@@ -2896,6 +3230,16 @@ useEffect(() => {
       <DuplicatePanel duplicates={duplicates} open={dupOpen} onClose={() => setDupOpen(false)}
         onNotify={handleNotify} notifying={notifying}
         onSettle={handleSettle} settling={settling} />
+
+      {/* 🔥 NEW: Filled Late Panel */}
+      <FilledLatePanel 
+        filledLateForms={filledLateForms} 
+        open={filledLateOpen} 
+        onClose={() => setFilledLateOpen(false)}
+        onResolve={handleResolveFilledLate} 
+        resolving={resolving} 
+      />
+
       {/* <Button
         variant={todayOnly ? 'contained' : 'outlined'}
         onClick={() => setTodayOnly(prev => !prev)}

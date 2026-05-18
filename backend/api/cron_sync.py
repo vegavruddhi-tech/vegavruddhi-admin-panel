@@ -81,9 +81,36 @@ def handler(request):
             print(f"⚠️ CACHE PRE-COMPUTE ERROR: {cache_error}")
             print("   Sync completed but cache not pre-populated")
         
+        # Step 3: Sync unfilled forms (find merchants in Sheet but not in MongoDB)
+        print(f"\nStep 3: Syncing unfilled forms")
+        try:
+            from sync_unfilled_forms import sync_unfilled_forms
+            
+            # Get current month and year
+            now = datetime.now()
+            current_month = now.strftime("%B")
+            current_year = now.year
+            
+            print(f"Syncing unfilled forms for {current_month} {current_year}")
+            
+            result = sync_unfilled_forms(current_month, current_year)
+            
+            if result['success']:
+                print(f"✅ UNFILLED FORMS SYNC SUCCESS")
+                print(f"   Sheet entries: {result['sheetEntries']}")
+                print(f"   MongoDB forms: {result['mongodbForms']}")
+                print(f"   Unfilled forms: {result['unfilledForms']}")
+                print(f"   Saved to DB: {result['savedCount']}")
+            else:
+                print(f"⚠️ UNFILLED FORMS SYNC FAILED: {result.get('error')}")
+                
+        except Exception as unfilled_error:
+            print(f"⚠️ UNFILLED FORMS SYNC ERROR: {unfilled_error}")
+            print("   Main sync completed but unfilled forms not synced")
+        
         return {
             "statusCode": 200, 
-            "body": "Sync and cache pre-computation completed"
+            "body": "Sync, cache pre-computation, and unfilled forms sync completed"
         }
         
     except Exception as e:

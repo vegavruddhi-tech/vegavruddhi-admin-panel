@@ -962,8 +962,11 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
         // Build per-product breakdown
         const productMap = {};
         filteredAllForms.forEach(f => {
-          const rawProduct = f.formFillingFor || f.tideProduct || f.brand || 'Other';
-          const product = rawProduct.toLowerCase() === 'msme' ? 'Tide MSME' : rawProduct;
+          const rawProduct = f.formFillingFor || f.tideProduct || f.brand || '';
+          // Normalize: trim and lowercase for grouping
+          const normalized = rawProduct.trim().toLowerCase();
+          const product = normalized === 'msme' ? 'Tide MSME' :
+                         normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Other';
           if (!productMap[product]) productMap[product] = { total: 0, matched: 0 };
           productMap[product].total++;
           if ((globalVerifyMap[getFormKey(f)]?.status || 'Not Found') === verifyKpiOpen) productMap[product].matched++;
