@@ -136,6 +136,7 @@ export default function EmployeeApprovals() {
   const [managerChangeRequests, setManagerChangeRequests] = useState([]);
   const [managerChangeReqLoading, setManagerChangeReqLoading] = useState(false);
   const [managerRejectedList, setManagerRejectedList] = useState([]);
+  const [managerApprovedList, setManagerApprovedList] = useState([]);
   const [managerPending, setManagerPending] = useState([]);
   const [managerPendingLoading, setManagerPendingLoading] = useState(false);
 
@@ -259,14 +260,17 @@ const rejectTlChangeReq = async (id) => {
 const loadManagerChangeRequests = async () => {
   setManagerChangeReqLoading(true);
   try {
-    const [changeRes, rejectedRes] = await Promise.all([
+    const [changeRes, rejectedRes, approvedRes] = await Promise.all([
       fetch(`${MANAGER_API}/change-requests`),
       fetch(`${MANAGER_API}/rejected-list`),
+      fetch(`${MANAGER_API}/approved-list`),
     ]);
     const data = await changeRes.json();
     const rejectedData = await rejectedRes.json();
+    const approvedData = await approvedRes.json();
     setManagerChangeRequests(Array.isArray(data) ? data : []);
     setManagerRejectedList(Array.isArray(rejectedData) ? rejectedData : []);
+    setManagerApprovedList(Array.isArray(approvedData) ? approvedData : []);
   } catch { } finally { setManagerChangeReqLoading(false); }
 };
 
@@ -739,8 +743,8 @@ const rejectManagerChangeReq = async (id) => {
                 const matchTL  = (e) => !q || (e.name||'').toLowerCase().includes(q) || (e.email||'').toLowerCase().includes(q) || (e.location||'').toLowerCase().includes(q) || (e.reportingManager||'').toLowerCase().includes(q);
                 const fseApproved      = approved.filter(e => (e.position || '').toLowerCase() === 'fse').filter(matchFSE);
                 const tlApproved       = tlApprovedList.filter(matchTL);
-                const managerApproved  = approved.filter(e => (e.position || '').toLowerCase() === 'manager').filter(matchFSE);
-                const approvedNonTL    = approved.filter(e => !['tl', 'team lead', 'team leader'].includes((e.position || '').toLowerCase())).filter(matchFSE);
+                const managerApproved  = managerApprovedList.filter(m => !q || (m.name||'').toLowerCase().includes(q) || (m.email||'').toLowerCase().includes(q) || (m.location||'').toLowerCase().includes(q));
+                const approvedNonTL    = approved.filter(e => !['tl', 'team lead', 'team leader', 'manager'].includes((e.position || '').toLowerCase())).filter(matchFSE);
                 const allApproved      = [...approvedNonTL, ...tlApprovedList.filter(matchTL)];
                 const subList =
                   approvedSubTab === 'fse'     ? fseApproved :
@@ -775,8 +779,7 @@ const rejectManagerChangeReq = async (id) => {
                         InputProps={{ startAdornment: <span style={{ marginRight: 6, color: '#aaa' }}>🔍</span> }} />
                     </Box>
                     {/* TL approved uses a simpler table since TL data shape differs */}
-                    {approvedSubTab === 'tl' ? (
-                      <Box>
+                    {approvedSubTab === 'tl' ? (                      <Box>
                         <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                           <Typography variant="subtitle1" fontWeight={700} sx={{ color: BRAND.primary }}>✓ TL Approved Employees</Typography>
                           <Typography variant="caption" color="text.secondary">{tlApproved.length} record{tlApproved.length !== 1 ? 's' : ''}</Typography>
@@ -841,11 +844,60 @@ const rejectManagerChangeReq = async (id) => {
                           </TableContainer>
                         )}
                       </Box>
+                    ) : approvedSubTab === 'manager' ? (
+                      <Box>
+                        <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <Typography variant="subtitle1" fontWeight={700} sx={{ color: BRAND.primary }}>✓ Manager Approved</Typography>
+                          <Typography variant="caption" color="text.secondary">{managerApproved.length} record{managerApproved.length !== 1 ? 's' : ''}</Typography>
+                        </Box>
+                        {managerApproved.length === 0 ? (
+                          <Box sx={{ textAlign: 'center', py: 5, color: 'text.secondary' }}>
+                            <PersonIcon sx={{ fontSize: 40, opacity: 0.3, mb: 1 }} />
+                            <Typography variant="body2">No approved managers found</Typography>
+                          </Box>
+                        ) : (
+                          <TableContainer sx={{ overflowX: 'auto' }}>
+                            <Table size="small">
+                              <TableHead>
+                                <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider', py: 1.5 } }}>
+                                  <TableCell>Manager</TableCell>
+                                  <TableCell>Location</TableCell>
+                                  <TableCell>Phone</TableCell>
+                                  <TableCell>Registered On</TableCell>
+                                  <TableCell>Status</TableCell>
+                                </TableRow>
+                              </TableHead>
+                              <TableBody>
+                                {managerApproved.map(m => (
+                                  <TableRow key={m._id} hover sx={{ '&:last-child td': { border: 0 } }}>
+                                    <TableCell>
+                                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                        <Avatar src={m.image} sx={{ bgcolor: BRAND.primary, width: 36, height: 36, fontSize: 13, fontWeight: 700 }}>
+                                          {initials(m.name)}
+                                        </Avatar>
+                                        <Box>
+                                          <Typography variant="body2" fontWeight={700} sx={{ color: 'text.primary' }}>{m.name}</Typography>
+                                          <Typography variant="caption" sx={{ color: 'text.secondary' }}>{m.email}</Typography>
+                                        </Box>
+                                      </Box>
+                                    </TableCell>
+                                    <TableCell><Typography variant="body2">{m.location || '–'}</Typography></TableCell>
+                                    <TableCell><Typography variant="body2">{m.phone || '–'}</Typography></TableCell>
+                                    <TableCell>
+                                      <Typography variant="caption">
+                                        {m.createdAt ? new Date(m.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '–'}
+                                      </Typography>
+                                    </TableCell>
+                                    <TableCell><StatusChip status="approved" /></TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </TableContainer>
+                        )}
+                      </Box>
                     ) : (
-                      tableFor(subList, false, `✓ ${
-                        approvedSubTab === 'fse' ? 'FSE' :
-                        approvedSubTab === 'manager' ? 'Manager' : 'All'
-                      } Approved Employees`)
+                      tableFor(subList, false, `✓ ${approvedSubTab === 'fse' ? 'FSE' : 'All'} Approved Employees`)
                     )}
                   </Box>
                 );
