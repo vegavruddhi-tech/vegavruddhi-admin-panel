@@ -663,6 +663,73 @@ const rejectManagerChangeReq = async (id) => {
                         )}
                       </Box>
                     )}
+                    {/* Manager Pending */}
+                    {pendingSubTab === 'manager' && (
+                      <Box>
+                        <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+                          <Typography variant="subtitle1" fontWeight={700} sx={{ color: BRAND.primary }}>⏳ Manager Pending Approvals</Typography>
+                        </Box>
+                        {managerPendingLoading ? (
+                          <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}><CircularProgress size={28} sx={{ color: BRAND.primary }} /></Box>
+                        ) : managerPending.length === 0 ? (
+                          <Box sx={{ textAlign: 'center', py: 5, color: 'text.secondary' }}>
+                            <PersonIcon sx={{ fontSize: 40, opacity: 0.3, mb: 1 }} />
+                            <Typography variant="body2">No pending manager approvals</Typography>
+                          </Box>
+                        ) : (
+                          <TableContainer sx={{ overflowX: 'auto' }}>
+                            <Table size="small">
+                              <TableHead>
+                                <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider', py: 1.5 } }}>
+                                  <TableCell>Name</TableCell>
+                                  <TableCell>Email</TableCell>
+                                  <TableCell>Phone</TableCell>
+                                  <TableCell>Location</TableCell>
+                                  <TableCell>Registered On</TableCell>
+                                  <TableCell>Actions</TableCell>
+                                </TableRow>
+                              </TableHead>
+                              <TableBody>
+                                {managerPending.map(m => (
+                                  <TableRow key={m._id} hover sx={{ '&:last-child td': { border: 0 } }}>
+                                    <TableCell>
+                                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                        <Avatar src={m.image} sx={{ bgcolor: BRAND.primary, width: 36, height: 36, fontSize: 13, fontWeight: 700 }}>
+                                          {initials(m.name)}
+                                        </Avatar>
+                                        <Typography variant="body2" fontWeight={700}>{m.name}</Typography>
+                                      </Box>
+                                    </TableCell>
+                                    <TableCell><Typography variant="caption" color="text.secondary">{m.email}</Typography></TableCell>
+                                    <TableCell><Typography variant="body2">{m.phone || '–'}</Typography></TableCell>
+                                    <TableCell><Typography variant="body2">{m.location || '–'}</Typography></TableCell>
+                                    <TableCell>
+                                      <Typography variant="caption">
+                                        {m.createdAt ? new Date(m.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '–'}
+                                      </Typography>
+                                    </TableCell>
+                                    <TableCell>
+                                      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                        <Button size="small" variant="contained" startIcon={<CheckCircleIcon />}
+                                          onClick={() => approveManager(m._id)}
+                                          sx={{ bgcolor: BRAND.primary, fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: BRAND.primaryMid } }}>
+                                          Approve
+                                        </Button>
+                                        <Button size="small" variant="outlined" startIcon={<CancelIcon />}
+                                          onClick={() => rejectManager(m._id)}
+                                          sx={{ color: '#c62828', borderColor: '#c62828', fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: '#fdecea' } }}>
+                                          Reject
+                                        </Button>
+                                      </Box>
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </TableContainer>
+                        )}
+                      </Box>
+                    )}
                   </Box>
                 );
               })()}
