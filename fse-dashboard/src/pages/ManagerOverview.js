@@ -26,6 +26,35 @@ function initials(name) {
 function FSERow({ fse, formCount, forms }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [verifyMap, setVerifyMap] = useState({});
+  const [verifyLoading, setVerifyLoading] = useState(false);
+
+  const openModal = async () => {
+    setOpen(true);
+    if (forms.length === 0) return;
+    setVerifyLoading(true);
+    try {
+      const vRes = await fetch(`${EMP_API}/verify/bulk-admin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phones:   forms.map(f => f.customerNumber || ''),
+          names:    forms.map(f => f.customerName || ''),
+          products: forms.map(f => (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim()),
+          months:   forms.map(f => f.createdAt ? new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }) : ''),
+        }),
+      });
+      const data = await vRes.json();
+      setVerifyMap(data || {});
+    } catch { setVerifyMap({}); }
+    finally { setVerifyLoading(false); }
+  };
+
+  const getVerification = (f) => {
+    const product = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+    const key = product ? `${f.customerNumber}__${product}` : f.customerNumber;
+    return verifyMap[key] || null;
+  };
 
   const filtered = search
     ? forms.filter(f => Object.values(f).some(v => String(v || '').toLowerCase().includes(search.toLowerCase())))
@@ -56,7 +85,7 @@ function FSERow({ fse, formCount, forms }) {
           label={`${formCount} form${formCount !== 1 ? 's' : ''}`}
           size="small"
           clickable
-          onClick={() => setOpen(true)}
+          onClick={openModal}
           sx={{
             bgcolor: '#e6f4ea', color: '#2e7d32', fontWeight: 700, fontSize: 11,
             cursor: 'pointer',
@@ -87,7 +116,9 @@ function FSERow({ fse, formCount, forms }) {
             InputProps={{ startAdornment: <InputAdornment position="start"><SearchIcon fontSize="small" /></InputAdornment> }}
             sx={{ mb: 2 }} />
 
-          {filtered.length === 0 ? (
+          {verifyLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 3 }}><CircularProgress size={24} /></Box>
+          ) : filtered.length === 0 ? (
             <Typography color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>No forms found.</Typography>
           ) : (
             <TableContainer sx={{ maxHeight: 420 }}>
@@ -122,21 +153,29 @@ function FSERow({ fse, formCount, forms }) {
                       </TableCell>
                       {/* Verification Status */}
                       <TableCell>
-                        <Chip
-                          label={f.verificationStatus || 'Not Found'}
-                          size="small"
-                          sx={{
-                            bgcolor:
-                              f.verificationStatus === 'Fully Verified'  ? '#e6f4ea' :
-                              f.verificationStatus === 'Partially Done'  ? '#fff3e0' :
-                              f.verificationStatus === 'Not Verified'    ? '#fdecea' : '#f5f5f5',
-                            color:
-                              f.verificationStatus === 'Fully Verified'  ? '#2e7d32' :
-                              f.verificationStatus === 'Partially Done'  ? '#e65100' :
-                              f.verificationStatus === 'Not Verified'    ? '#c62828' : '#757575',
-                            fontWeight: 700, fontSize: 10
-                          }}
-                        />
+                        {(() => {
+                          const v = getVerification(f);
+                          const status = v ? v.status : 'Not Found';
+                          return (
+                            <Chip
+                              label={status}
+                              size="small"
+                              sx={{
+                                bgcolor:
+                                  status === 'Fully Verified'  ? '#e6f4ea' :
+                                  status === 'Partially Done'  ? '#fff3e0' :
+                                  status === 'Critical Failure'? '#fdecea' :
+                                  status === 'Not Verified'    ? '#fdecea' : '#f5f5f5',
+                                color:
+                                  status === 'Fully Verified'  ? '#2e7d32' :
+                                  status === 'Partially Done'  ? '#e65100' :
+                                  status === 'Critical Failure'? '#c62828' :
+                                  status === 'Not Verified'    ? '#c62828' : '#757575',
+                                fontWeight: 700, fontSize: 10
+                              }}
+                            />
+                          );
+                        })()}
                       </TableCell>
                       <TableCell sx={{ fontSize: 12 }}>
                         {f.createdAt ? new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '–'}
@@ -1011,7 +1050,6 @@ export default function ManagerOverview() {
               <MenuItem value="Not Found">⚪ Not Found</MenuItem>
             </TextField>
           </Box>
-          />
 
           {/* Manager cards */}
           {filteredGroups.length === 0 && !search && managers.length === 0 ? (

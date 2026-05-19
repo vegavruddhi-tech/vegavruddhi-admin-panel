@@ -1761,23 +1761,32 @@ export default function MerchantForms() {
       } else if (roleFilter === 'ALL') {
         // 🔥 NEW: Fetch both FSE and TL forms for ALL view
         console.log('📡 Fetching both FSE and TL forms for ALL view');
-        const [fseRes, tlRes] = await Promise.all([
+        const [fseRes, tlRes, mgrRes] = await Promise.all([
           fetch(`${EMP_API}/forms/admin/all?role=FSE`),
-          fetch(`${EMP_API}/forms/admin/all?role=TL`)
+          fetch(`${EMP_API}/forms/admin/all?role=TL`),
+          fetch(`${EMP_API}/forms/admin/all?role=MANAGER`)
         ]);
         
         const fseData = fseRes.ok ? await fseRes.json() : [];
         const tlData = tlRes.ok ? await tlRes.json() : [];
+        const mgrData = mgrRes.ok ? await mgrRes.json() : [];
         
         // Combine and deduplicate by form ID
         const formMap = new Map();
-        [...fseData, ...tlData].forEach(form => {
+        [...fseData, ...tlData, ...mgrData].forEach(form => {
           if (!formMap.has(form._id)) {
             formMap.set(form._id, form);
           }
         });
         formsData = Array.from(formMap.values());
-        console.log(`✅ Loaded ${fseData.length} FSE + ${tlData.length} TL = ${formsData.length} total forms`);
+        console.log(`✅ Loaded ${fseData.length} FSE + ${tlData.length} TL + ${mgrData.length} Manager = ${formsData.length} total forms`);
+      } else if (roleFilter === 'MANAGER') {
+        const apiUrl = `${EMP_API}/forms/admin/all?role=MANAGER`;
+        console.log('📡 API URL:', apiUrl);
+        const formsRes = await fetch(apiUrl);
+        if (!formsRes.ok) throw new Error('Failed to load manager forms');
+        formsData = await formsRes.json();
+        console.log(`✅ Loaded ${formsData.length} Manager forms`);
       } else {
         // Regular FSE or TL only
         const apiUrl = `${EMP_API}/forms/admin/all?role=${roleFilter}`;
@@ -3000,7 +3009,7 @@ useEffect(() => {
 <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', mb: 2 }}>
   {/* 🔥 NEW: Role Filter */}
   <Box sx={{ display: 'flex', gap: 0.5, mr: 2, border: `2px solid ${BRAND.primary}`, borderRadius: 1, overflow: 'hidden' }}>
-    {['FSE', 'TL', 'ALL', 'UNFILLED'].map(role => (
+    {['FSE', 'TL', 'ALL', 'MANAGER', 'UNFILLED'].map(role => (
       <Button key={role} size="small"
         variant={roleFilter === role ? 'contained' : 'text'}
         onClick={() => {
@@ -3016,7 +3025,7 @@ useEffect(() => {
           px: 2,
           '&:hover': { bgcolor: roleFilter === role ? '#0f3320' : BRAND.primaryLight }
         }}>
-        {role === 'UNFILLED' ? '⚠️ Unfilled' : `${role} Forms`}
+        {role === 'UNFILLED' ? '⚠️ Unfilled' : role === 'MANAGER' ? '👔 Manager' : `${role} Forms`}
       </Button>
     ))}
   </Box>
