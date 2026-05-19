@@ -82,9 +82,13 @@ function OnboardVerifySection({ filteredForms, onboardVerifyMap, onboardVerifyin
     return onboardForms
       .filter(f => {
         const rawProduct = f.formFillingFor || f.tideProduct || f.brand || '–';
-        const normalized = rawProduct.toLowerCase() === 'msme' ? 'Tide MSME' : rawProduct;
+        // Normalize: trim and lowercase for comparison, then capitalize first letter
+        const normalized = rawProduct.trim().toLowerCase();
+        const formProduct = normalized === 'msme' ? 'Tide MSME' :
+                           // Capitalize first letter for display (same as buildBreakdown)
+                           normalized.charAt(0).toUpperCase() + normalized.slice(1);
         const s = onboardVerifyMap[getKey(f)]?.status || 'Not Found';
-        return normalized === product && s === status;
+        return formProduct === product && s === status;
       })
       .map(f => {
         const emp = (employees || []).find(e => e.newJoinerName === f.employeeName);
@@ -900,11 +904,20 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
     const seen = new Set();
     mongoForms.forEach(f => {
       if (f.createdAt) {
-        const m = new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' });
-        seen.add(m);
+        const date = new Date(f.createdAt);
+        // Only add valid dates (not January 1970)
+        if (!isNaN(date.getTime()) && date.getFullYear() > 2000) {
+          const m = date.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+          seen.add(m);
+        }
       }
     });
-    return [...seen].sort();
+    return [...seen].sort((a, b) => {
+      // Sort by date (most recent first)
+      const dateA = new Date(a);
+      const dateB = new Date(b);
+      return dateB - dateA;
+    });
   }, [mongoForms]);
 
   const topTlOptions  = useMemo(() => [...new Set(mongoTls.map(t => t.name).filter(Boolean))].sort(), [mongoTls]);
@@ -1308,15 +1321,65 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
   }, [selectedCols, groupBy, mongoAggregatedData]);
 
   // ── CHART 4 donut: dynamic product breakdown from detected Tide columns ───
+  // 🔥 UPDATED: Now shows ONLY "Fully Verified" forms (matches Overview Dashboard)
   const productBreakdown = useMemo(() => {
     const DONUT_COLORS = ["#7c3aed","#14b8a6","#10b981","#f59e0b","#3b82f6","#ec4899","#0ea5e9","#ef4444","#f97316","#84cc16"];
-    return tideColumns.map((col, i) => ({
-      name:  col.replace(/^Tide\s*/i, "").trim() || col,  // strip "Tide " prefix for shorter labels
-      col,
-      value: rows.reduce((s, r) => s + (Number(r[col]) || 0), 0),
-      color: DONUT_COLORS[i % DONUT_COLORS.length],
-    })).filter((d) => d.value > 0);
-  }, [tideColumns, rows]);
+    
+    // 🐛 DEBUG: Log data availability
+    console.log('🔍 [ProductBreakdown Debug]');
+    console.log('  mongoForms count:', mongoForms.length);
+    console.log('  globalVerifyMap keys:', Object.keys(globalVerifyMap).length);
+    console.log('  Ready for Onboarding forms:', mongoForms.filter(f => f.status === 'Ready for Onboarding').length);
+    
+    // Count fully verified forms by product from MongoDB (not Google Sheet)
+    const productMap = {};
+    let totalProcessed = 0;
+    let totalVerified = 0;
+    
+    mongoForms.forEach(f => {
+      // Only count "Ready for Onboarding" forms
+      if (f.status !== 'Ready for Onboarding') return;
+      totalProcessed++;
+      
+      // Get verification key
+      const product = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+      const verifyKey = product ? `${f.customerNumber}__${product}` : f.customerNumber;
+      
+      // Only count if "Fully Verified"
+      const verifyStatus = globalVerifyMap[verifyKey]?.status;
+      if (verifyStatus !== 'Fully Verified') return;
+      totalVerified++;
+      
+      // Normalize product name for display
+      const rawProduct = f.formFillingFor || f.tideProduct || f.brand || '';
+      const normalized = rawProduct.trim().toLowerCase();
+      const displayProduct = normalized === 'msme' ? 'Tide MSME' :
+                            normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Other';
+      
+      if (!productMap[displayProduct]) {
+        productMap[displayProduct] = 0;
+      }
+      productMap[displayProduct]++;
+    });
+    
+    console.log('  Processed onboarding forms:', totalProcessed);
+    console.log('  Fully verified forms:', totalVerified);
+    console.log('  Product breakdown:', productMap);
+    
+    // Convert to array format for chart
+    const result = Object.entries(productMap)
+      .map(([name, value], i) => ({
+        name: name.replace(/^Tide\s*/i, "").trim() || name,  // strip "Tide " prefix for shorter labels
+        col: name,
+        value,
+        color: DONUT_COLORS[i % DONUT_COLORS.length],
+      }))
+      .filter((d) => d.value > 0)
+      .sort((a, b) => b.value - a.value); // Sort by count descending
+    
+    console.log('  Final productBreakdown:', result);
+    return result;
+  }, [mongoForms, globalVerifyMap]);
 
   // ── CHART 5: Employees with pending transactions (OB > PP) ────────────────
   const pendingEmployees = useMemo(() => {

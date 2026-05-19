@@ -409,11 +409,20 @@ const monthOptions = useMemo(() => {
   const seen = new Set();
   forms.forEach(f => {
     if (f.createdAt) {
-      const m = new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' });
-      seen.add(m);
+      const date = new Date(f.createdAt);
+      // Only add valid dates (not January 1970)
+      if (!isNaN(date.getTime()) && date.getFullYear() > 2000) {
+        const m = date.toLocaleString('en-US', { month: 'long', year: 'numeric' });
+        seen.add(m);
+      }
     }
   });
-  return [...seen].sort();
+  return [...seen].sort((a, b) => {
+    // Sort by date (most recent first)
+    const dateA = new Date(a);
+    const dateB = new Date(b);
+    return dateB - dateA;
+  });
 }, [forms]);
 
 const tlOptions   = useMemo(() => [...new Set(tls.map(t => t.name).filter(Boolean))].sort(), [tls]);

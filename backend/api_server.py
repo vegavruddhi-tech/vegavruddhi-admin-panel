@@ -273,13 +273,16 @@ def cron_sync():
         if not sheet_id:
             return {"status": "Error", "error": "GOOGLE_SHEET_ID not set"}
         
-        print(f"Step 1: Syncing sheet {sheet_id}")
+        print(f"Step 1: Syncing sheet {sheet_id} (Option 3: Clean slate sync)")
+        print("  - Delete old documents from MongoDB")
+        print("  - Insert fresh data from Google Sheet")
+        print("  - Result: MongoDB = exact mirror of Google Sheet")
         process_sheet(sheet_id, "Tide Onboarding")
-        print("✅ SYNC SUCCESS")
+        print("✅ SYNC SUCCESS (Option 3 completed - no duplicates)")
         
         # Step 2: Pre-compute verification cache
-        # Use localhost since .env is not loading properly
-        api_url = 'http://localhost:4000'
+        # ✅ FIXED: Use environment variable instead of hardcoded localhost
+        api_url = os.environ.get('API_URL', 'https://vegavruddhi-employee-panel.vercel.app')
         precompute_url = f'{api_url}/api/verify/precompute-all?force=true'  # Force full refresh
         
         print(f"\nStep 2: Pre-computing verification cache (FORCE REFRESH)")
@@ -310,7 +313,37 @@ def cron_sync():
             print(f"⚠️ CACHE PRE-COMPUTE ERROR: {cache_error}")
             print("   Sync completed but cache not pre-populated")
         
-        return {"status": "Sync and cache pre-computation completed"}
+        # Step 3: Sync unfilled forms (find merchants in Sheet but not in MongoDB)
+        print(f"\nStep 3: Syncing unfilled forms")
+        try:
+            from sync_unfilled_forms import sync_unfilled_forms
+            
+            # Get current month and year
+            now = datetime.now()
+            current_month = now.strftime("%B")
+            current_year = now.year
+            
+            print(f"Syncing unfilled forms for {current_month} {current_year}")
+            
+            result = sync_unfilled_forms(current_month, current_year)
+            
+            if result['success']:
+                print(f"✅ UNFILLED FORMS SYNC SUCCESS")
+                print(f"   Sheet entries: {result['sheetEntries']}")
+                print(f"   MongoDB forms: {result['mongodbForms']}")
+                print(f"   Unfilled forms: {result['unfilledForms']}")
+                print(f"   Saved to DB: {result['savedCount']}")
+            else:
+                print(f"⚠️ UNFILLED FORMS SYNC FAILED: {result.get('error')}")
+                
+        except Exception as unfilled_error:
+            print(f"⚠️ UNFILLED FORMS SYNC ERROR: {unfilled_error}")
+            print("   Main sync completed but unfilled forms not synced")
+        
+        return {
+            "status": "Sync, cache pre-computation, and unfilled forms sync completed",
+            "timestamp": datetime.now().isoformat()
+        }
         
     except Exception as e:
         print(f"❌ SYNC ERROR: {str(e)}")
