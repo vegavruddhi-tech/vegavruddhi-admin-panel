@@ -1652,13 +1652,25 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
                                      normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Other';
                       return product === k.product;
                     })
-                    .map(f => ({
-                      merchant: f.customerName || '–',
-                      phone: f.customerNumber || '–',
-                      fse: f.employeeName || '–',
-                      status: f.status || '–',
-                      date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
-                    }));
+                    .map(f => {
+                      // Find employee to get TL info
+                      const emp = mongoEmployees.find(e => e.newJoinerName === f.employeeName);
+                      const tlName = emp?.reportingManager || 'Unknown';
+                      
+                      // Find TL phone from mongoTls collection
+                      const tlData = mongoTls.find(t => t.name === tlName);
+                      const tlPhone = tlData?.phone || tlData?.mobile || tlData?.contactNumber || '–';
+                      
+                      return {
+                        merchant: f.customerName || '–',
+                        phone: f.customerNumber || '–',
+                        fse: f.employeeName || '–',
+                        tl: tlName,
+                        tlPhone: tlPhone,
+                        status: f.status || '–',
+                        date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+                      };
+                    });
                   setProductKpiDrill({ product: k.product, color: k.color, rows });
                 }}
                 sx={{
@@ -2137,54 +2149,186 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
         </DialogContent>
       </Dialog>
 
-      {/* Product KPI Drill-down */}
-      {productKpiDrill && (
-        <Dialog open onClose={() => setProductKpiDrill(null)} maxWidth="md" fullWidth
-          PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden' } }}>
-          <Box sx={{ background: `linear-gradient(135deg, ${productKpiDrill.color}cc, ${productKpiDrill.color}66)`, px: 3, py: 2.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Box>
-              <Typography variant="h6" sx={{ color: '#fff', fontWeight: 800 }}>📦 {productKpiDrill.product}</Typography>
-              <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.8)' }}>{productKpiDrill.rows.length} forms submitted</Typography>
+      {/* Product KPI Drill-down - Enhanced with TL Summary & Verification Status */}
+      {productKpiDrill && (() => {
+        // Get verification key helper
+        const getVerifyKey = (phone, product) => {
+          const p = product.toLowerCase().trim();
+          return p ? `${phone}__${p}` : phone;
+        };
+
+        // Build TL summary data
+        const tlSummary = {};
+        productKpiDrill.rows.forEach(row => {
+          const tlName = row.tl || 'Unknown';
+          const tlPhone = row.tlPhone || '–';
+          const verifyKey = getVerifyKey(row.phone, productKpiDrill.product);
+          const verifyStatus = globalVerifyMap[verifyKey]?.status || 'Not Found';
+          
+          if (!tlSummary[tlName]) {
+            tlSummary[tlName] = {
+              name: tlName,
+              phone: tlPhone,
+              total: 0,
+              fullyVerified: 0,
+              partiallyDone: 0,
+              notFound: 0
+            };
+          }
+          
+          tlSummary[tlName].total++;
+          if (verifyStatus === 'Fully Verified') tlSummary[tlName].fullyVerified++;
+          else if (verifyStatus === 'Partially Done') tlSummary[tlName].partiallyDone++;
+          else tlSummary[tlName].notFound++;
+        });
+
+        const tlSummaryArray = Object.values(tlSummary).sort((a, b) => b.total - a.total);
+
+        return (
+          <Dialog open onClose={() => setProductKpiDrill(null)} maxWidth="lg" fullWidth
+            PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden', maxHeight: '90vh' } }}>
+            {/* Header */}
+            <Box sx={{ background: `linear-gradient(135deg, ${productKpiDrill.color}cc, ${productKpiDrill.color}66)`, px: 3, py: 2.5 }}>
+              <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+                <Box>
+                  <Typography variant="h6" sx={{ color: '#fff', fontWeight: 800 }}>📦 {productKpiDrill.product}</Typography>
+                  <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.9)', mt: 0.5 }}>
+                    {productKpiDrill.rows.length} forms submitted · {tlSummaryArray.length} team leader{tlSummaryArray.length !== 1 ? 's' : ''}
+                  </Typography>
+                </Box>
+                <IconButton onClick={() => setProductKpiDrill(null)} sx={{ color: '#fff', bgcolor: 'rgba(255,255,255,0.15)', '&:hover': { bgcolor: 'rgba(255,255,255,0.25)' } }}>
+                  <CloseIcon />
+                </IconButton>
+              </Box>
             </Box>
-            <IconButton onClick={() => setProductKpiDrill(null)} sx={{ color: '#fff' }}><CloseIcon /></IconButton>
-          </Box>
-          <DialogContent sx={{ p: 0 }}>
-            <TableContainer sx={{ maxHeight: 500 }}>
-              <Table size="small" stickyHeader>
-                <TableHead>
-                  <TableRow>
-                    {['#', 'Merchant', 'Phone', 'FSE', 'Status', 'Date'].map(h => (
-                      <TableCell key={h} sx={{ fontWeight: 700, bgcolor: productKpiDrill.color, color: '#fff', fontSize: 11, textTransform: 'uppercase' }}>{h}</TableCell>
-                    ))}
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  {productKpiDrill.rows.map((row, i) => (
-                    <TableRow key={i} hover sx={{ '&:nth-of-type(even)': { bgcolor: `${productKpiDrill.color}08` } }}>
-                      <TableCell sx={{ color: 'text.secondary', fontWeight: 600 }}>{i + 1}</TableCell>
-                      <TableCell sx={{ fontWeight: 600 }}>{row.merchant}</TableCell>
-                      <TableCell sx={{ fontFamily: 'monospace', fontSize: 12 }}>{row.phone}</TableCell>
-                      <TableCell sx={{ fontSize: 12 }}>{row.fse}</TableCell>
-                      <TableCell>
-                        <Box component="span" sx={{ px: 1, py: 0.3, borderRadius: 10, fontSize: 11, fontWeight: 700,
-                          bgcolor: row.status === 'Ready for Onboarding' ? '#e6f4ea' : row.status === 'Not Interested' ? '#fdecea' : row.status === 'Try but not done due to error' ? '#fff3e0' : '#e3f2fd',
-                          color:   row.status === 'Ready for Onboarding' ? '#2e7d32' : row.status === 'Not Interested' ? '#c62828' : row.status === 'Try but not done due to error' ? '#e65100' : '#1565c0' }}>
-                          {row.status === 'Ready for Onboarding' ? 'Ready for Onboarding' : row.status === 'Not Interested' ? 'Not Interested' : row.status === 'Try but not done due to error' ? 'Try/Err' : row.status === 'Need to visit again' ? 'Need to Revisit' : row.status || '–'}
+
+            <DialogContent sx={{ p: 3 }}>
+              {/* TL Summary Cards */}
+              <Box sx={{ mb: 3 }}>
+                <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 2, color: productKpiDrill.color }}>
+                  Team Leader Summary
+                </Typography>
+                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: 2 }}>
+                  {tlSummaryArray.map((tl, i) => (
+                    <Card key={i} variant="outlined" sx={{ 
+                      borderRadius: 2, 
+                      border: `1.5px solid ${productKpiDrill.color}30`,
+                      transition: 'all 0.2s',
+                      '&:hover': { transform: 'translateY(-2px)', boxShadow: `0 4px 16px ${productKpiDrill.color}30` }
+                    }}>
+                      <CardContent sx={{ py: 1.5, px: 2 }}>
+                        <Typography variant="body2" fontWeight={700} sx={{ color: productKpiDrill.color, mb: 0.5 }}>
+                          {tl.name}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 1, fontFamily: 'monospace' }}>
+                          📞 {tl.phone}
+                        </Typography>
+                        <Typography variant="h6" fontWeight={800} sx={{ color: productKpiDrill.color, mb: 1 }}>
+                          {tl.total} forms
+                        </Typography>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <Typography variant="caption" sx={{ color: '#2e7d32', fontWeight: 600 }}>✅ Fully Verified</Typography>
+                            <Typography variant="caption" fontWeight={700} sx={{ color: '#2e7d32' }}>
+                              {tl.fullyVerified} ({Math.round((tl.fullyVerified / tl.total) * 100)}%)
+                            </Typography>
+                          </Box>
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <Typography variant="caption" sx={{ color: '#f57f17', fontWeight: 600 }}>◑ Partially Done</Typography>
+                            <Typography variant="caption" fontWeight={700} sx={{ color: '#f57f17' }}>
+                              {tl.partiallyDone} ({Math.round((tl.partiallyDone / tl.total) * 100)}%)
+                            </Typography>
+                          </Box>
+                          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <Typography variant="caption" sx={{ color: '#757575', fontWeight: 600 }}>✗ Not Found</Typography>
+                            <Typography variant="caption" fontWeight={700} sx={{ color: '#757575' }}>
+                              {tl.notFound} ({Math.round((tl.notFound / tl.total) * 100)}%)
+                            </Typography>
+                          </Box>
                         </Box>
-                      </TableCell>
-                      <TableCell sx={{ color: 'text.secondary', fontSize: 11 }}>{row.date}</TableCell>
-                    </TableRow>
+                      </CardContent>
+                    </Card>
                   ))}
-                </TableBody>
-              </Table>
-            </TableContainer>
-          </DialogContent>
-          <DialogActions sx={{ px: 3, py: 1.5 }}>
-            <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>{productKpiDrill.rows.length} records</Typography>
-            <Button onClick={() => setProductKpiDrill(null)} variant="contained" sx={{ bgcolor: productKpiDrill.color, fontWeight: 700 }}>Close</Button>
-          </DialogActions>
-        </Dialog>
-      )}
+                </Box>
+              </Box>
+
+              {/* All Forms Table */}
+              <Box>
+                <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 1.5, color: productKpiDrill.color }}>
+                  All Forms
+                </Typography>
+                <TableContainer sx={{ maxHeight: 400, border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
+                  <Table size="small" stickyHeader>
+                    <TableHead>
+                      <TableRow>
+                        {['#', 'Merchant', 'Phone', 'FSE', 'TL Name', 'TL Phone', 'Status', 'Verification', 'Date'].map(h => (
+                          <TableCell key={h} sx={{ 
+                            fontWeight: 700, 
+                            bgcolor: productKpiDrill.color, 
+                            color: '#fff', 
+                            fontSize: 11, 
+                            textTransform: 'uppercase',
+                            whiteSpace: 'nowrap'
+                          }}>{h}</TableCell>
+                        ))}
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {productKpiDrill.rows.map((row, i) => {
+                        const verifyKey = getVerifyKey(row.phone, productKpiDrill.product);
+                        const verifyStatus = globalVerifyMap[verifyKey]?.status || 'Not Found';
+                        const verifyColor = verifyStatus === 'Fully Verified' ? '#2e7d32' : verifyStatus === 'Partially Done' ? '#f57f17' : '#757575';
+                        const verifyBg = verifyStatus === 'Fully Verified' ? '#e6f4ea' : verifyStatus === 'Partially Done' ? '#fff8e1' : '#f5f5f5';
+                        const verifyIcon = verifyStatus === 'Fully Verified' ? '✅' : verifyStatus === 'Partially Done' ? '◑' : '✗';
+                        
+                        return (
+                          <TableRow key={i} hover sx={{ '&:nth-of-type(even)': { bgcolor: `${productKpiDrill.color}06` } }}>
+                            <TableCell sx={{ color: 'text.secondary', fontWeight: 600, fontSize: 11 }}>{i + 1}</TableCell>
+                            <TableCell><Typography variant="body2" fontWeight={700}>{row.merchant}</Typography></TableCell>
+                            <TableCell><Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: 12 }}>{row.phone}</Typography></TableCell>
+                            <TableCell><Typography variant="body2" fontWeight={600}>{row.fse}</Typography></TableCell>
+                            <TableCell><Typography variant="body2" fontWeight={600} sx={{ color: productKpiDrill.color }}>{row.tl}</Typography></TableCell>
+                            <TableCell><Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>{row.tlPhone}</Typography></TableCell>
+                            <TableCell>
+                              <Box component="span" sx={{ 
+                                px: 1, py: 0.3, borderRadius: 10, fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap',
+                                bgcolor: row.status === 'Ready for Onboarding' ? '#e6f4ea' : row.status === 'Not Interested' ? '#fdecea' : row.status === 'Try but not done due to error' ? '#fff3e0' : '#e3f2fd',
+                                color: row.status === 'Ready for Onboarding' ? '#2e7d32' : row.status === 'Not Interested' ? '#c62828' : row.status === 'Try but not done due to error' ? '#e65100' : '#1565c0'
+                              }}>
+                                {row.status === 'Ready for Onboarding' ? 'Onboarding' : row.status === 'Not Interested' ? 'Not Interested' : row.status === 'Try but not done due to error' ? 'Try/Err' : row.status === 'Need to visit again' ? 'Revisit' : row.status || '–'}
+                              </Box>
+                            </TableCell>
+                            <TableCell>
+                              <Box component="span" sx={{ 
+                                px: 1, py: 0.3, borderRadius: 10, fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap',
+                                bgcolor: verifyBg,
+                                color: verifyColor
+                              }}>
+                                {verifyIcon} {verifyStatus}
+                              </Box>
+                            </TableCell>
+                            <TableCell><Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>{row.date}</Typography></TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Box>
+            </DialogContent>
+
+            <DialogActions sx={{ px: 3, py: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
+              <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
+                {productKpiDrill.rows.length} records · {tlSummaryArray.length} team leaders
+              </Typography>
+              <Button onClick={() => setProductKpiDrill(null)} variant="contained" 
+                sx={{ bgcolor: productKpiDrill.color, fontWeight: 700, borderRadius: 2, '&:hover': { opacity: 0.9 } }}>
+                Close
+              </Button>
+            </DialogActions>
+          </Dialog>
+        );
+      })()}
 
       {/* ── Per-Product Daily Trend Charts ─────────────────────────────── */}
       {Object.keys(productDailyData).length > 0 && (
