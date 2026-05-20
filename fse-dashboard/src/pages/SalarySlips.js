@@ -79,8 +79,9 @@ export default function SalarySlips() {
     setLoading(true);
     setError('');
     try {
-      // Don't send pointValue to API - we'll calculate salary on frontend
-      const res = await fetch(`${EMP_API}/salary/employees?month=${selectedMonth}&year=${selectedYear}&pointValue=250`);
+      // ✅ Send roleFilter to backend for server-side filtering
+      const roleParam = roleFilter !== 'All' ? `&roleFilter=${roleFilter}` : '';
+      const res = await fetch(`${EMP_API}/salary/employees?month=${selectedMonth}&year=${selectedYear}&pointValue=250${roleParam}`);
       if (!res.ok) throw new Error('Failed to load employees');
       const data = await res.json();
       setEmployees(data.employees || []);
@@ -89,7 +90,7 @@ export default function SalarySlips() {
     } finally {
       setLoading(false);
     }
-  }, [selectedMonth, selectedYear]); // Removed pointValue from dependency
+  }, [selectedMonth, selectedYear, roleFilter]); // ✅ Added roleFilter dependency
 
   // Load salary slips
   const loadSalarySlips = useCallback(async () => {
@@ -128,11 +129,18 @@ export default function SalarySlips() {
 
   // Filter employees
   const filteredEmployees = employeesWithRecalculatedSalary.filter(emp => {
+    // 🔍 DEBUG: Log filtering
+    if (roleFilter === 'Manager') {
+      console.log(`🔍 Filtering: ${emp.employeeName} - Role: "${emp.role}" - Match: ${emp.role === roleFilter}`);
+    }
+    
     if (roleFilter !== 'All' && emp.role !== roleFilter) return false;
     if (search && !emp.employeeName.toLowerCase().includes(search.toLowerCase()) && 
         !emp.employeeEmail.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
   });
+  
+  console.log(`📊 Filter Results: roleFilter="${roleFilter}", total=${employeesWithRecalculatedSalary.length}, filtered=${filteredEmployees.length}`);
 
   // Handle generate slip
   const handleGenerate = (employee) => {
