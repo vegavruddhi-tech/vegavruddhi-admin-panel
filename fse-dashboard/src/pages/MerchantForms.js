@@ -327,11 +327,78 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
   ws2['!cols'] = colWidths2;
 
   // ═══════════════════════════════════════════════════════════
-  // Create workbook with both sheets
+  // SHEET 3: Verification Details (with actual rule values)
+  // ═══════════════════════════════════════════════════════════
+  
+  const verificationRows = forms.map(f => {
+    const emp = empMap[f.employeeName] || {};
+    const tl = tlMap[(emp.reportingManager || '').toLowerCase().trim()] || {};
+    const product = f.formFillingFor || f.tideProduct || f.brand || 'Other';
+    const vKey = product ? `${f.customerNumber}__${product.toLowerCase().trim()}` : f.customerNumber;
+    const verification = verifyMap[vKey] || {};
+    
+    // Base row with FSE/TL/Merchant info
+    const row = {
+      'FSE Name': f.employeeName || '',
+      'FSE Email': emp.newJoinerEmailId || '',
+      'FSE Phone': emp.newJoinerPhone || '',
+      'TL Name': emp.reportingManager || '',
+      'TL Email': tl.email || '',
+      'TL Phone': tl.phone || '',
+      'Customer Name': f.customerName || '',
+      'Customer Phone': f.customerNumber || '',
+      'Location': f.location || '',
+      'Product': product,
+      'Submission Date': f.createdAt ? new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '',
+      'Verification Status': verification.status || 'Not Found',
+      'Phone Match': verification.phoneMatch ? 'YES' : 'NO',
+      'In Google Sheet': verification.inSheet ? 'YES' : 'NO',
+    };
+    
+    // Add actual field values from Google Sheet using exact field names
+    if (verification.checks && Array.isArray(verification.checks)) {
+      verification.checks.forEach(check => {
+        // Use the exact field name from the verification rule
+        const fieldName = check.field || check.rule || check.name || 'unknown_field';
+        
+        // Add the actual value from Google Sheet with exact field name
+        if (check.sheetValue !== undefined && check.sheetValue !== null) {
+          row[fieldName] = check.sheetValue;
+        } else {
+          row[fieldName] = ''; // Empty if not found in sheet
+        }
+        
+        // ❌ REMOVED: Status columns (no longer needed)
+        // row[`${fieldName}_status`] = check.passed ? 'PASS' : 'FAIL';
+      });
+    }
+    
+    // ❌ REMOVED: match_type and sheet_collection columns (not needed)
+    // if (verification.matchType) {
+    //   row['match_type'] = verification.matchType;
+    // }
+    // if (verification.collection) {
+    //   row['sheet_collection'] = verification.collection;
+    // }
+    
+    return row;
+  });
+  
+  const ws3 = XLSX.utils.json_to_sheet(verificationRows);
+  
+  // Auto column widths for Sheet 3
+  const colWidths3 = Object.keys(verificationRows[0] || {}).map(key => ({
+    wch: Math.max(key.length, ...verificationRows.map(r => String(r[key] || '').length), 15)
+  }));
+  ws3['!cols'] = colWidths3;
+
+  // ═══════════════════════════════════════════════════════════
+  // Create workbook with all three sheets
   // ═══════════════════════════════════════════════════════════
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws1, 'Merchant Forms');
   XLSX.utils.book_append_sheet(wb, ws2, 'FSE Summary');
+  XLSX.utils.book_append_sheet(wb, ws3, 'Verification Details');
   
   XLSX.writeFile(wb, `Merchant_Forms_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
