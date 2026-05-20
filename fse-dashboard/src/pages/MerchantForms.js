@@ -491,6 +491,8 @@ function DuplicatePanel({ duplicates, open, onClose, onNotify, notifying, onSett
   const [settlements, setSettlements] = useState([]);
   const [loadingSett, setLoadingSett] = useState(false);
   const [settleNote, setSettleNote]   = useState({});
+  const [employeeDrillDown, setEmployeeDrillDown] = useState(null); // { employeeName, customerNumber, product, forms: [] }
+  const [loadingDrillDown, setLoadingDrillDown] = useState(false);
 
   const loadSettlements = useCallback(async () => {
     setLoadingSett(true);
@@ -503,6 +505,46 @@ function DuplicatePanel({ duplicates, open, onClose, onNotify, notifying, onSett
   useEffect(() => { if (open && tab === 'settled') loadSettlements(); }, [open, tab, loadSettlements]);
   // Reload settlements after a new settle action
   useEffect(() => { if (open && settling === null && tab === 'settled') loadSettlements(); }, [settling]);
+
+  // Fetch forms for a specific employee and merchant
+  const handleEmployeeClick = async (employeeName, customerNumber, product) => {
+    setLoadingDrillDown(true);
+    setEmployeeDrillDown({ employeeName, customerNumber, product, forms: [] });
+    
+    try {
+      // Fetch all forms (FSE, TL, Manager) and filter by employee and customer
+      const [fseRes, tlRes, mgrRes] = await Promise.all([
+        fetch(`${EMP_API}/forms/admin/all?role=FSE`),
+        fetch(`${EMP_API}/forms/admin/all?role=TL`),
+        fetch(`${EMP_API}/forms/admin/all?role=MANAGER`)
+      ]);
+      
+      const [fseForms, tlForms, mgrForms] = await Promise.all([
+        fseRes.ok ? fseRes.json() : [],
+        tlRes.ok ? tlRes.json() : [],
+        mgrRes.ok ? mgrRes.json() : []
+      ]);
+      
+      const allForms = [...fseForms, ...tlForms, ...mgrForms];
+      
+      // Filter forms by employee name and customer number
+      const employeeForms = allForms.filter(f => 
+        f.employeeName === employeeName && 
+        f.customerNumber === customerNumber &&
+        (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim() === product.toLowerCase().trim()
+      );
+      
+      // Sort by date (newest first)
+      employeeForms.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+      
+      setEmployeeDrillDown({ employeeName, customerNumber, product, forms: employeeForms });
+    } catch (err) {
+      console.error('Error fetching employee forms:', err);
+      setEmployeeDrillDown({ employeeName, customerNumber, product, forms: [], error: 'Failed to load forms' });
+    } finally {
+      setLoadingDrillDown(false);
+    }
+  };
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
@@ -577,8 +619,19 @@ function DuplicatePanel({ duplicates, open, onClose, onNotify, notifying, onSett
                   </Typography>
                   <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: dup.settled ? 0 : 1.5 }}>
                     {dup.employees.map((emp, j) => (
-                      <Chip key={j} avatar={<Avatar sx={{ bgcolor: dup.settled ? '#888' : BRAND.primary, fontSize: 11 }}>{initials(emp)}</Avatar>}
-                        label={emp} size="small" sx={{ fontWeight: 600 }} />
+                      <Chip 
+                        key={j} 
+                        avatar={<Avatar sx={{ bgcolor: dup.settled ? '#888' : BRAND.primary, fontSize: 11 }}>{initials(emp)}</Avatar>}
+                        label={emp} 
+                        size="small" 
+                        onClick={() => handleEmployeeClick(emp, dup._id.customerNumber, dup._id.formFillingFor)}
+                        sx={{ 
+                          fontWeight: 600,
+                          cursor: 'pointer',
+                          '&:hover': { bgcolor: '#e3f2fd', transform: 'scale(1.05)' },
+                          transition: 'all 0.2s'
+                        }} 
+                      />
                     ))}
                   </Box>
                   {/* Settlement info */}
@@ -633,6 +686,133 @@ function DuplicatePanel({ duplicates, open, onClose, onNotify, notifying, onSett
       <DialogActions>
         <Button onClick={onClose} sx={{ color: BRAND.primary, fontWeight: 700 }}>Close</Button>
       </DialogActions>
+      
+      {/* ── Employee Drill-Down Modal ── */}
+      {employeeDrillDown && (
+        <Dialog open={!!employeeDrillDown} onClose={() => setEmployeeDrillDown(null)} maxWidth="md" fullWidth>
+          <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', bgcolor: BRAND.primary, color: '#fff', fontWeight: 800 }}>
+            <Box>
+              <Typography variant="h6" fontWeight={800}>
+                {employeeDrillDown.employeeName}'s Submissions
+              </Typography>
+              <Typography variant="caption" sx={{ opacity: 0.9 }}>
+                Customer: {employeeDrillDown.customerNumber} · Product: {employeeDrillDown.product}
+              </Typography>
+            </Box>
+            <IconButton onClick={() => setEmployeeDrillDown(null)} sx={{ color: '#fff' }}>
+              <CloseIcon />
+            </IconButton>
+          </DialogTitle>
+          
+          <DialogContent dividers sx={{ p: 2 }}>
+            {loadingDrillDown ? (
+              <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+                <CircularProgress size={32} sx={{ color: BRAND.primary }} />
+              </Box>
+            ) : employeeDrillDown.error ? (
+              <Alert severity="error">{employeeDrillDown.error}</Alert>
+            ) : employeeDrillDown.forms.length === 0 ? (
+              <Typography color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>
+                No forms found for this employee and merchant.
+              </Typography>
+            ) : (
+              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {employeeDrillDown.forms.map((form, idx) => (
+                  <Card key={form._id} sx={{ border: `1.5px solid ${BRAND.primary}30`, borderRadius: 2 }}>
+                    <CardContent>
+                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1.5 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Chip 
+                            label={`Submission ${idx + 1}`} 
+                            size="small" 
+                            sx={{ bgcolor: BRAND.primary, color: '#fff', fontWeight: 700 }} 
+                          />
+                          <Typography variant="body2" fontWeight={700}>
+                            {new Date(form.createdAt).toLocaleDateString('en-IN', { 
+                              day: 'numeric', 
+                              month: 'short', 
+                              year: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                            })}
+                          </Typography>
+                        </Box>
+                        <StatusChip status={form.status} />
+                      </Box>
+                      
+                      <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.5 }}>
+                        <Box>
+                          <Typography variant="caption" color="text.secondary" fontWeight={600}>Customer Name</Typography>
+                          <Typography variant="body2" fontWeight={600}>{form.customerName}</Typography>
+                        </Box>
+                        <Box>
+                          <Typography variant="caption" color="text.secondary" fontWeight={600}>Phone</Typography>
+                          <Typography variant="body2" fontWeight={600}>{form.customerNumber}</Typography>
+                        </Box>
+                        <Box>
+                          <Typography variant="caption" color="text.secondary" fontWeight={600}>Location</Typography>
+                          <Typography variant="body2">{form.location}</Typography>
+                        </Box>
+                        <Box>
+                          <Typography variant="caption" color="text.secondary" fontWeight={600}>Product</Typography>
+                          <Typography variant="body2">
+                            <ProductChip product={form.formFillingFor || form.tideProduct || form.brand} />
+                          </Typography>
+                        </Box>
+                        
+                        {/* Product-specific fields */}
+                        {form.tide_qrPosted && (
+                          <Box>
+                            <Typography variant="caption" color="text.secondary" fontWeight={600}>Tide QR Posted</Typography>
+                            <Typography variant="body2">{form.tide_qrPosted}</Typography>
+                          </Box>
+                        )}
+                        {form.tide_upiTxnDone && (
+                          <Box>
+                            <Typography variant="caption" color="text.secondary" fontWeight={600}>Tide UPI Txn Done</Typography>
+                            <Typography variant="body2">{form.tide_upiTxnDone}</Typography>
+                          </Box>
+                        )}
+                        {form.ins_vehicleNumber && (
+                          <Box>
+                            <Typography variant="caption" color="text.secondary" fontWeight={600}>Vehicle Number</Typography>
+                            <Typography variant="body2">{form.ins_vehicleNumber}</Typography>
+                          </Box>
+                        )}
+                        {form.tideIns_type && (
+                          <Box>
+                            <Typography variant="caption" color="text.secondary" fontWeight={600}>Insurance Type</Typography>
+                            <Typography variant="body2">{form.tideIns_type}</Typography>
+                          </Box>
+                        )}
+                        {form.cc_cardName && (
+                          <Box>
+                            <Typography variant="caption" color="text.secondary" fontWeight={600}>Credit Card Name</Typography>
+                            <Typography variant="body2">{form.cc_cardName}</Typography>
+                          </Box>
+                        )}
+                        
+                        {form.reason && (
+                          <Box sx={{ gridColumn: '1 / -1' }}>
+                            <Typography variant="caption" color="text.secondary" fontWeight={600}>Reason</Typography>
+                            <Typography variant="body2">{form.reason}</Typography>
+                          </Box>
+                        )}
+                      </Box>
+                    </CardContent>
+                  </Card>
+                ))}
+              </Box>
+            )}
+          </DialogContent>
+          
+          <DialogActions>
+            <Button onClick={() => setEmployeeDrillDown(null)} sx={{ color: BRAND.primary, fontWeight: 700 }}>
+              Close
+            </Button>
+          </DialogActions>
+        </Dialog>
+      )}
     </Dialog>
   );
 }
@@ -1119,10 +1299,21 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
   console.log(`[${empName}] Final: verified=${verified}, adjustment=${adjustment}, total=${totalPoints}`);
 
   const handleSaveEdit = async () => {
-    if (!editForm?._id) return;
+    if (!editForm?._id) {
+      console.error('❌ No form ID found in editForm:', editForm);
+      setEditSnack('Error: Form ID is missing');
+      return;
+    }
+    
+    console.log('💾 Saving edit for form ID:', editForm._id);
+    console.log('📦 Edit form data:', editForm);
+    
     setEditSaving(true);
     try {
-      const res = await fetch(`${EMP_API}/forms/admin/update/${editForm._id}`, {
+      const apiUrl = `${EMP_API}/forms/admin/update/${editForm._id}`;
+      console.log('📡 API URL:', apiUrl);
+      
+      const res = await fetch(apiUrl, {
         method:  'PUT',
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify({
@@ -1134,7 +1325,11 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
           reason:         editForm._editReason || '',
         }),
       });
+      
+      console.log('📡 Response status:', res.status);
       const data = await res.json();
+      console.log('📡 Response data:', data);
+      
       if (res.ok) {
         setEditSnack('✓ Form updated successfully');
         setEditForm(null);
@@ -1144,7 +1339,8 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
       } else {
         setEditSnack(`Error: ${data.message}`);
       }
-    } catch {
+    } catch (err) {
+      console.error('❌ Edit API error:', err);
       setEditSnack('Failed to update. Please try again.');
     } finally {
       setEditSaving(false);
@@ -1152,10 +1348,27 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
   };
 
   const handleDeleteForm = async (f) => {
+    if (!f?._id) {
+      console.error('❌ No form ID found in form:', f);
+      setEditSnack('Error: Form ID is missing');
+      return;
+    }
+    
+    console.log('🗑️ Delete button clicked for form:', f);
+    console.log('📋 Form ID:', f._id);
+    
     if (!window.confirm(`Delete form for "${f.customerName}"? This cannot be undone.`)) return;
+    
     try {
-      const res = await fetch(`${EMP_API}/forms/admin/delete/${f._id}`, { method: 'DELETE' });
+      const apiUrl = `${EMP_API}/forms/admin/delete/${f._id}`;
+      console.log('📡 API URL:', apiUrl);
+      
+      const res = await fetch(apiUrl, { method: 'DELETE' });
+      
+      console.log('📡 Response status:', res.status);
       const data = await res.json();
+      console.log('📡 Response data:', data);
+      
       if (res.ok) {
         setEditSnack('✓ Form deleted successfully');
         setLocalVerifyMap({});
@@ -1164,6 +1377,7 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
         setEditSnack(`Error: ${data.message}`);
       }
     } catch (err) {
+      console.error('❌ Delete API error:', err);
       setEditSnack(`Failed to delete: ${err.message}`);
     }
   };
@@ -1412,7 +1626,13 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
                     <Box sx={{ display: 'flex', gap: 0.5 }}>
                       <Tooltip title="Edit form">
                         <IconButton size="small"
-                          onClick={() => setEditForm({ ...f })}
+                          onClick={() => {
+                            console.log('🔍 Edit button clicked for form:', f);
+                            console.log('📋 Form ID:', f._id);
+                            console.log('📋 Form ID type:', typeof f._id);
+                            console.log('📋 Form ID length:', f._id?.length);
+                            setEditForm({ ...f });
+                          }}
                           sx={{ color: BRAND.primary, '&:hover': { bgcolor: '#e6f4ea' } }}>
                           <EditIcon sx={{ fontSize: 16 }} />
                         </IconButton>
