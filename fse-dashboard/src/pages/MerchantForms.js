@@ -2212,7 +2212,7 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
 export default function MerchantForms() {
   const [forms,      setForms]      = useState([]);
   const [duplicates, setDuplicates] = useState([]);
-  const [roleFilter, setRoleFilter] = useState('FSE'); // 🔥 NEW: Role filter (FSE, TL, or ALL)
+  const [roleFilter, setRoleFilter] = useState('ALL'); // 🔥 DEFAULT: Show ALL forms on page load
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState('');
   const [search,     setSearch]     = useState('');
