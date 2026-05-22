@@ -887,6 +887,38 @@ function DuplicatePanel({ duplicates, open, onClose, onNotify, notifying, onSett
 // ── Filled Late Panel ─────────────────────────────────────────
 function FilledLatePanel({ filledLateForms, open, onClose, onResolve, resolving }) {
   const [resolveNote, setResolveNote] = useState({});
+  const [tab, setTab] = useState('active');
+  const [resolvedForms, setResolvedForms] = useState([]);
+  const [loadingResolved, setLoadingResolved] = useState(false);
+
+  // Load resolved forms when tab is switched
+  const loadResolvedForms = useCallback(async () => {
+    setLoadingResolved(true);
+    try {
+      const res = await fetch(`${EMP_API}/unfilled-forms/list?status=resolved`);
+      if (res.ok) {
+        const data = await res.json();
+        setResolvedForms(data.unfilledForms || []);
+      }
+    } catch (err) {
+      console.error('Error loading resolved forms:', err);
+    } finally {
+      setLoadingResolved(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (open && tab === 'resolved') {
+      loadResolvedForms();
+    }
+  }, [open, tab, loadResolvedForms]);
+
+  // Reload resolved forms after a new resolve action
+  useEffect(() => {
+    if (open && resolving === null && tab === 'resolved') {
+      loadResolvedForms();
+    }
+  }, [resolving, open, tab, loadResolvedForms]);
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
@@ -897,73 +929,140 @@ function FilledLatePanel({ filledLateForms, open, onClose, onResolve, resolving 
         <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
       </DialogTitle>
 
+      {/* Tabs */}
+      <Box sx={{ borderBottom: 1, borderColor: 'divider', px: 3 }}>
+        <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ minHeight: 40,
+          '& .MuiTab-root': { fontWeight: 700, fontSize: 12, minHeight: 40 },
+          '& .MuiTabs-indicator': { bgcolor: BRAND.primary } }}>
+          <Tab value="active" label={`Active (${filledLateForms.length})`} />
+          <Tab value="resolved" label="Resolved History" onClick={loadResolvedForms} />
+        </Tabs>
+      </Box>
+
       <DialogContent dividers sx={{ p: 2 }}>
-        {filledLateForms.length === 0 ? (
-          <Typography color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>
-            No filled late forms. All unfilled forms are still pending.
-          </Typography>
-        ) : (
-          filledLateForms.map((form, i) => (
-            <Card key={form._id} sx={{ mb: 2, border: `1.5px solid #ffe0b2`, borderRadius: 2, bgcolor: '#fffaf0' }}>
-              <CardContent sx={{ pb: '12px !important' }}>
-                {/* Header row */}
-                <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap', mb: 1 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
-                    <WarningAmberIcon sx={{ color: '#e65100', fontSize: 18 }} />
-                    <Typography fontWeight={800} sx={{ color: '#e65100' }}>
+        {/* ── Active filled late forms ── */}
+        {tab === 'active' && (
+          filledLateForms.length === 0 ? (
+            <Typography color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>
+              No filled late forms. All unfilled forms are still pending.
+            </Typography>
+          ) : (
+            filledLateForms.map((form, i) => (
+              <Card key={form._id} sx={{ mb: 2, border: `1.5px solid #ffe0b2`, borderRadius: 2, bgcolor: '#fffaf0' }}>
+                <CardContent sx={{ pb: '12px !important' }}>
+                  {/* Header row */}
+                  <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap', mb: 1 }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                      <WarningAmberIcon sx={{ color: '#e65100', fontSize: 18 }} />
+                      <Typography fontWeight={800} sx={{ color: '#e65100' }}>
+                        {form.customerName || form.customerPhone}
+                      </Typography>
+                      <Typography variant="caption" color="text.secondary">({form.customerPhone})</Typography>
+                      <ProductChip product={form.product} />
+                    </Box>
+                    {/* Resolve button */}
+                    <Tooltip title="Remove from unfilled list - FSE's form will remain visible">
+                      <Button size="small" variant="contained"
+                        disabled={resolving === i}
+                        startIcon={resolving === i ? <CircularProgress size={12} sx={{ color: 'inherit' }} /> : null}
+                        onClick={() => onResolve(form, i, resolveNote[i] || '')}
+                        sx={{ bgcolor: BRAND.primary, fontWeight: 700, fontSize: 11,
+                          '&:hover': { bgcolor: '#0f3320' } }}>
+                        {resolving === i ? 'Resolving…' : '✓ Resolve & Remove'}
+                      </Button>
+                    </Tooltip>
+                  </Box>
+
+                  {/* Details */}
+                  <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 1 }}>
+                    <Box>
+                      <Typography variant="caption" color="text.secondary" display="block">Originally Unfilled</Typography>
+                      <Typography variant="body2" fontWeight={600}>
+                        {form.expectedMonth} {form.expectedYear}
+                      </Typography>
+                    </Box>
+                    <Box>
+                      <Typography variant="caption" color="text.secondary" display="block">Filled By</Typography>
+                      <Chip 
+                        avatar={<Avatar sx={{ bgcolor: BRAND.primary, fontSize: 11 }}>{initials(form.filledByEmployee)}</Avatar>}
+                        label={form.filledByEmployee} 
+                        size="small" 
+                        sx={{ fontWeight: 600 }} 
+                      />
+                    </Box>
+                    <Box>
+                      <Typography variant="caption" color="text.secondary" display="block">Filled On</Typography>
+                      <Typography variant="body2" fontWeight={600}>
+                        {form.filledAt ? new Date(form.filledAt).toLocaleDateString('en-IN', { 
+                          day: 'numeric', month: 'short', year: 'numeric' 
+                        }) : '–'}
+                      </Typography>
+                    </Box>
+                  </Box>
+
+                  {/* Note field */}
+                  <TextField size="small" fullWidth placeholder="Add resolution note (optional)…"
+                    value={resolveNote[i] || ''}
+                    onChange={e => setResolveNote(prev => ({ ...prev, [i]: e.target.value }))}
+                    sx={{ '& .MuiOutlinedInput-root': { fontSize: 12 } }} />
+                </CardContent>
+              </Card>
+            ))
+          )
+        )}
+
+        {/* ── Resolved forms history ── */}
+        {tab === 'resolved' && (
+          loadingResolved ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
+              <CircularProgress size={28} sx={{ color: BRAND.primary }} />
+            </Box>
+          ) : resolvedForms.length === 0 ? (
+            <Typography color="text.secondary" sx={{ py: 3, textAlign: 'center' }}>
+              No resolved forms yet.
+            </Typography>
+          ) : (
+            resolvedForms.map((form, i) => (
+              <Card key={form._id} sx={{ mb: 2, border: `1.5px solid ${BRAND.primaryLight || '#c8e6c9'}`, borderRadius: 2 }}>
+                <CardContent sx={{ pb: '12px !important' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mb: 0.5 }}>
+                    <Chip label="✓ Resolved" size="small" sx={{ bgcolor: '#e6f4ea', color: '#2e7d32', fontWeight: 700 }} />
+                    <Typography fontWeight={700} sx={{ color: 'text.primary' }}>
                       {form.customerName || form.customerPhone}
                     </Typography>
                     <Typography variant="caption" color="text.secondary">({form.customerPhone})</Typography>
                     <ProductChip product={form.product} />
                   </Box>
-                  {/* Resolve button */}
-                  <Tooltip title="Remove from unfilled list - FSE's form will remain visible">
-                    <Button size="small" variant="contained"
-                      disabled={resolving === i}
-                      startIcon={resolving === i ? <CircularProgress size={12} sx={{ color: 'inherit' }} /> : null}
-                      onClick={() => onResolve(form, i, resolveNote[i] || '')}
-                      sx={{ bgcolor: BRAND.primary, fontWeight: 700, fontSize: 11,
-                        '&:hover': { bgcolor: '#0f3320' } }}>
-                      {resolving === i ? 'Resolving…' : '✓ Resolve & Remove'}
-                    </Button>
-                  </Tooltip>
-                </Box>
-
-                {/* Details */}
-                <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 1 }}>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" display="block">Originally Unfilled</Typography>
-                    <Typography variant="body2" fontWeight={600}>
-                      {form.expectedMonth} {form.expectedYear}
-                    </Typography>
+                  <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap', mb: 0.5 }}>
+                    <Box>
+                      <Typography variant="caption" color="text.secondary">Originally Unfilled</Typography>
+                      <Typography variant="body2" fontWeight={600}>
+                        {form.expectedMonth} {form.expectedYear}
+                      </Typography>
+                    </Box>
+                    {form.filledByEmployee && (
+                      <Box>
+                        <Typography variant="caption" color="text.secondary">Filled By</Typography>
+                        <Chip 
+                          avatar={<Avatar sx={{ bgcolor: '#888', fontSize: 11 }}>{initials(form.filledByEmployee)}</Avatar>}
+                          label={form.filledByEmployee} 
+                          size="small" 
+                          sx={{ fontWeight: 600 }} 
+                        />
+                      </Box>
+                    )}
                   </Box>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" display="block">Filled By</Typography>
-                    <Chip 
-                      avatar={<Avatar sx={{ bgcolor: BRAND.primary, fontSize: 11 }}>{initials(form.filledByEmployee)}</Avatar>}
-                      label={form.filledByEmployee} 
-                      size="small" 
-                      sx={{ fontWeight: 600 }} 
-                    />
-                  </Box>
-                  <Box>
-                    <Typography variant="caption" color="text.secondary" display="block">Filled On</Typography>
-                    <Typography variant="body2" fontWeight={600}>
-                      {form.filledAt ? new Date(form.filledAt).toLocaleDateString('en-IN', { 
-                        day: 'numeric', month: 'short', year: 'numeric' 
-                      }) : '–'}
-                    </Typography>
-                  </Box>
-                </Box>
-
-                {/* Note field */}
-                <TextField size="small" fullWidth placeholder="Add resolution note (optional)…"
-                  value={resolveNote[i] || ''}
-                  onChange={e => setResolveNote(prev => ({ ...prev, [i]: e.target.value }))}
-                  sx={{ '& .MuiOutlinedInput-root': { fontSize: 12 } }} />
-              </CardContent>
-            </Card>
-          ))
+                  <Typography variant="caption" color="text.secondary">
+                    Resolved on {new Date(form.resolvedAt).toLocaleDateString('en-IN', { 
+                      day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' 
+                    })}
+                    {form.resolvedBy ? ` by ${form.resolvedBy}` : ''}
+                    {form.notes ? ` · Note: ${form.notes}` : ''}
+                  </Typography>
+                </CardContent>
+              </Card>
+            ))
+          )
         )}
       </DialogContent>
       <DialogActions>
