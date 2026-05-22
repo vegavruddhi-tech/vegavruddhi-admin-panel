@@ -973,6 +973,261 @@ function FilledLatePanel({ filledLateForms, open, onClose, onResolve, resolving 
   );
 }
 
+// ── Settle Unfilled Form Dialog ──────────────────────────────────
+function SettleUnfilledDialog({ form, open, onClose, onSettle, settling }) {
+  const [employeeName, setEmployeeName] = useState('');
+  const [employeeRole, setEmployeeRole] = useState('FSE');
+  const [note, setNote] = useState('');
+
+  useEffect(() => {
+    if (form) {
+      setEmployeeName(form.assignedTo || 'Dheeraj Anand');
+      setEmployeeRole('FSE');
+      setNote('');
+    }
+  }, [form]);
+
+  const handleSettle = async () => {
+    if (!employeeName.trim()) {
+      alert('Please enter employee name');
+      return;
+    }
+    const success = await onSettle(form, employeeName, employeeRole, note);
+    if (success) {
+      onClose();
+    }
+  };
+
+  if (!form) return null;
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: BRAND.primary, fontWeight: 800, pb: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          ✓ Settle Unfilled Form
+        </Box>
+        <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
+      </DialogTitle>
+
+      <DialogContent dividers sx={{ p: 3 }}>
+        {/* Merchant Info */}
+        <Box sx={{ mb: 3, p: 2, bgcolor: '#f9f9f9', borderRadius: 1 }}>
+          <Typography variant="caption" color="text.secondary" display="block">Merchant Details</Typography>
+          <Typography fontWeight={800} sx={{ fontSize: 16, mb: 0.5 }}>{form.customerName}</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'monospace' }}>{form.customerPhone}</Typography>
+          <Box sx={{ mt: 1 }}>
+            <ProductChip product={form.product} />
+          </Box>
+        </Box>
+
+        {/* Employee Selection */}
+        <TextField
+          fullWidth
+          label="Assign to Employee *"
+          value={employeeName}
+          onChange={(e) => setEmployeeName(e.target.value)}
+          placeholder="Enter employee name"
+          sx={{ mb: 2 }}
+          helperText="This form will be created under this employee's name"
+        />
+
+        {/* Role Selection */}
+        <Box sx={{ mb: 2 }}>
+          <Typography variant="caption" color="text.secondary" display="block" sx={{ mb: 1 }}>
+            Employee Role *
+          </Typography>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            {['FSE', 'TL', 'MANAGER'].map(role => (
+              <Button
+                key={role}
+                size="small"
+                variant={employeeRole === role ? 'contained' : 'outlined'}
+                onClick={() => setEmployeeRole(role)}
+                sx={{
+                  borderColor: BRAND.primary,
+                  color: employeeRole === role ? '#fff' : BRAND.primary,
+                  bgcolor: employeeRole === role ? BRAND.primary : 'transparent',
+                  fontWeight: 700,
+                  fontSize: 11,
+                  '&:hover': { bgcolor: employeeRole === role ? '#0f3320' : BRAND.primaryLight }
+                }}
+              >
+                {role}
+              </Button>
+            ))}
+          </Box>
+        </Box>
+
+        {/* Notes */}
+        <TextField
+          fullWidth
+          multiline
+          rows={3}
+          label="Settlement Notes (optional)"
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="Add any notes about this settlement..."
+          sx={{ mb: 2 }}
+        />
+
+        {/* Info Alert */}
+        <Alert severity="info" sx={{ fontSize: 12 }}>
+          <strong>What happens when you settle:</strong>
+          <ul style={{ margin: '8px 0 0 0', paddingLeft: 20 }}>
+            <li>A real form submission will be created for {employeeName}</li>
+            <li>Full verification will run against Google Sheets</li>
+            <li>If verified, points will be awarded automatically</li>
+            <li>Form will appear in all dashboards and reports</li>
+            <li>This unfilled form will be marked as resolved</li>
+          </ul>
+        </Alert>
+      </DialogContent>
+
+      <DialogActions sx={{ p: 2 }}>
+        <Button onClick={onClose} sx={{ color: 'text.secondary' }}>Cancel</Button>
+        <Button
+          variant="contained"
+          disabled={settling || !employeeName.trim()}
+          startIcon={settling ? <CircularProgress size={16} sx={{ color: 'inherit' }} /> : null}
+          onClick={handleSettle}
+          sx={{ bgcolor: BRAND.primary, fontWeight: 700, '&:hover': { bgcolor: '#0f3320' } }}
+        >
+          {settling ? 'Settling…' : '✓ Settle & Create Form'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
+// ── Settle Unfilled Form Dialog ──────────────────────────────────────────
+function SettleDialog({ form, open, onClose, onSettle, settling, employees }) {
+  const [employeeName, setEmployeeName] = useState('');
+  const [employeeRole, setEmployeeRole] = useState('FSE');
+  const [note, setNote] = useState('');
+
+  useEffect(() => {
+    if (form && form.assignedTo) {
+      setEmployeeName(form.assignedTo);
+    }
+  }, [form]);
+
+  const handleSettle = async () => {
+    if (!employeeName.trim()) {
+      alert('Please select an employee');
+      return;
+    }
+    const success = await onSettle(form, employeeName, employeeRole, note);
+    if (success) {
+      setEmployeeName('');
+      setEmployeeRole('FSE');
+      setNote('');
+      onClose();
+    }
+  };
+
+  if (!form) return null;
+
+  return (
+    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
+      <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: BRAND.primary, fontWeight: 800, pb: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          ✓ Settle Unfilled Form
+        </Box>
+        <IconButton onClick={onClose} size="small"><CloseIcon /></IconButton>
+      </DialogTitle>
+
+      <DialogContent dividers sx={{ p: 3 }}>
+        {/* Merchant Info */}
+        <Box sx={{ mb: 3, p: 2, bgcolor: '#f9f9f9', borderRadius: 1 }}>
+          <Typography variant="caption" color="text.secondary" display="block">Merchant Details</Typography>
+          <Typography fontWeight={800} sx={{ fontSize: 16, mb: 0.5 }}>{form.customerName}</Typography>
+          <Typography variant="body2" color="text.secondary" sx={{ fontFamily: 'monospace' }}>{form.customerPhone}</Typography>
+          <Box sx={{ mt: 1 }}>
+            <ProductChip product={form.product} />
+          </Box>
+        </Box>
+
+        {/* Employee Selection */}
+        <Box sx={{ mb: 2 }}>
+          <Typography variant="body2" fontWeight={700} sx={{ mb: 1 }}>Assign to Employee *</Typography>
+          <TextField
+            select
+            fullWidth
+            size="small"
+            value={employeeName}
+            onChange={(e) => setEmployeeName(e.target.value)}
+            placeholder="Select employee"
+          >
+            {employees.map((emp) => (
+              <MenuItem key={emp.newJoinerName} value={emp.newJoinerName}>
+                {emp.newJoinerName} ({emp.newJoinerEmailId})
+              </MenuItem>
+            ))}
+          </TextField>
+          <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+            This form will be created as a submission by this employee
+          </Typography>
+        </Box>
+
+        {/* Role Selection */}
+        <Box sx={{ mb: 2 }}>
+          <Typography variant="body2" fontWeight={700} sx={{ mb: 1 }}>Employee Role *</Typography>
+          <TextField
+            select
+            fullWidth
+            size="small"
+            value={employeeRole}
+            onChange={(e) => setEmployeeRole(e.target.value)}
+          >
+            <MenuItem value="FSE">FSE (Field Sales Executive)</MenuItem>
+            <MenuItem value="TL">TL (Team Leader)</MenuItem>
+            <MenuItem value="MANAGER">Manager</MenuItem>
+          </TextField>
+        </Box>
+
+        {/* Note */}
+        <Box sx={{ mb: 2 }}>
+          <Typography variant="body2" fontWeight={700} sx={{ mb: 1 }}>Settlement Note (Optional)</Typography>
+          <TextField
+            fullWidth
+            multiline
+            rows={2}
+            size="small"
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder="Add a note about why this form is being settled..."
+          />
+        </Box>
+
+        {/* Info Alert */}
+        <Alert severity="info" sx={{ fontSize: 12 }}>
+          <strong>What happens when you settle:</strong>
+          <ul style={{ margin: '8px 0 0 0', paddingLeft: '20px' }}>
+            <li>A real form submission will be created for {employeeName || 'the selected employee'}</li>
+            <li>Full verification will run automatically (with Redis caching)</li>
+            <li>If verified, points will be awarded to the employee</li>
+            <li>Form will appear in all dashboards, exports, and reports</li>
+            <li>This unfilled form will be marked as "resolved" and removed from the list</li>
+          </ul>
+        </Alert>
+      </DialogContent>
+
+      <DialogActions sx={{ p: 2 }}>
+        <Button onClick={onClose} sx={{ color: 'text.secondary' }}>Cancel</Button>
+        <Button 
+          variant="contained" 
+          onClick={handleSettle}
+          disabled={settling || !employeeName.trim()}
+          startIcon={settling ? <CircularProgress size={16} sx={{ color: 'inherit' }} /> : null}
+          sx={{ bgcolor: BRAND.primary, fontWeight: 700, '&:hover': { bgcolor: '#0f3320' } }}
+        >
+          {settling ? 'Settling...' : '✓ Settle & Create Form'}
+        </Button>
+      </DialogActions>
+    </Dialog>
+  );
+}
+
 // ── Verification status chip ──────────────────────────────────
 function VerifyChip({ status, onClick }) {
   const map = {
@@ -1998,6 +2253,10 @@ export default function MerchantForms() {
   const [tls,              setTls]              = useState([]); // TL data for meetings
   const [unfilledForms,    setUnfilledForms]    = useState([]); // Unfilled forms from sheet
   const [filledLateForms,  setFilledLateForms]  = useState([]); // 🔥 NEW: Forms filled after being marked unfilled
+  const [settledCount,     setSettledCount]     = useState(0);  // 🔥 NEW: Count of settled forms
+  const [settleDialogOpen, setSettleDialogOpen] = useState(false); // 🔥 NEW: Settle dialog state
+  const [settleFormData,   setSettleFormData]   = useState(null); // 🔥 NEW: Form being settled
+  const [settlingForm,     setSettlingForm]     = useState(false); // 🔥 NEW: Settling in progress
 
   // ── Update verification map when modal fetches fresh data ────
   const handleUpdateVerifyMap = useCallback((vKey, verificationData) => {
@@ -2035,6 +2294,14 @@ export default function MerchantForms() {
         const unfilledData = await unfilledRes.json();
         setUnfilledForms(unfilledData.unfilledForms || []);
         console.log(`✅ Loaded ${unfilledData.unfilledForms?.length || 0} unfilled forms`);
+        
+        // 🔥 NEW: Fetch stats to get settled count
+        const statsRes = await fetch(`${EMP_API}/unfilled-forms/stats?month=${selectedMonth}&year=${selectedYear}`);
+        if (statsRes.ok) {
+          const statsData = await statsRes.json();
+          setSettledCount(statsData.stats?.totalSettled || 0);
+          console.log(`✅ Loaded settled count: ${statsData.stats?.totalSettled || 0}`);
+        }
         
         // Don't load regular forms for unfilled view
         setForms([]);
@@ -2148,7 +2415,51 @@ export default function MerchantForms() {
     }
   }, []);
 
-  // 🔥 NEW: Handle resolving filled late forms
+  // 🔥 NEW: Handle settling unfilled forms (creates real form submission with verification)
+  const handleSettleUnfilledForm = useCallback(async (form, employeeName, employeeRole, note) => {
+    try {
+      const res = await fetch(`${EMP_API}/unfilled-forms/${form._id}/settle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          employeeName: employeeName,
+          employeeRole: employeeRole || 'FSE',
+          settledBy: 'admin',
+          notes: note || 'Settled from unfilled forms'
+        }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setNotifySnack(`✓ Form settled successfully! Created ${employeeRole || 'FSE'} form with verification.`);
+        // Refresh unfilled forms list
+        if (roleFilter === 'UNFILLED') {
+          const refreshRes = await fetch(`${EMP_API}/unfilled-forms/list?month=${selectedMonth}&year=${selectedYear}`);
+          if (refreshRes.ok) {
+            const refreshData = await refreshRes.json();
+            setUnfilledForms(refreshData.unfilledForms || []);
+          }
+        }
+        // Refresh stats to update settled count
+        const statsRes = await fetch(`${EMP_API}/unfilled-forms/stats?month=${selectedMonth}&year=${selectedYear}`);
+        if (statsRes.ok) {
+          const statsData = await statsRes.json();
+          // 🔥 NEW: Update settled count in state
+          setSettledCount(statsData.stats?.totalSettled || 0);
+        }
+        load(); // refresh main forms list
+        return true;
+      } else {
+        setNotifySnack(`Error: ${data.message || data.error}`);
+        return false;
+      }
+    } catch (err) {
+      console.error('Settle error:', err);
+      setNotifySnack('Failed to settle form. Please try again.');
+      return false;
+    }
+  }, [selectedMonth, selectedYear, roleFilter, load]);
+
+  // 🔥 NEW: Handle resolving filled late forms (old method - just marks as resolved)
   const handleResolveFilledLate = useCallback(async (form, idx, note) => {
     setResolving(idx);
     try {
@@ -2179,6 +2490,24 @@ export default function MerchantForms() {
       setResolving(null);
     }
   }, [selectedMonth, selectedYear, load]);
+
+  // 🔥 NEW: Handle settle dialog open
+  const handleSettleClick = useCallback((form) => {
+    setSettleFormData(form);
+    setSettleDialogOpen(true);
+  }, []);
+
+  // 🔥 NEW: Handle settle form submission
+  const handleSettleSubmit = useCallback(async (form, employeeName, employeeRole, note) => {
+    setSettlingForm(true);
+    const success = await handleSettleUnfilledForm(form, employeeName, employeeRole, note);
+    setSettlingForm(false);
+    if (success) {
+      setSettleDialogOpen(false);
+      setSettleFormData(null);
+    }
+    return success;
+  }, [handleSettleUnfilledForm]);
 
   const handleEditPoints = useCallback(async (empName, empData, autoPoints, productBreakdown = {}) => {
     console.log('🔧 handleEditPoints called:', { empName, empData: empData?._id, autoPoints, productBreakdown });
@@ -2607,8 +2936,8 @@ export default function MerchantForms() {
 
 
   const totalDupCount = duplicates.length;
-  const settledCount  = duplicates.filter(d => d.settled).length;
-  const activeCount   = totalDupCount - settledCount;
+  const settledDupCount  = duplicates.filter(d => d.settled).length;
+  const activeCount   = totalDupCount - settledDupCount;
 
   // Map empName → points data
   const empPointsMap = useMemo(() => {
@@ -3033,7 +3362,7 @@ useEffect(() => {
             <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 2, mb: 3 }}>
               {[
                 { label: 'Total UNFILLED Submissions', value: totalUnfilled, color: '#e65100', bg: '#fff3e0', key: 'unfilled' },
-                { label: 'UNFILLEDs', value: 1, color: '#1565c0', bg: '#e3f2fd', key: 'emp', subtitle: 'Dheeraj Anand' },
+                { label: 'Settled Forms', value: settledDupCount, color: '#2e7d32', bg: '#e6f4ea', key: 'settled', subtitle: 'Resolved & Created' },
                 { label: 'Filled Late (needs review)', value: filledLateCount, color: '#f57f17', bg: '#fff8e1', key: 'filled_late', clickable: filledLateCount > 0 },
                 { label: 'Tide Insurance', value: productBreakdown['Tide Insurance'] || 0, color: '#006064', bg: '#e0f7fa', key: 'tide_ins' },
                 { label: 'Tide', value: productBreakdown['Tide'] || 0, color: '#1565c0', bg: '#e3f2fd', key: 'tide' },
@@ -3095,7 +3424,7 @@ useEffect(() => {
           filteredEmps,
           priorityPassActive,
           activeCount,
-          settledCount,
+          settledDupCount,
           formsCount: forms.length
         });
         
@@ -3106,29 +3435,29 @@ useEffect(() => {
           { label: roleFilter === 'ALL' ? 'Total FSEs' : `${roleFilter}s`, value: filteredEmps, color: '#1565c0', bg: '#e3f2fd', key: 'emp' },
           { label: 'Priority Pass Active', value: priorityPassActive, color: '#7c3aed', bg: '#f3e5f5', key: 'priority' },
           { label: 'Cross Duplicates',  value: activeCount,   color: '#c62828',     bg: '#fdecea', key: 'dup' },
-          { label: 'Settled Duplicates',value: settledCount,  color: '#2e7d32',     bg: '#e6f4ea', key: 'settled' },
+          { label: 'Settled Duplicates',value: settledDupCount,  color: '#2e7d32',     bg: '#e6f4ea', key: 'settled' },
         ].map(k => (
           <Card key={k.label}
             onClick={
               k.key === 'dup'      && activeCount   > 0 ? () => setDupOpen(true)     :
-              k.key === 'settled'  && settledCount  > 0 ? () => setSettledOpen(true) :
+              k.key === 'settled'  && settledDupCount  > 0 ? () => setSettledOpen(true) :
               k.key === 'priority' && priorityPassActive > 0 ? () => setPriorityPassOpen(true) :
               undefined
             }
             sx={{
               borderRadius: 3,
               border: `1.5px solid ${k.color}20`,
-              cursor: (k.key === 'dup' && activeCount > 0) || (k.key === 'settled' && settledCount > 0) || (k.key === 'priority' && priorityPassActive > 0) ? 'pointer' : 'default',
+              cursor: (k.key === 'dup' && activeCount > 0) || (k.key === 'settled' && settledDupCount > 0) || (k.key === 'priority' && priorityPassActive > 0) ? 'pointer' : 'default',
               transition: 'box-shadow 0.2s, transform 0.15s',
               ...((k.key === 'dup' && activeCount > 0) && { '&:hover': { boxShadow: '0 4px 20px rgba(198,40,40,0.18)', transform: 'translateY(-2px)' } }),
-              ...((k.key === 'settled' && settledCount > 0) && { '&:hover': { boxShadow: '0 4px 20px rgba(46,125,50,0.18)', transform: 'translateY(-2px)' } }),
+              ...((k.key === 'settled' && settledDupCount > 0) && { '&:hover': { boxShadow: '0 4px 20px rgba(46,125,50,0.18)', transform: 'translateY(-2px)' } }),
               ...((k.key === 'priority' && priorityPassActive > 0) && { '&:hover': { boxShadow: '0 4px 20px rgba(124,58,237,0.18)', transform: 'translateY(-2px)' } }),
             }}>
             <CardContent sx={{ py: 2 }}>
               <Typography variant="h4" fontWeight={800} sx={{ color: k.color }}>{k.value}</Typography>
               <Typography variant="body2" color="text.secondary" fontWeight={600}>
                 {k.label}
-                {((k.key === 'dup' && activeCount > 0) || (k.key === 'settled' && settledCount > 0) || (k.key === 'priority' && priorityPassActive > 0)) && (
+                {((k.key === 'dup' && activeCount > 0) || (k.key === 'settled' && settledDupCount > 0) || (k.key === 'priority' && priorityPassActive > 0)) && (
                   <Typography component="span" variant="caption" sx={{ ml: 1, color: k.color, fontWeight: 700 }}>
                     (click to view)
                   </Typography>
@@ -3469,6 +3798,7 @@ useEffect(() => {
                           <TableCell>Product</TableCell>
                           <TableCell>Sheet Tab</TableCell>
                           <TableCell>Status</TableCell>
+                          <TableCell align="center">Actions</TableCell>
                         </TableRow>
                       </TableHead>
                       <TableBody>
@@ -3485,6 +3815,27 @@ useEffect(() => {
                                 size="small" 
                                 sx={{ bgcolor: '#fdecea', color: '#c62828', fontWeight: 700, fontSize: 10 }} 
                               />
+                            </TableCell>
+                            <TableCell align="center">
+                              <Tooltip title="Settle this form - create real submission with verification">
+                                <Button
+                                  size="small"
+                                  variant="contained"
+                                  onClick={() => {
+                                    setSettleFormData(form);
+                                    setSettleDialogOpen(true);
+                                  }}
+                                  sx={{
+                                    bgcolor: BRAND.primary,
+                                    fontWeight: 700,
+                                    fontSize: 10,
+                                    minWidth: 80,
+                                    '&:hover': { bgcolor: '#0f3320' }
+                                  }}
+                                >
+                                  ✓ Settle
+                                </Button>
+                              </Tooltip>
                             </TableCell>
                           </TableRow>
                         ))}
@@ -3534,6 +3885,19 @@ useEffect(() => {
         onClose={() => setFilledLateOpen(false)}
         onResolve={handleResolveFilledLate} 
         resolving={resolving} 
+      />
+
+      {/* 🔥 NEW: Settle Unfilled Form Dialog */}
+      <SettleDialog
+        form={settleFormData}
+        open={settleDialogOpen}
+        onClose={() => {
+          setSettleDialogOpen(false);
+          setSettleFormData(null);
+        }}
+        onSettle={handleSettleSubmit}
+        settling={settlingForm}
+        employees={employees}
       />
 
       {/* <Button
@@ -3914,7 +4278,7 @@ useEffect(() => {
       <Dialog open={settledOpen} onClose={() => setSettledOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: BRAND.primary, fontWeight: 800 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            ✓ Settled Duplicate Records ({settledCount})
+            ✓ Settled Duplicate Records ({settledDupCount})
           </Box>
           <IconButton onClick={() => setSettledOpen(false)} size="small"><CloseIcon /></IconButton>
         </DialogTitle>
