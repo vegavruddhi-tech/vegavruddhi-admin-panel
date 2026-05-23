@@ -1142,7 +1142,9 @@ function FilledLatePanel({ filledLateForms, open, onClose, onResolve, resolving 
                     <Box>
                       <Typography variant="caption" color="text.secondary" display="block">Originally Unfilled</Typography>
                       <Typography variant="body2" fontWeight={600}>
-                        {form.expectedMonth} {form.expectedYear}
+                        {form.createdAt ? new Date(form.createdAt).toLocaleDateString('en-IN', { 
+                          day: 'numeric', month: 'short', year: 'numeric' 
+                        }) : `${form.expectedMonth} ${form.expectedYear}`}
                       </Typography>
                     </Box>
                     <Box>
@@ -1157,11 +1159,36 @@ function FilledLatePanel({ filledLateForms, open, onClose, onResolve, resolving 
                     <Box>
                       <Typography variant="caption" color="text.secondary" display="block">Filled On</Typography>
                       <Typography variant="body2" fontWeight={600}>
-                        {form.filledAt ? new Date(form.filledAt).toLocaleDateString('en-IN', { 
+                        {form.filledFormId?.createdAt ? new Date(form.filledFormId.createdAt).toLocaleDateString('en-IN', { 
                           day: 'numeric', month: 'short', year: 'numeric' 
-                        }) : '–'}
+                        }) : (form.filledAt ? new Date(form.filledAt).toLocaleDateString('en-IN', { 
+                          day: 'numeric', month: 'short', year: 'numeric' 
+                        }) : '–')}
                       </Typography>
                     </Box>
+                    {/* 🔥 NEW: Gap calculation */}
+                    {form.createdAt && form.filledFormId?.createdAt && (() => {
+                      const unfilledDate = new Date(form.createdAt);
+                      const filledDate = new Date(form.filledFormId.createdAt);
+                      const gapDays = Math.floor((filledDate - unfilledDate) / (1000 * 60 * 60 * 24));
+                      const gapColor = gapDays <= 3 ? '#2e7d32' : gapDays <= 7 ? '#f57c00' : '#c62828';
+                      const gapBg = gapDays <= 3 ? '#e6f4ea' : gapDays <= 7 ? '#fff3e0' : '#fdecea';
+                      return (
+                        <Box>
+                          <Typography variant="caption" color="text.secondary" display="block">Gap</Typography>
+                          <Chip 
+                            label={`${gapDays} day${gapDays !== 1 ? 's' : ''}`}
+                            size="small"
+                            sx={{ 
+                              bgcolor: gapBg, 
+                              color: gapColor, 
+                              fontWeight: 700,
+                              border: `1px solid ${gapColor}30`
+                            }}
+                          />
+                        </Box>
+                      );
+                    })()}
                   </Box>
 
                   {/* Note field */}
@@ -3901,7 +3928,7 @@ useEffect(() => {
 <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', mb: 2 }}>
   {/* 🔥 NEW: Role Filter */}
   <Box sx={{ display: 'flex', gap: 0.5, mr: 2, border: `2px solid ${BRAND.primary}`, borderRadius: 1, overflow: 'hidden' }}>
-    {['FSE', 'TL', 'ALL', 'MANAGER', 'UNFILLED'].map(role => (
+    {['ALL', 'MANAGER', 'TL', 'FSE', 'UNFILLED'].map(role => (
       <Button key={role} size="small"
         variant={roleFilter === role ? 'contained' : 'text'}
         onClick={() => {
