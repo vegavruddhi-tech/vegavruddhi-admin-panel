@@ -100,9 +100,64 @@ const SlabTierRow = React.memo(function SlabTierRow({ tier, idx, onCommit, onDel
 });
 
 // ── Flatten a form record into a flat row for export ─────────
-function flattenForm(f, empMap = {}, tlMap = {}, verifyMap = {}) {
-  const emp = empMap[f.employeeName] || {};
-  const tl  = tlMap[(emp.reportingManager || '').toLowerCase().trim()] || {};
+function flattenForm(f, empMap = {}, tlMap = {}, managerMap = {}, verifyMap = {}) {
+  // 🔥 NEW: Get employee details from correct collection based on formType
+  let empEmail = '';
+  let empPhone = '';
+  
+  if (f.formType === 'Manager') {
+    // Manager: Look in managerMap
+    const mgr = managerMap[f.employeeName.toLowerCase().trim()] || {};
+    empEmail = mgr.email || '';
+    empPhone = mgr.phone || '';
+  } else if (f.formType === 'TL') {
+    // TL: Look in tlMap
+    const tl = tlMap[f.employeeName.toLowerCase().trim()] || {};
+    empEmail = tl.email || '';
+    empPhone = tl.phone || '';
+  } else {
+    // FSE: Look in empMap
+    const emp = empMap[f.employeeName] || {};
+    empEmail = emp.newJoinerEmailId || '';
+    empPhone = emp.newJoinerPhone || '';
+  }
+  
+  const emp = empMap[f.employeeName] || {}; // Keep for reportingManager lookup (FSE only)
+  
+  // 🔥 NEW: Determine TL details based on form type
+  let tlName = '';
+  let tlPhone = '';
+  let tlEmail = '';
+  
+  if (f.formType === 'Manager') {
+    // Manager forms: TL is always "Dheeraj Anand"
+    tlName = 'Dheeraj Anand';
+    tlPhone = '8239702199';
+    tlEmail = 'dheeraj.anand04@gmail.com';
+  } else if (f.formType === 'TL') {
+    // TL forms: Check if this person is in TL database, get their reportingManager
+    const tlRecord = tlMap[f.employeeName.toLowerCase().trim()] || {};
+    tlName = tlRecord.reportingManager || 'Dheeraj Anand'; // 🔥 FALLBACK: Default to Dheeraj if no RM set
+    // If TL has a manager, look up manager's details (check both tlMap AND managerMap)
+    if (tlName) {
+      const managerRecord = tlMap[tlName.toLowerCase().trim()] || managerMap[tlName.toLowerCase().trim()] || {};
+      tlPhone = managerRecord.phone || '';
+      tlEmail = managerRecord.email || '';
+      
+      // 🔥 FALLBACK: If manager details not found but name is Dheeraj, use hardcoded values
+      if (!tlPhone && tlName.toLowerCase().includes('dheeraj')) {
+        tlPhone = '8239702199';
+        tlEmail = 'dheeraj.anand04@gmail.com';
+      }
+    }
+  } else {
+    // FSE forms: Use reportingManager from employee database
+    tlName = emp.reportingManager || '';
+    const tl = tlMap[(emp.reportingManager || '').toLowerCase().trim()] || {};
+    tlPhone = tl.phone || '';
+    tlEmail = tl.email || '';
+  }
+  
   const product = f.formFillingFor || f.tideProduct || f.brand || (f.attemptedProducts || []).join(', ');
   const vKey = (f.formFillingFor || f.tideProduct || f.brand || '')
     ? `${f.customerNumber}__${(f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim()}`
@@ -116,13 +171,19 @@ function flattenForm(f, empMap = {}, tlMap = {}, verifyMap = {}) {
     points = productKey ? POINTS_MAP[productKey] : 0;
   }
   
+  // 🔥 NEW: Determine designation based on formType
+  let designation = 'FSE'; // Default
+  if (f.formType === 'TL') designation = 'Team Lead';
+  else if (f.formType === 'Manager') designation = 'Manager';
+  
   return {
     'Employee Name':   f.employeeName   || '',
-    'Employee Email':  emp.newJoinerEmailId || '',
-    'Employee Phone':  emp.newJoinerPhone   || '',
-    'Team Leader':     emp.reportingManager  || '',
-    'TL Phone':        tl.phone || '',
-    'TL Email':        tl.email || '',
+    'Employee Email':  empEmail, // 🔥 FIXED: Use empEmail from correct collection
+    'Employee Phone':  empPhone, // 🔥 FIXED: Use empPhone from correct collection
+    'Team Leader':     tlName,
+    'TL Phone':        tlPhone,
+    'TL Email':        tlEmail,
+    'Designation':     designation, // 🔥 NEW: Designation column (FSE/Team Lead/Manager)
     'Customer Name':     f.customerName   || '',
     'Customer Phone':    f.customerNumber || '',
     'Location':          f.location       || '',
@@ -145,14 +206,16 @@ function flattenForm(f, empMap = {}, tlMap = {}, verifyMap = {}) {
 
 // ── Export to Excel ───────────────────────────────────────────
 async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPointsData = []) { 
-  // Fetch employee details and points data
-  const [empRes, tlRes, ptsRes] = await Promise.all([
+  // Fetch employee details, TL details, manager details, and points data
+  const [empRes, tlRes, mgrRes, ptsRes] = await Promise.all([
     fetch(`${EMP_API}/auth/all-employees`),
     fetch(`${EMP_API}/tl/approved-list`),
+    fetch(`${EMP_API}/manager/approved-list`), // 🔥 NEW: Fetch managers
     fetch(`${EMP_API}/forms/admin/employee-points`)
   ]);
   const empList = empRes.ok ? await empRes.json() : [];
   const tlList  = tlRes.ok  ? await tlRes.json()  : [];
+  const mgrList = mgrRes.ok ? await mgrRes.json() : []; // 🔥 NEW: Manager list
   const empPointsList = ptsRes.ok ? await ptsRes.json() : empPointsData;
 
   // Build lookup maps
@@ -160,6 +223,8 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
   empList.forEach(e => { empMap[e.newJoinerName] = e; });
   const tlMap = {};
   tlList.forEach(t => { tlMap[t.name.toLowerCase().trim()] = t; });
+  const managerMap = {}; // 🔥 NEW: Manager map
+  mgrList.forEach(m => { managerMap[m.name.toLowerCase().trim()] = m; });
   
   // Build empPoints map (empName → points data with slabs)
   const empPointsMap = {};
@@ -174,7 +239,7 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
   // ═══════════════════════════════════════════════════════════
   // SHEET 1: Merchant Forms (detailed data with points per row)
   // ═══════════════════════════════════════════════════════════
-  const merchantRows = forms.map(f => flattenForm(f, empMap, tlMap, verifyMap));
+  const merchantRows = forms.map(f => flattenForm(f, empMap, tlMap, managerMap, verifyMap));
   const ws1 = XLSX.utils.json_to_sheet(merchantRows);
 
   // Auto column widths for Sheet 1
@@ -194,16 +259,54 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
     const empName = f.employeeName || 'Unknown';
     
     if (!employeeData[empName]) {
-      const emp = empMap[empName] || {};
-      const tl = tlMap[(emp.reportingManager || '').toLowerCase().trim()] || {};
+      // 🔥 NEW: Get employee details from correct collection based on formType
+      let empEmail = '';
+      let empPhone = '';
+      let tlName = '';
+      let tlPhone = '';
+      let tlEmail = '';
+      
+      if (f.formType === 'Manager') {
+        // Manager: Look in managerMap
+        const mgr = managerMap[empName.toLowerCase().trim()] || {};
+        empEmail = mgr.email || '';
+        empPhone = mgr.phone || '';
+        // Manager's TL is always Dheeraj Anand
+        tlName = 'Dheeraj Anand';
+        tlPhone = '8239702199';
+        tlEmail = 'dheeraj.anand04@gmail.com';
+      } else if (f.formType === 'TL') {
+        // TL: Look in tlMap
+        const tlRecord = tlMap[empName.toLowerCase().trim()] || {};
+        empEmail = tlRecord.email || '';
+        empPhone = tlRecord.phone || '';
+        // TL's manager
+        tlName = tlRecord.reportingManager || 'Dheeraj Anand';
+        const managerRecord = tlMap[tlName.toLowerCase().trim()] || managerMap[tlName.toLowerCase().trim()] || {};
+        tlPhone = managerRecord.phone || '';
+        tlEmail = managerRecord.email || '';
+        if (!tlPhone && tlName.toLowerCase().includes('dheeraj')) {
+          tlPhone = '8239702199';
+          tlEmail = 'dheeraj.anand04@gmail.com';
+        }
+      } else {
+        // FSE: Look in empMap
+        const emp = empMap[empName] || {};
+        empEmail = emp.newJoinerEmailId || '';
+        empPhone = emp.newJoinerPhone || '';
+        tlName = emp.reportingManager || '';
+        const tl = tlMap[(emp.reportingManager || '').toLowerCase().trim()] || {};
+        tlPhone = tl.phone || '';
+        tlEmail = tl.email || '';
+      }
       
       employeeData[empName] = {
         'FSE Name': empName,
-        'FSE Email': emp.newJoinerEmailId || '',
-        'FSE Phone': emp.newJoinerPhone || '',
-        'TL Name': emp.reportingManager || '',
-        'TL Email': tl.email || '',
-        'TL Phone': tl.phone || '',
+        'FSE Email': empEmail, // 🔥 FIXED: Use empEmail from correct collection
+        'FSE Phone': empPhone, // 🔥 FIXED: Use empPhone from correct collection
+        'TL Name': tlName,
+        'TL Email': tlEmail,
+        'TL Phone': tlPhone,
         productCounts: {},
         autoPoints: 0,
         slabBonuses: {} // { "Tide - Slab 1": 5.0, "Tide - Slab 2": 5.0 }
@@ -331,20 +434,81 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
   // ═══════════════════════════════════════════════════════════
   
   const verificationRows = forms.map(f => {
-    const emp = empMap[f.employeeName] || {};
-    const tl = tlMap[(emp.reportingManager || '').toLowerCase().trim()] || {};
+    // 🔥 NEW: Get employee details from correct collection based on formType
+    let empEmail = '';
+    let empPhone = '';
+    
+    if (f.formType === 'Manager') {
+      // Manager: Look in managerMap
+      const mgr = managerMap[f.employeeName.toLowerCase().trim()] || {};
+      empEmail = mgr.email || '';
+      empPhone = mgr.phone || '';
+    } else if (f.formType === 'TL') {
+      // TL: Look in tlMap
+      const tl = tlMap[f.employeeName.toLowerCase().trim()] || {};
+      empEmail = tl.email || '';
+      empPhone = tl.phone || '';
+    } else {
+      // FSE: Look in empMap
+      const emp = empMap[f.employeeName] || {};
+      empEmail = emp.newJoinerEmailId || '';
+      empPhone = emp.newJoinerPhone || '';
+    }
+    
+    const emp = empMap[f.employeeName] || {}; // Keep for reportingManager lookup (FSE only)
+    
+    // 🔥 NEW: Determine TL details based on form type
+    let tlName = '';
+    let tlPhone = '';
+    let tlEmail = '';
+    
+    if (f.formType === 'Manager') {
+      // Manager forms: TL is always "Dheeraj Anand"
+      tlName = 'Dheeraj Anand';
+      tlPhone = '8239702199';
+      tlEmail = 'dheeraj.anand04@gmail.com';
+    } else if (f.formType === 'TL') {
+      // TL forms: Check if this person is in TL database, get their reportingManager
+      const tlRecord = tlMap[f.employeeName.toLowerCase().trim()] || {};
+      tlName = tlRecord.reportingManager || 'Dheeraj Anand'; // 🔥 FALLBACK: Default to Dheeraj if no RM set
+      // If TL has a manager, look up manager's details (check both tlMap AND managerMap)
+      if (tlName) {
+        const managerRecord = tlMap[tlName.toLowerCase().trim()] || managerMap[tlName.toLowerCase().trim()] || {};
+        tlPhone = managerRecord.phone || '';
+        tlEmail = managerRecord.email || '';
+        
+        // 🔥 FALLBACK: If manager details not found but name is Dheeraj, use hardcoded values
+        if (!tlPhone && tlName.toLowerCase().includes('dheeraj')) {
+          tlPhone = '8239702199';
+          tlEmail = 'dheeraj.anand04@gmail.com';
+        }
+      }
+    } else {
+      // FSE forms: Use reportingManager from employee database
+      tlName = emp.reportingManager || '';
+      const tl = tlMap[(emp.reportingManager || '').toLowerCase().trim()] || {};
+      tlPhone = tl.phone || '';
+      tlEmail = tl.email || '';
+    }
+    
     const product = f.formFillingFor || f.tideProduct || f.brand || 'Other';
     const vKey = product ? `${f.customerNumber}__${product.toLowerCase().trim()}` : f.customerNumber;
     const verification = verifyMap[vKey] || {};
     
+    // 🔥 NEW: Determine designation based on formType
+    let designation = 'FSE'; // Default
+    if (f.formType === 'TL') designation = 'Team Lead';
+    else if (f.formType === 'Manager') designation = 'Manager';
+    
     // Base row with FSE/TL/Merchant info
     const row = {
       'FSE Name': f.employeeName || '',
-      'FSE Email': emp.newJoinerEmailId || '',
-      'FSE Phone': emp.newJoinerPhone || '',
-      'TL Name': emp.reportingManager || '',
-      'TL Email': tl.email || '',
-      'TL Phone': tl.phone || '',
+      'FSE Email': empEmail, // 🔥 FIXED: Use empEmail from correct collection
+      'FSE Phone': empPhone, // 🔥 FIXED: Use empPhone from correct collection
+      'TL Name': tlName,
+      'TL Email': tlEmail,
+      'TL Phone': tlPhone,
+      'Designation': designation, // 🔥 NEW: Designation column
       'Customer Name': f.customerName || '',
       'Customer Phone': f.customerNumber || '',
       'Location': f.location || '',
@@ -404,11 +568,11 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
 }
 
 // ── Export to Google Sheets ───────────────────────────────────
-async function exportToGoogleSheets(forms, setExporting, setError, cachedVerifyMap = {}, empMap = {}, tlMap = {}) {
+async function exportToGoogleSheets(forms, setExporting, setError, cachedVerifyMap = {}, empMap = {}, tlMap = {}, managerMap = {}) {
   setExporting(true);
   try {
     // Use cached verification data
-    const rows    = forms.map(f => flattenForm(f, empMap, tlMap, cachedVerifyMap));
+    const rows    = forms.map(f => flattenForm(f, empMap, tlMap, managerMap, cachedVerifyMap));
     const headers = Object.keys(rows[0] || {});
     const values  = [headers, ...rows.map(r => headers.map(h => r[h] || ''))];
 
@@ -2424,6 +2588,11 @@ export default function MerchantForms() {
         const tlData = tlRes.ok ? await tlRes.json() : [];
         const mgrData = mgrRes.ok ? await mgrRes.json() : [];
         
+        // 🔥 Tag forms with formType for export
+        fseData.forEach(f => f.formType = 'FSE');
+        tlData.forEach(f => f.formType = 'TL');
+        mgrData.forEach(f => f.formType = 'Manager');
+        
         // Combine and deduplicate by form ID
         const formMap = new Map();
         [...fseData, ...tlData, ...mgrData].forEach(form => {
@@ -2439,6 +2608,8 @@ export default function MerchantForms() {
         const formsRes = await fetch(apiUrl);
         if (!formsRes.ok) throw new Error('Failed to load manager forms');
         formsData = await formsRes.json();
+        // 🔥 Tag Manager forms
+        formsData.forEach(f => f.formType = 'Manager');
         console.log(`✅ Loaded ${formsData.length} Manager forms`);
       } else {
         // Regular FSE or TL only
@@ -2447,6 +2618,8 @@ export default function MerchantForms() {
         const formsRes = await fetch(apiUrl);
         if (!formsRes.ok) throw new Error('Failed to load merchant forms');
         formsData = await formsRes.json();
+        // 🔥 Tag forms with formType
+        formsData.forEach(f => f.formType = roleFilter === 'TL' ? 'TL' : 'FSE');
         console.log(`✅ Loaded ${formsData.length} ${roleFilter} forms`);
       }
       
@@ -3409,22 +3582,26 @@ useEffect(() => {
             </MenuItem>
             <MenuItem onClick={async () => { 
               setExportAnchor(null);
-              // Fetch employee and TL data for Google Sheets export
+              // Fetch employee, TL, and manager data for Google Sheets export
               try {
-                const [empRes, tlRes] = await Promise.all([
+                const [empRes, tlRes, mgrRes] = await Promise.all([
                   fetch(`${EMP_API}/auth/all-employees`),
-                  fetch(`${EMP_API}/tl/approved-list`)
+                  fetch(`${EMP_API}/tl/approved-list`),
+                  fetch(`${EMP_API}/manager/approved-list`) // 🔥 NEW: Fetch managers
                 ]);
                 const empList = empRes.ok ? await empRes.json() : [];
                 const tlList  = tlRes.ok  ? await tlRes.json()  : [];
+                const mgrList = mgrRes.ok ? await mgrRes.json() : []; // 🔥 NEW: Manager list
                 
                 // Build lookup maps
                 const empMap = {};
                 empList.forEach(e => { empMap[e.newJoinerName] = e; });
                 const tlMap = {};
                 tlList.forEach(t => { tlMap[t.name.toLowerCase().trim()] = t; });
+                const managerMap = {}; // 🔥 NEW: Manager map
+                mgrList.forEach(m => { managerMap[m.name.toLowerCase().trim()] = m; });
                 
-                exportToGoogleSheets(filteredForms, setExporting, setError, globalVerifyMap, empMap, tlMap);
+                exportToGoogleSheets(filteredForms, setExporting, setError, globalVerifyMap, empMap, tlMap, managerMap);
               } catch (err) {
                 setError('Failed to fetch employee data: ' + err.message);
               }
