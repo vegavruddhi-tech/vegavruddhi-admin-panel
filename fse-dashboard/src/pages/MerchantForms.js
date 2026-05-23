@@ -1048,6 +1048,16 @@ function DuplicatePanel({ duplicates, open, onClose, onNotify, notifying, onSett
   );
 }
 
+// ── Helper function to format date in UTC (fixes timezone issue) ──
+function formatDateUTC(dateString) {
+  if (!dateString) return null;
+  const date = new Date(dateString);
+  const day = date.getUTCDate();
+  const month = date.toLocaleString('en-IN', { month: 'short', timeZone: 'UTC' });
+  const year = date.getUTCFullYear();
+  return `${day} ${month} ${year}`;
+}
+
 // ── Filled Late Panel ─────────────────────────────────────────
 function FilledLatePanel({ filledLateForms, open, onClose, onResolve, resolving }) {
   const [resolveNote, setResolveNote] = useState({});
@@ -1142,9 +1152,7 @@ function FilledLatePanel({ filledLateForms, open, onClose, onResolve, resolving 
                     <Box>
                       <Typography variant="caption" color="text.secondary" display="block">Originally Unfilled</Typography>
                       <Typography variant="body2" fontWeight={600}>
-                        {form.createdAt ? new Date(form.createdAt).toLocaleDateString('en-IN', { 
-                          day: 'numeric', month: 'short', year: 'numeric' 
-                        }) : `${form.expectedMonth} ${form.expectedYear}`}
+                        {form.createdAt ? formatDateUTC(form.createdAt) : `${form.expectedMonth} ${form.expectedYear}`}
                       </Typography>
                     </Box>
                     <Box>
@@ -1159,11 +1167,7 @@ function FilledLatePanel({ filledLateForms, open, onClose, onResolve, resolving 
                     <Box>
                       <Typography variant="caption" color="text.secondary" display="block">Filled On</Typography>
                       <Typography variant="body2" fontWeight={600}>
-                        {form.filledFormId?.createdAt ? new Date(form.filledFormId.createdAt).toLocaleDateString('en-IN', { 
-                          day: 'numeric', month: 'short', year: 'numeric' 
-                        }) : (form.filledAt ? new Date(form.filledAt).toLocaleDateString('en-IN', { 
-                          day: 'numeric', month: 'short', year: 'numeric' 
-                        }) : '–')}
+                        {form.filledFormId?.createdAt ? formatDateUTC(form.filledFormId.createdAt) : (form.filledAt ? formatDateUTC(form.filledAt) : '–')}
                       </Typography>
                     </Box>
                     {/* 🔥 NEW: Gap calculation */}
