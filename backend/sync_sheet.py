@@ -88,10 +88,22 @@ def normalize_phone(val):
         return None
 
 def parse_date(val):
+    """Parse date from various formats (YYYY-MM-DD, DD/MM/YYYY, etc.)"""
+    if not val or str(val).strip() == '':
+        return None
     try:
+        # Try ISO format first (YYYY-MM-DD)
         return datetime.strptime(str(val)[:10], "%Y-%m-%d")
     except:
-        return None
+        try:
+            # Try DD/MM/YYYY format
+            return datetime.strptime(str(val)[:10], "%d/%m/%Y")
+        except:
+            try:
+                # Try MM/DD/YYYY format
+                return datetime.strptime(str(val)[:10], "%m/%d/%Y")
+            except:
+                return None
 
 def tab_to_collection(name):
     return re.sub(r'\W+', '_', name.lower())
@@ -217,6 +229,10 @@ def process_sheet(sheet_id, label):
         headers   = [clean_key(h) for h in unique_headers]
         phone_col = next((h for h in headers if any(p in h for p in PHONE_COLS)), None)
         date_col  = next((h for h in headers if any(d in h for d in DATE_COLS)), None)
+        
+        # 🔥 NEW: Also check for just "date" column (case-insensitive)
+        if not date_col:
+            date_col = next((h for h in headers if h == 'date'), None)
 
         # Categorical fields — differences here = new record
         cat_fields = get_categorical_fields(headers, phone_col, date_col)
@@ -259,6 +275,14 @@ def process_sheet(sheet_id, label):
                 lead = str(cleaned.get('lead', '')).strip()
                 product = str(cleaned.get('product', '')).strip()
 
+                # 🔥 NEW: Extract date from sheet and use as createdAt
+                sheet_date = None
+                if date_col and cleaned.get(date_col):
+                    sheet_date = parse_date(cleaned.get(date_col))
+                
+                # If no date in sheet, use current time
+                created_at = sheet_date if sheet_date else datetime.now(timezone.utc)
+
                 # Generate fingerprint for backward compatibility
                 fp = row_fingerprint(cleaned, cat_fields)
 
@@ -270,6 +294,7 @@ def process_sheet(sheet_id, label):
                 cleaned['_sheet']     = label
                 cleaned['_tab']       = tab
                 cleaned['_synced_at'] = datetime.now(timezone.utc)
+                cleaned['createdAt']  = created_at  # 🔥 NEW: Use date from sheet
 
                 # ═══ OPTION 3: Insert fresh data (no upsert needed, old data deleted) ═══
                 # Use InsertOne instead of UpdateOne since we deleted old data
@@ -301,7 +326,7 @@ if __name__ == "__main__":
         
         # Pre-compute verification after successful sync
         logging.info("\n" + "="*60)
-        logging.info("STEP: Pre-computing verification for all forms")
+        logging.info("STEP 2: Pre-computing verification for all forms")
         logging.info("="*60)
         
         import requests
