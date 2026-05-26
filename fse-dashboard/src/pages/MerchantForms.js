@@ -1152,7 +1152,7 @@ function FilledLatePanel({ filledLateForms, open, onClose, onResolve, resolving 
                     <Box>
                       <Typography variant="caption" color="text.secondary" display="block">Originally Unfilled</Typography>
                       <Typography variant="body2" fontWeight={600}>
-                        {form.createdAt ? formatDateUTC(form.createdAt) : `${form.expectedMonth} ${form.expectedYear}`}
+                        {form.originalDate ? formatDateUTC(form.originalDate) : (form.createdAt ? formatDateUTC(form.createdAt) : `${form.expectedMonth} ${form.expectedYear}`)}
                       </Typography>
                     </Box>
                     <Box>
@@ -1172,7 +1172,7 @@ function FilledLatePanel({ filledLateForms, open, onClose, onResolve, resolving 
                     </Box>
                     {/* 🔥 NEW: Gap calculation */}
                     {form.createdAt && form.filledFormId?.createdAt && (() => {
-                      const unfilledDate = new Date(form.createdAt);
+                      const unfilledDate = new Date(form.originalDate || form.createdAt);
                       const filledDate = new Date(form.filledFormId.createdAt);
                       const gapDays = Math.floor((filledDate - unfilledDate) / (1000 * 60 * 60 * 24));
                       const gapColor = gapDays <= 3 ? '#2e7d32' : gapDays <= 7 ? '#f57c00' : '#c62828';
