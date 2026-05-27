@@ -88,22 +88,39 @@ def normalize_phone(val):
         return None
 
 def parse_date(val):
-    """Parse date from various formats (YYYY-MM-DD, DD/MM/YYYY, etc.)"""
+    """Parse date from various formats (YYYY-MM-DD, DD/MM/YYYY, DD Mon YYYY, etc.)"""
     if not val or str(val).strip() == '':
         return None
-    try:
-        # Try ISO format first (YYYY-MM-DD)
-        return datetime.strptime(str(val)[:10], "%Y-%m-%d")
-    except:
+    
+    val_str = str(val).strip()
+    
+    # Skip invalid/placeholder values
+    if val_str in ['0', '00', '-', 'N/A', 'NA', 'null', 'None', '']:
+        return None
+    
+    # List of date formats to try
+    formats = [
+        "%Y-%m-%d",           # 2026-05-23
+        "%d/%m/%Y",           # 23/05/2026
+        "%m/%d/%Y",           # 05/23/2026
+        "%d %b %Y",           # 23 May 2026
+        "%d %B %Y",           # 23 May 2026 (full month name)
+        "%d-%b-%Y",           # 23-May-2026
+        "%d-%B-%Y",           # 23-May-2026
+        "%b %d, %Y",          # May 23, 2026
+        "%B %d, %Y",          # May 23, 2026
+        "%Y/%m/%d",           # 2026/05/23
+        "%d.%m.%Y",           # 23.05.2026
+    ]
+    
+    for fmt in formats:
         try:
-            # Try DD/MM/YYYY format
-            return datetime.strptime(str(val)[:10], "%d/%m/%Y")
+            return datetime.strptime(val_str, fmt)
         except:
-            try:
-                # Try MM/DD/YYYY format
-                return datetime.strptime(str(val)[:10], "%m/%d/%Y")
-            except:
-                return None
+            continue
+    
+    # If all formats fail, return None (don't log warning for common placeholders)
+    return None
 
 def tab_to_collection(name):
     return re.sub(r'\W+', '_', name.lower())

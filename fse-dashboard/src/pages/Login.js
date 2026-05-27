@@ -3,6 +3,7 @@ import { Box, Card, CardContent, Typography, Alert } from "@mui/material";
 import { GoogleLogin } from "@react-oauth/google";
 import { jwtDecode } from "jwt-decode";
 import { BRAND } from "../theme";
+import TideSelectionPopup from "../components/TideSelectionPopup";
 
 // Allowed admin emails — add more to REACT_APP_ADMIN_EMAILS in .env (comma-separated)
 const ALLOWED_EMAILS = (process.env.REACT_APP_ADMIN_EMAILS || "data.analyst@vegavruddhi.com")
@@ -12,8 +13,10 @@ const ALLOWED_EMAILS = (process.env.REACT_APP_ADMIN_EMAILS || "data.analyst@vega
 
 export default function Login({ onLogin }) {
   const [error, setError] = useState("");
+  const [showTidePopup, setShowTidePopup] = useState(false);
+  const [pendingAuth, setPendingAuth] = useState(null);
 
-  const handleSuccess = (credentialResponse) => {
+  const handleSuccess = async (credentialResponse) => {
     setError("");
     try {
       const decoded = jwtDecode(credentialResponse.credential);
@@ -29,10 +32,31 @@ export default function Login({ onLogin }) {
         username: decoded.name || email,
         picture:  decoded.picture || "",
       };
-      localStorage.setItem("vv_auth", JSON.stringify(authObj));
-      onLogin(authObj);
+      
+      // Admin always has Tide BT access, show popup
+      setPendingAuth(authObj);
+      setShowTidePopup(true);
     } catch {
       setError("Failed to verify Google account. Please try again.");
+    }
+  };
+
+  const handleSelectTide = () => {
+    setShowTidePopup(false);
+    if (pendingAuth) {
+      localStorage.setItem("vv_auth", JSON.stringify(pendingAuth));
+      onLogin(pendingAuth);
+    }
+  };
+
+  const handleSelectTideBT = () => {
+    setShowTidePopup(false);
+    if (pendingAuth) {
+      // Store auth in Tide BT localStorage
+      const authData = JSON.stringify(pendingAuth);
+      localStorage.setItem("vv_tidebt_auth", authData);
+      // Redirect to Tide BT Admin panel with auth data in URL
+      window.location.href = `http://localhost:3006?auth=${encodeURIComponent(authData)}`;
     }
   };
 
@@ -101,6 +125,14 @@ export default function Login({ onLogin }) {
           </Typography>
         </CardContent>
       </Card>
+      
+      {/* Tide Selection Popup */}
+      <TideSelectionPopup
+        open={showTidePopup}
+        onClose={() => setShowTidePopup(false)}
+        onSelectTide={handleSelectTide}
+        onSelectTideBT={handleSelectTideBT}
+      />
     </Box>
   );
 }
