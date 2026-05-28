@@ -3580,16 +3580,20 @@ useEffect(() => {
             All merchant submissions by employees — employee-wise view
           </Typography>
         </Box>
-        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+        <Box sx={{ display: 'flex', gap: { xs: 0.5, sm: 1 }, alignItems: 'center', flexWrap: 'wrap' }}>
           {/* Duplicate Bell */}
           <Tooltip title={totalDupCount > 0 ? `${totalDupCount} cross-employee duplicate merchant(s)` : 'No cross-employee duplicates'}>
             <Badge badgeContent={totalDupCount} color="error" max={99}>
               <IconButton onClick={() => setDupOpen(true)}
-                sx={{ border: `1.5px solid ${totalDupCount > 0 ? '#c62828' : BRAND.primaryLight}`,
+                sx={{ 
+                  border: `1.5px solid ${totalDupCount > 0 ? '#c62828' : BRAND.primaryLight}`,
                   color: totalDupCount > 0 ? '#c62828' : BRAND.primary,
                   bgcolor: totalDupCount > 0 ? '#fdecea' : 'transparent',
-                  '&:hover': { bgcolor: totalDupCount > 0 ? '#ffcdd2' : BRAND.primaryLight } }}>
-                <NotificationsIcon />
+                  width: { xs: 32, sm: 40 },
+                  height: { xs: 32, sm: 40 },
+                  '&:hover': { bgcolor: totalDupCount > 0 ? '#ffcdd2' : BRAND.primaryLight } 
+                }}>
+                <NotificationsIcon sx={{ fontSize: { xs: 18, sm: 24 } }} />
               </IconButton>
             </Badge>
           </Tooltip>
@@ -3598,11 +3602,15 @@ useEffect(() => {
           <Tooltip title={filledLateForms.length > 0 ? `${filledLateForms.length} unfilled form(s) now filled by FSEs` : 'No filled late forms'}>
             <Badge badgeContent={filledLateForms.length} color="warning" max={99}>
               <IconButton onClick={() => setFilledLateOpen(true)}
-                sx={{ border: `1.5px solid ${filledLateForms.length > 0 ? '#e65100' : BRAND.primaryLight}`,
+                sx={{ 
+                  border: `1.5px solid ${filledLateForms.length > 0 ? '#e65100' : BRAND.primaryLight}`,
                   color: filledLateForms.length > 0 ? '#e65100' : BRAND.primary,
                   bgcolor: filledLateForms.length > 0 ? '#fff3e0' : 'transparent',
-                  '&:hover': { bgcolor: filledLateForms.length > 0 ? '#ffe0b2' : BRAND.primaryLight } }}>
-                <WarningAmberIcon />
+                  width: { xs: 32, sm: 40 },
+                  height: { xs: 32, sm: 40 },
+                  '&:hover': { bgcolor: filledLateForms.length > 0 ? '#ffe0b2' : BRAND.primaryLight } 
+                }}>
+                <WarningAmberIcon sx={{ fontSize: { xs: 18, sm: 24 } }} />
               </IconButton>
             </Badge>
           </Tooltip>
@@ -3610,6 +3618,7 @@ useEffect(() => {
           {/* Points Activity Button */}
           <Button
             variant="outlined"
+            size="small"
             onClick={() => {
               setMainTab(mainTab === 'activity' ? 'forms' : 'activity');
               if (mainTab !== 'activity') loadPointsActivity();
@@ -3619,52 +3628,82 @@ useEffect(() => {
               color: mainTab === 'activity' ? '#fff' : BRAND.primary,
               bgcolor: mainTab === 'activity' ? BRAND.primary : 'transparent',
               fontWeight: 700,
-              '&:hover': { bgcolor: mainTab === 'activity' ? '#0f3320' : BRAND.primaryLight }
+              fontSize: { xs: '0.7rem', sm: '0.875rem' },
+              px: { xs: 1, sm: 2 },
+              minWidth: { xs: 32, sm: 'auto' },
+              '&:hover': { bgcolor: mainTab === 'activity' ? '#0f3320' : BRAND.primaryLight },
+              '& .MuiButton-startIcon': { display: { xs: 'none', sm: 'inline-flex' } }
             }}
           >
-            {mainTab === 'activity' ? '← Back to Forms' : '📊 Points Activity'}
+            <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>
+              {mainTab === 'activity' ? '← Back to Forms' : '📊 Points Activity'}
+            </Box>
+            <Box component="span" sx={{ display: { xs: 'inline', sm: 'none' } }}>
+              {mainTab === 'activity' ? '←' : '📊'}
+            </Box>
           </Button>
 
           {/* Schedule Meeting Button */}
           <Button
             variant="outlined"
-            startIcon={<span>📅</span>}
+            size="small"
             onClick={() => setMeetingOpen(true)}
             sx={{ 
               borderColor: BRAND.primary, 
               color: BRAND.primary,
               fontWeight: 700,
+              fontSize: { xs: '0.7rem', sm: '0.875rem' },
+              px: { xs: 1, sm: 2 },
+              minWidth: { xs: 'auto', sm: 'auto' },
               textTransform: 'none',
               '&:hover': { bgcolor: BRAND.primaryLight }
             }}
           >
-            Schedule Meeting
+            <Box component="span" sx={{ mr: { xs: 0, sm: 0.5 } }}>📅</Box>
+            <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>Schedule Meeting</Box>
+            <Box component="span" sx={{ display: { xs: 'inline', sm: 'none' } }}>Meet</Box>
           </Button>
-  {/* <Button
-  variant={todayOnly ? 'contained' : 'outlined'}
-  onClick={() => setTodayOnly(prev => !prev)}
-  sx={{
-    borderColor: BRAND.primary,
-    color: todayOnly ? '#fff' : BRAND.primary,
-    bgcolor: todayOnly ? BRAND.primary : 'transparent',
-    fontWeight: 700,
-    '&:hover': { bgcolor: todayOnly ? '#0f3320' : BRAND.primaryLight }
-  }}
->
-  
-  Today Only
-</Button> */}
 
           {/* Export Button */}
           <Button
-            startIcon={exporting ? <CircularProgress size={14} sx={{ color: 'inherit' }} /> : <DownloadIcon />}
             variant="contained"
+            size="small"
             disabled={exporting || forms.length === 0}
             onClick={e => setExportAnchor(e.currentTarget)}
-            sx={{ bgcolor: BRAND.primary, fontWeight: 700, '&:hover': { bgcolor: '#0f3320' } }}
+            sx={{ 
+              bgcolor: BRAND.primary, 
+              fontWeight: 700, 
+              fontSize: { xs: '0.7rem', sm: '0.875rem' },
+              px: { xs: 1, sm: 2 },
+              minWidth: { xs: 'auto', sm: 'auto' },
+              '&:hover': { bgcolor: '#0f3320' }
+            }}
           >
-            Export
+            {exporting ? <CircularProgress size={14} sx={{ color: 'inherit' }} /> : (
+              <>
+                <DownloadIcon sx={{ fontSize: { xs: 16, sm: 20 }, mr: { xs: 0, sm: 0.5 } }} />
+                <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>Export</Box>
+              </>
+            )}
           </Button>
+
+          {/* REFRESH Button */}
+          <IconButton 
+            onClick={load} 
+            disabled={loading}
+            sx={{ 
+              border: `1.5px solid ${BRAND.primaryLight}`,
+              color: BRAND.primary,
+              width: { xs: 32, sm: 40 },
+              height: { xs: 32, sm: 40 },
+              '&:hover': { bgcolor: BRAND.primaryLight }
+            }}
+          >
+            <RefreshIcon sx={{ fontSize: { xs: 18, sm: 24 } }} />
+          </IconButton>
+        </Box>
+
+          {/* Export Menu */}
           <Menu anchorEl={exportAnchor} open={Boolean(exportAnchor)} onClose={() => setExportAnchor(null)}
             PaperProps={{ sx: { borderRadius: 2, mt: 0.5, minWidth: 200, boxShadow: '0 4px 20px rgba(0,0,0,0.12)' } }}>
             <MenuItem onClick={() => { 
@@ -3707,12 +3746,6 @@ useEffect(() => {
               <ListItemText primary="Export to Google Sheets" secondary="Opens in new tab" />
             </MenuItem>
           </Menu>
-
-          <Button startIcon={<RefreshIcon />} variant="outlined" onClick={load}
-            sx={{ borderColor: BRAND.primary, color: BRAND.primary, fontWeight: 700 }}>
-            Refresh
-          </Button>
-        </Box>
       </Box>
 
       {/* Summary KPIs - Dynamic based on roleFilter */}
@@ -3731,7 +3764,7 @@ useEffect(() => {
           });
           
           return (
-            <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 2, mb: 3 }}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)', md: 'repeat(5, 1fr)' }, gap: { xs: 1.5, sm: 2 }, mb: 3 }}>
               {[
                 { label: 'Total UNFILLED Submissions', value: totalUnfilled, color: '#e65100', bg: '#fff3e0', key: 'unfilled' },
                 { label: 'Settled Forms', value: settledDupCount, color: '#2e7d32', bg: '#e6f4ea', key: 'settled', subtitle: 'Resolved & Created' },
@@ -3748,17 +3781,17 @@ useEffect(() => {
                     transition: 'box-shadow 0.2s, transform 0.15s',
                     ...(k.clickable && { '&:hover': { boxShadow: `0 4px 20px ${k.color}30`, transform: 'translateY(-2px)' } }),
                   }}>
-                  <CardContent sx={{ py: 2 }}>
-                    <Typography variant="h4" fontWeight={800} sx={{ color: k.color }}>{k.value}</Typography>
-                    <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                  <CardContent sx={{ py: { xs: 1, sm: 2 }, px: { xs: 1.5, sm: 2 } }}>
+                    <Typography variant="h4" fontWeight={800} sx={{ color: k.color, fontSize: { xs: '1.25rem', sm: '2rem' }, lineHeight: 1, mb: 0.5 }}>{k.value}</Typography>
+                    <Typography variant="body2" color="text.secondary" fontWeight={600} sx={{ fontSize: { xs: '0.65rem', sm: '0.875rem' }, lineHeight: 1.2 }}>
                       {k.label}
                       {k.clickable && (
-                        <Typography component="span" variant="caption" sx={{ ml: 1, color: k.color, fontWeight: 700 }}>
+                        <Typography component="span" variant="caption" sx={{ ml: 1, color: k.color, fontWeight: 700, display: { xs: 'none', sm: 'inline' }, fontSize: '0.7rem' }}>
                           (click to view)
                         </Typography>
                       )}
                       {k.subtitle && (
-                        <Typography component="span" variant="caption" sx={{ display: 'block', mt: 0.5, color: k.color, opacity: 0.8 }}>
+                        <Typography component="span" variant="caption" sx={{ display: 'block', mt: 0.3, color: k.color, opacity: 0.8, fontSize: { xs: '0.6rem', sm: '0.75rem' } }}>
                           {k.subtitle}
                         </Typography>
                       )}
@@ -3801,7 +3834,7 @@ useEffect(() => {
         });
         
         return (
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 2, mb: 3 }}>
+          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)', md: 'repeat(5, 1fr)' }, gap: { xs: 1.5, sm: 2 }, mb: 3 }}>
         {[
           { label: roleFilter === 'ALL' ? 'Total Submissions' : `Total ${roleFilter} Submissions`, value: filteredTotal, color: BRAND.primary, bg: '#e6f4ea', key: 'total' },
           { label: roleFilter === 'ALL' ? 'Total FSEs' : `${roleFilter}s`, value: filteredEmps, color: '#1565c0', bg: '#e3f2fd', key: 'emp' },
@@ -3825,17 +3858,17 @@ useEffect(() => {
               ...((k.key === 'settled' && settledDupCount > 0) && { '&:hover': { boxShadow: '0 4px 20px rgba(46,125,50,0.18)', transform: 'translateY(-2px)' } }),
               ...((k.key === 'priority' && priorityPassActive > 0) && { '&:hover': { boxShadow: '0 4px 20px rgba(124,58,237,0.18)', transform: 'translateY(-2px)' } }),
             }}>
-            <CardContent sx={{ py: 2 }}>
-              <Typography variant="h4" fontWeight={800} sx={{ color: k.color }}>{k.value}</Typography>
-              <Typography variant="body2" color="text.secondary" fontWeight={600}>
+            <CardContent sx={{ py: { xs: 1, sm: 2 }, px: { xs: 1.5, sm: 2 } }}>
+              <Typography variant="h4" fontWeight={800} sx={{ color: k.color, fontSize: { xs: '1.25rem', sm: '2rem' }, lineHeight: 1, mb: 0.5 }}>{k.value}</Typography>
+              <Typography variant="body2" color="text.secondary" fontWeight={600} sx={{ fontSize: { xs: '0.65rem', sm: '0.875rem' }, lineHeight: 1.2 }}>
                 {k.label}
                 {((k.key === 'dup' && activeCount > 0) || (k.key === 'settled' && settledDupCount > 0) || (k.key === 'priority' && priorityPassActive > 0)) && (
-                  <Typography component="span" variant="caption" sx={{ ml: 1, color: k.color, fontWeight: 700 }}>
+                  <Typography component="span" variant="caption" sx={{ ml: 1, color: k.color, fontWeight: 700, display: { xs: 'none', sm: 'inline' }, fontSize: '0.7rem' }}>
                     (click to view)
                   </Typography>
                 )}
                 {k.key === 'priority' && (
-                  <Typography component="span" variant="caption" sx={{ display: 'block', mt: 0.5, color: k.color, opacity: 0.8 }}>
+                  <Typography component="span" variant="caption" sx={{ display: 'block', mt: 0.3, color: k.color, opacity: 0.8, fontSize: { xs: '0.6rem', sm: '0.75rem' } }}>
                     Tide · {selectedMonth.split(' ')[0]}
                   </Typography>
                 )}
@@ -3843,7 +3876,7 @@ useEffect(() => {
             </CardContent>
           </Card>
         ))}
-      </Box>
+        </Box>
         );
       })()}
 
@@ -3856,7 +3889,7 @@ useEffect(() => {
       )}
 
       {/* Verification KPI cards */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 2, mb: 3 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, gap: { xs: 1.5, sm: 2 }, mb: 3 }}>
         {[
           { label: 'Fully Verified',   key: 'Fully Verified',   color: '#2e7d32', bg: '#e6f4ea', icon: '✓' },
           { label: 'Critical Failure',  key: 'Critical Failure',  color: '#c62828', bg: '#ffebee', icon: '⚠' },
@@ -3867,13 +3900,13 @@ useEffect(() => {
             sx={{ borderRadius: 3, border: `1.5px solid ${k.color}30`, cursor: 'pointer',
               transition: 'box-shadow 0.2s, transform 0.15s',
               '&:hover': { boxShadow: `0 4px 20px ${k.color}30`, transform: 'translateY(-2px)' } }}>
-            <CardContent sx={{ py: 2 }}>
-              <Typography variant="h4" fontWeight={800} sx={{ color: k.color }}>
+            <CardContent sx={{ py: { xs: 1, sm: 2 }, px: { xs: 1.5, sm: 2 } }}>
+              <Typography variant="h4" fontWeight={800} sx={{ color: k.color, fontSize: { xs: '1.25rem', sm: '2rem' }, lineHeight: 1, mb: 0.5 }}>
                 {k.icon} {verifyKpiCounts[k.key] || 0}
               </Typography>
-              <Typography variant="body2" color="text.secondary" fontWeight={600}>
+              <Typography variant="body2" color="text.secondary" fontWeight={600} sx={{ fontSize: { xs: '0.65rem', sm: '0.875rem' }, lineHeight: 1.2 }}>
                 {k.label}
-                <Typography component="span" variant="caption" sx={{ ml: 1, color: k.color, fontWeight: 700 }}>
+                <Typography component="span" variant="caption" sx={{ ml: 1, color: k.color, fontWeight: 700, display: { xs: 'none', sm: 'inline' }, fontSize: '0.7rem' }}>
                   (click for breakdown)
                 </Typography>
               </Typography>

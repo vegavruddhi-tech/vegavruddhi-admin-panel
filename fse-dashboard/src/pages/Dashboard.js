@@ -82,7 +82,7 @@ function OnboardVerifySection({ filteredForms, onboardVerifyMap, onboardVerifyin
   return (
     <Box sx={{ mb: 3 }}>
       {/* 3 verification KPI cards */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 2, mb: verifyDrillStatus ? 1 : 3 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: { xs: 1.5, sm: 2 }, mb: verifyDrillStatus ? 1 : 3 }}>
         {onboardVerifying ? (
           <Card sx={{ gridColumn: '1 / -1', borderRadius: 3, bgcolor: '#f9f9f9', border: '1.5px solid #e0e0e0' }}>
             <CardContent sx={{ py: 2, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1.5 }}>
@@ -100,11 +100,11 @@ function OnboardVerifySection({ filteredForms, onboardVerifyMap, onboardVerifyin
             sx={{ borderRadius: 3, bgcolor: k.bg, border: `1.5px solid ${k.color}30`, cursor: 'pointer',
               outline: verifyDrillStatus === k.status ? `2px solid ${k.color}` : 'none',
               transition: 'all 0.2s', '&:hover': { transform: 'translateY(-2px)', boxShadow: `0 4px 16px ${k.color}30` } }}>
-            <CardContent sx={{ py: 1.5 }}>
-              <Typography variant="caption" fontWeight={700} sx={{ color: k.color }}>{k.label}</Typography>
-              <Typography variant="h5" fontWeight={800} sx={{ color: k.color }}>{k.value}</Typography>
-              <Typography variant="caption" color="text.secondary">of {onboardForms.length} onboarding forms</Typography>
-              <Typography variant="caption" sx={{ display: 'block', color: k.color, opacity: 0.7 }}>
+            <CardContent sx={{ py: { xs: 1, sm: 1.5 }, px: { xs: 1.5, sm: 2 } }}>
+              <Typography variant="caption" fontWeight={700} sx={{ color: k.color, fontSize: { xs: '0.65rem', sm: '0.75rem' }, display: 'block', mb: 0.3 }}>{k.label}</Typography>
+              <Typography variant="h5" fontWeight={800} sx={{ color: k.color, fontSize: { xs: '1.75rem', sm: '2rem' }, lineHeight: 1.1 }}>{k.value}</Typography>
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: { xs: '0.6rem', sm: '0.7rem' }, display: 'block', mb: 0.3 }}>of {onboardForms.length} onboarding forms</Typography>
+              <Typography variant="caption" sx={{ display: { xs: 'none', sm: 'block' }, color: k.color, opacity: 0.7, fontSize: '0.7rem' }}>
                 {verifyDrillStatus === k.status ? '▲ hide breakdown' : '▼ product breakdown'}
               </Typography>
             </CardContent>
@@ -608,14 +608,14 @@ const kpiData = useMemo(() => {
 </Box>
 
     {/* KPI Cards */}
-    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)', md: 'repeat(5, 1fr)' }, gap: 2, mb: 3 }}>
+    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)', md: 'repeat(5, 1fr)' }, gap: { xs: 1.5, sm: 2 }, mb: 3 }}>
       {loading ? (
         Array.from({ length: 5 }).map((_, i) => (
           <Card key={i} variant="outlined" sx={{ borderRadius: 3 }}>
             <Box sx={{ height: 5, borderRadius: '3px 3px 0 0' }}>
               <Skeleton variant="rectangular" height={5} />
             </Box>
-            <CardContent>
+            <CardContent sx={{ py: { xs: 1, sm: 2 }, px: { xs: 1.5, sm: 2 } }}>
               <Skeleton variant="text" width="60%" height={20} sx={{ mb: 1 }} />
               <Skeleton variant="text" width="40%" height={40} />
               <Skeleton variant="text" width="50%" height={16} />
@@ -632,11 +632,11 @@ const kpiData = useMemo(() => {
         ].map(k => (
           <Card key={k.label} variant="outlined" sx={{ borderRadius: 3, cursor: 'pointer', transition: 'all 0.2s', '&:hover': { transform: 'translateY(-2px)', boxShadow: `0 4px 16px ${k.color}30` } }}
             onClick={() => setKpiDrillOpen(k.key)}>
-            <Box sx={{ height: 5, bgcolor: k.color, borderRadius: '3px 3px 0 0' }} />
-            <CardContent>
-              <Typography variant="body2" color="text.secondary">{k.label}</Typography>
-              <Typography variant="h5" fontWeight={800} sx={{ color: k.color }}>{k.value}</Typography>
-              <Typography variant="caption" sx={{ color: k.color, opacity: 0.7 }}>click to explore ↗</Typography>
+            <Box sx={{ height: 4, bgcolor: k.color, borderRadius: '3px 3px 0 0' }} />
+            <CardContent sx={{ py: { xs: 1, sm: 2 }, px: { xs: 1.5, sm: 2 } }}>
+              <Typography variant="caption" color="text.secondary" sx={{ fontSize: { xs: '0.65rem', sm: '0.75rem' }, display: 'block', mb: 0.5 }}>{k.label}</Typography>
+              <Typography variant="h5" fontWeight={800} sx={{ color: k.color, fontSize: { xs: '1.5rem', sm: '1.75rem' }, lineHeight: 1.2 }}>{k.value}</Typography>
+              <Typography variant="caption" sx={{ color: k.color, opacity: 0.7, fontSize: { xs: '0.6rem', sm: '0.7rem' }, display: { xs: 'none', sm: 'block' } }}>click to explore ↗</Typography>
             </CardContent>
           </Card>
         ))
@@ -644,11 +644,11 @@ const kpiData = useMemo(() => {
     </Box>
 
     {/* Visit Status KPIs */}
-    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, gap: 2, mb: showOnboardVerify ? 1 : 3 }}>
+    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, gap: { xs: 1.5, sm: 2 }, mb: showOnboardVerify ? 1 : 3 }}>
       {loading ? (
         Array.from({ length: 4 }).map((_, i) => (
           <Card key={i} sx={{ borderRadius: 3 }}>
-            <CardContent sx={{ py: 1.5 }}>
+            <CardContent sx={{ py: { xs: 1, sm: 1.5 }, px: { xs: 1.5, sm: 2 } }}>
               <Skeleton variant="text" width="70%" height={18} sx={{ mb: 0.5 }} />
               <Skeleton variant="text" width="35%" height={44} />
             </CardContent>
@@ -680,11 +680,11 @@ const kpiData = useMemo(() => {
             setOnboardVerifyMap(globalVerifyMap);
             setOnboardVerifying(false);
           } : undefined}>
-          <CardContent sx={{ py: 1.5 }}>
-            <Typography variant="caption" fontWeight={700} sx={{ color: k.color }}>{k.label}</Typography>
-            <Typography variant="h5" fontWeight={800} sx={{ color: k.color }}>{k.value}</Typography>
+          <CardContent sx={{ py: { xs: 1, sm: 1.5 }, px: { xs: 1.5, sm: 2 } }}>
+            <Typography variant="caption" fontWeight={700} sx={{ color: k.color, fontSize: { xs: '0.65rem', sm: '0.75rem' }, display: 'block', mb: 0.3, lineHeight: 1.3 }}>{k.label}</Typography>
+            <Typography variant="h5" fontWeight={800} sx={{ color: k.color, fontSize: { xs: '1.75rem', sm: '2rem' }, lineHeight: 1.1 }}>{k.value}</Typography>
             {k.clickable && (
-              <Typography variant="caption" sx={{ color: k.color, opacity: 0.7 }}>
+              <Typography variant="caption" sx={{ color: k.color, opacity: 0.7, fontSize: { xs: '0.6rem', sm: '0.7rem' }, display: { xs: 'none', sm: 'block' } }}>
                 {showOnboardVerify ? '▲ hide verification' : '▼ show verification'}
               </Typography>
             )}
