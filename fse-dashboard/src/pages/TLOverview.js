@@ -330,7 +330,7 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
     setLoading(true); setError('');
     try {
       const res = await fetch(`${EMP_API}/forms/admin/tl-overview`);
-      if (!res.ok) throw new Error('Failed to load TL data');
+      if (!res.ok && res.status !== 304) throw new Error('Failed to load TL data');
       setData(await res.json());
     } catch (err) {
       setError(err.message);

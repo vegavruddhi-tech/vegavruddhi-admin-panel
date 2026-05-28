@@ -46,7 +46,7 @@ function AttendanceManagement() {
     setError('');
     try {
       const res = await fetch(`${EMP_BASE}/attendance/admin/full?date=${selectedDate}`);
-      if (!res.ok) throw new Error('Failed to fetch attendance');
+      if (!res.ok && res.status !== 304) throw new Error('Failed to fetch attendance');
       const data = await res.json();
       setAllRecords(data);
     } catch (err) {
@@ -60,7 +60,7 @@ function AttendanceManagement() {
   const fetchSummary = async () => {
     try {
       const res = await fetch(`${EMP_BASE}/attendance/admin/summary?date=${selectedDate}`);
-      if (!res.ok) throw new Error();
+      if (!res.ok && res.status !== 304) throw new Error();
       const data = await res.json();
       setSummary(data);
     } catch {

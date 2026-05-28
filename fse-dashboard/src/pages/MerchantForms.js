@@ -2584,7 +2584,7 @@ export default function MerchantForms() {
         // 🔥 NEW: Fetch unfilled forms
         console.log('📡 Fetching unfilled forms');
         const unfilledRes = await fetch(`${EMP_API}/unfilled-forms/list?month=${selectedMonth}&year=${selectedYear}`);
-        if (!unfilledRes.ok) throw new Error('Failed to load unfilled forms');
+        if (!unfilledRes.ok && unfilledRes.status !== 304) throw new Error('Failed to load unfilled forms');
         const unfilledData = await unfilledRes.json();
         setUnfilledForms(unfilledData.unfilledForms || []);
         console.log(`✅ Loaded ${unfilledData.unfilledForms?.length || 0} unfilled forms`);
@@ -2607,17 +2607,45 @@ export default function MerchantForms() {
         setLoading(false);
         return;
       } else if (roleFilter === 'ALL') {
-        // 🔥 NEW: Fetch both FSE and TL forms for ALL view
-        console.log('📡 Fetching both FSE and TL forms for ALL view');
-        const [fseRes, tlRes, mgrRes] = await Promise.all([
-          fetch(`${EMP_API}/forms/admin/all?role=FSE`),
-          fetch(`${EMP_API}/forms/admin/all?role=TL`),
-          fetch(`${EMP_API}/forms/admin/all?role=MANAGER`)
-        ]);
+        // 🔥 NEW: Fetch both FSE and TL forms for ALL view with pagination
+        console.log('📡 Fetching both FSE and TL forms for ALL view (paginated)');
         
-        const fseData = fseRes.ok ? await fseRes.json() : [];
-        const tlData = tlRes.ok ? await tlRes.json() : [];
-        const mgrData = mgrRes.ok ? await mgrRes.json() : [];
+        // Helper function to load all pages for a role
+        const loadAllPages = async (role) => {
+          const PAGE_SIZE = 500; // Load 500 records per request
+          let allForms = [];
+          let page = 1;
+          let hasMore = true;
+          
+          while (hasMore) {
+            const res = await fetch(`${EMP_API}/forms/admin/all?role=${role}&limit=${PAGE_SIZE}&page=${page}`);
+            if (!res.ok && res.status !== 304) throw new Error(`Failed to load ${role} forms`);
+            const data = await res.json();
+            
+            // Check if response is paginated (new format) or array (old format)
+            if (data.forms && data.pagination) {
+              // New paginated format
+              allForms = allForms.concat(data.forms);
+              hasMore = data.pagination.hasMore;
+              console.log(`📄 Loaded ${role} page ${page}/${data.pagination.pages} (${data.forms.length} records)`);
+            } else {
+              // Old format (array) - backward compatible
+              allForms = Array.isArray(data) ? data : [];
+              hasMore = false;
+              console.log(`📄 Loaded ${role} (old format, ${allForms.length} records)`);
+            }
+            page++;
+          }
+          
+          return allForms;
+        };
+        
+        // Load all roles in parallel
+        const [fseData, tlData, mgrData] = await Promise.all([
+          loadAllPages('FSE'),
+          loadAllPages('TL'),
+          loadAllPages('MANAGER')
+        ]);
         
         // 🔥 Tag forms with formType for export
         fseData.forEach(f => f.formType = 'FSE');
@@ -2634,21 +2662,58 @@ export default function MerchantForms() {
         formsData = Array.from(formMap.values());
         console.log(`✅ Loaded ${fseData.length} FSE + ${tlData.length} TL + ${mgrData.length} Manager = ${formsData.length} total forms`);
       } else if (roleFilter === 'MANAGER') {
-        const apiUrl = `${EMP_API}/forms/admin/all?role=MANAGER`;
-        console.log('📡 API URL:', apiUrl);
-        const formsRes = await fetch(apiUrl);
-        if (!formsRes.ok) throw new Error('Failed to load manager forms');
-        formsData = await formsRes.json();
+        // 🔥 NEW: Paginated loading for Manager forms
+        console.log('📡 Fetching Manager forms (paginated)');
+        const PAGE_SIZE = 500;
+        let page = 1;
+        let hasMore = true;
+        
+        while (hasMore) {
+          const apiUrl = `${EMP_API}/forms/admin/all?role=MANAGER&limit=${PAGE_SIZE}&page=${page}`;
+          const formsRes = await fetch(apiUrl);
+          if (!formsRes.ok && formsRes.status !== 304) throw new Error('Failed to load manager forms');
+          const data = await formsRes.json();
+          
+          if (data.forms && data.pagination) {
+            formsData = formsData.concat(data.forms);
+            hasMore = data.pagination.hasMore;
+            console.log(`📄 Loaded Manager page ${page}/${data.pagination.pages} (${data.forms.length} records)`);
+          } else {
+            formsData = Array.isArray(data) ? data : [];
+            hasMore = false;
+            console.log(`📄 Loaded Manager (old format, ${formsData.length} records)`);
+          }
+          page++;
+        }
+        
         // 🔥 Tag Manager forms
         formsData.forEach(f => f.formType = 'Manager');
         console.log(`✅ Loaded ${formsData.length} Manager forms`);
       } else {
-        // Regular FSE or TL only
-        const apiUrl = `${EMP_API}/forms/admin/all?role=${roleFilter}`;
-        console.log('📡 API URL:', apiUrl);
-        const formsRes = await fetch(apiUrl);
-        if (!formsRes.ok) throw new Error('Failed to load merchant forms');
-        formsData = await formsRes.json();
+        // 🔥 NEW: Paginated loading for FSE or TL only
+        console.log(`📡 Fetching ${roleFilter} forms (paginated)`);
+        const PAGE_SIZE = 500;
+        let page = 1;
+        let hasMore = true;
+        
+        while (hasMore) {
+          const apiUrl = `${EMP_API}/forms/admin/all?role=${roleFilter}&limit=${PAGE_SIZE}&page=${page}`;
+          const formsRes = await fetch(apiUrl);
+          if (!formsRes.ok && formsRes.status !== 304) throw new Error('Failed to load merchant forms');
+          const data = await formsRes.json();
+          
+          if (data.forms && data.pagination) {
+            formsData = formsData.concat(data.forms);
+            hasMore = data.pagination.hasMore;
+            console.log(`📄 Loaded ${roleFilter} page ${page}/${data.pagination.pages} (${data.forms.length} records)`);
+          } else {
+            formsData = Array.isArray(data) ? data : [];
+            hasMore = false;
+            console.log(`📄 Loaded ${roleFilter} (old format, ${formsData.length} records)`);
+          }
+          page++;
+        }
+        
         // 🔥 Tag forms with formType
         formsData.forEach(f => f.formType = roleFilter === 'TL' ? 'TL' : 'FSE');
         console.log(`✅ Loaded ${formsData.length} ${roleFilter} forms`);
@@ -3343,7 +3408,7 @@ export default function MerchantForms() {
       const products = batch.map(f => encodeURIComponent(getFormProduct(f))).join(',');
       const months   = batch.map(f => encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))).join(',');
       return fetch(`${EMP_API}/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`)
-        .then(r => r.ok ? r.json() : {})
+        .then(r => (r.ok || r.status === 304) ? r.json() : {})
         .catch(() => ({}));
     })).then(results => {
       const merged = Object.assign({}, ...results);

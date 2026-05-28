@@ -82,7 +82,7 @@ export default function SalarySlips() {
       // ✅ Send roleFilter to backend for server-side filtering
       const roleParam = roleFilter !== 'All' ? `&roleFilter=${roleFilter}` : '';
       const res = await fetch(`${EMP_API}/salary/employees?month=${selectedMonth}&year=${selectedYear}&pointValue=250${roleParam}`);
-      if (!res.ok) throw new Error('Failed to load employees');
+      if (!res.ok && res.status !== 304) throw new Error('Failed to load employees');
       const data = await res.json();
       setEmployees(data.employees || []);
     } catch (err) {
@@ -96,7 +96,7 @@ export default function SalarySlips() {
   const loadSalarySlips = useCallback(async () => {
     try {
       const res = await fetch(`${EMP_API}/salary/list?month=${selectedMonth}&year=${selectedYear}`);
-      if (!res.ok) throw new Error('Failed to load salary slips');
+      if (!res.ok && res.status !== 304) throw new Error('Failed to load salary slips');
       const data = await res.json();
       setSalarySlips(data.slips || []);
     } catch (err) {

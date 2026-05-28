@@ -747,8 +747,8 @@ export default function ManagerOverview() {
         fetch(`${EMP_API}/forms/admin/tl-overview`),
         fetch(`${EMP_API}/manager/approved-list`),
       ]);
-      if (!tlRes.ok)  throw new Error('Failed to load TL overview data');
-      if (!mgrRes.ok) throw new Error('Failed to load manager list');
+      if (!tlRes.ok && tlRes.status !== 304)  throw new Error('Failed to load TL overview data');
+      if (!mgrRes.ok && mgrRes.status !== 304) throw new Error('Failed to load manager list');
       const [tlJson, mgrJson] = await Promise.all([tlRes.json(), mgrRes.json()]);
       setTlData(tlJson);
       setManagers(mgrJson);

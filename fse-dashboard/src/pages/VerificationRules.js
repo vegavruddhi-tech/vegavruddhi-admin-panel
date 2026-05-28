@@ -469,7 +469,7 @@ export default function VerificationRules({ token: propToken }) {
     setError("");
     try {
       const res = await fetch(`${EMPLOYEE_API}/verify/rules`);
-      if (!res.ok) throw new Error("Failed to load rules — is the employee server running on port 4000?");
+      if (!res.ok && res.status !== 304) throw new Error("Failed to load rules — is the employee server running on port 4000?");
       const data = await res.json();
       setRules(data);
     } catch (err) {

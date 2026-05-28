@@ -151,7 +151,7 @@ export default function EmployeeApprovals() {
     setLoading(true); setError('');
     try {
       const res  = await fetch(`${EMP_API}/all-employees-admin`);
-      if (!res.ok) {
+      if (!res.ok && res.status !== 304) {
         // fallback: fetch pending + approved + rejected separately
         const [pendingRes, approvedRes, rejectedRes] = await Promise.all([
           fetch(`${EMP_API}/pending`),
