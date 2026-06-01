@@ -21,7 +21,7 @@ import EditIcon           from '@mui/icons-material/Edit';
 import DeleteIcon         from '@mui/icons-material/Delete';
 import * as XLSX          from 'xlsx';
 import { BRAND }          from '../theme';
-import MeetingScheduler   from './Meetings';
+import JitsiMeeting       from '../components/JitsiMeeting';
 import TideMerchantTimeline from '../components/TideMerchantTimeline';
 import PriorityPassTracking from '../components/PriorityPassTracking';
 
@@ -2416,7 +2416,7 @@ export default function MerchantForms() {
   const [settledOpen,setSettledOpen]= useState(false);
   const [exporting,  setExporting]  = useState(false);
   const [exportAnchor, setExportAnchor] = useState(null);
-  const [meetingOpen, setMeetingOpen] = useState(false);
+  const [jitsiOpen, setJitsiOpen] = useState(false); // Jitsi meeting modal
   const [priorityPassOpen, setPriorityPassOpen] = useState(false); // Priority Pass tracking modal
   const [notifying,  setNotifying]  = useState(null); // index of dup being notified
   const [notifySnack, setNotifySnack] = useState('');
@@ -3643,13 +3643,13 @@ useEffect(() => {
             </Box>
           </Button>
 
-          {/* Schedule Meeting Button */}
+          {/* Schedule Meeting Button (Jitsi) */}
           <Button
             variant="outlined"
             size="small"
-            onClick={() => setMeetingOpen(true)}
+            onClick={() => setJitsiOpen(true)}
             sx={{ 
-              borderColor: BRAND.primary, 
+              borderColor: BRAND.primary,
               color: BRAND.primary,
               fontWeight: 700,
               fontSize: { xs: '0.7rem', sm: '0.875rem' },
@@ -3659,7 +3659,7 @@ useEffect(() => {
               '&:hover': { bgcolor: BRAND.primaryLight }
             }}
           >
-            <Box component="span" sx={{ mr: { xs: 0, sm: 0.5 } }}>📅</Box>
+            <Box component="span" sx={{ mr: { xs: 0, sm: 0.5 } }}>🎥</Box>
             <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>Schedule Meeting</Box>
             <Box component="span" sx={{ display: { xs: 'inline', sm: 'none' } }}>Meet</Box>
           </Button>
@@ -4815,10 +4815,10 @@ useEffect(() => {
         </Alert>
       </Snackbar>
 
-      {/* Meeting Scheduler Dialog */}
-      <MeetingScheduler 
-        open={meetingOpen} 
-        onClose={() => setMeetingOpen(false)}
+      {/* Jitsi Meeting Dialog */}
+      <JitsiMeeting
+        open={jitsiOpen}
+        onClose={() => setJitsiOpen(false)}
         employees={employees}
         tls={tls}
       />
