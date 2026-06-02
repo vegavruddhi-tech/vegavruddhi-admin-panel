@@ -89,11 +89,12 @@ export default function SalarySlips() {
       const data = await res.json();
       
       console.log(`📦 Loaded ${data.employees.length} employees`);
-      console.log(`🔍 Sample:`, data.employees.slice(0, 3).map(e => ({
+      console.log(`🔍 Sample employee data:`, data.employees.slice(0, 3).map(e => ({
         name: e.employeeName,
-        points: e.pointsEarned,
-        slab: e.slabPoints,
-        total: e.totalPoints
+        pointsEarned: e.pointsEarned,
+        slabPoints: e.slabPoints,
+        totalPoints: e.totalPoints,
+        hasSlip: e.hasSlip
       })));
       
       setEmployees(data.employees || []);
@@ -336,7 +337,19 @@ export default function SalarySlips() {
 
       if (!res.ok) throw new Error('Failed to update slip');
 
-      alert('✅ Salary slip updated successfully!');
+      const data = await res.json();
+
+      // 🔥 NEW: PDF is automatically cleared by backend, notify user
+      if (data.success && data.pdfCleared) {
+        alert(
+          '✅ Salary slip updated successfully!\n\n' +
+          '⚠️ Previous PDF has been invalidated.\n' +
+          'Please click the PDF icon (Generate PDF) to create a new PDF with updated values.'
+        );
+      } else {
+        alert('✅ Salary slip updated successfully!');
+      }
+
       setEditModal(false);
       loadSalarySlips();
     } catch (err) {
@@ -775,6 +788,8 @@ export default function SalarySlips() {
                   <TableCell sx={{ fontWeight: 700 }}>
                     {roleFilter === 'TL' || roleFilter === 'Manager' ? 'Base Amount' : 'Points'}
                   </TableCell>
+                  {/* 🔥 NEW: Slab Points column */}
+                  <TableCell sx={{ fontWeight: 700 }}>Slab Points</TableCell>
                   <TableCell sx={{ fontWeight: 700 }}>Salary</TableCell>
                   <TableCell sx={{ fontWeight: 700 }}>Status</TableCell>
                   <TableCell sx={{ fontWeight: 700 }}>Actions</TableCell>
@@ -801,16 +816,39 @@ export default function SalarySlips() {
                       {emp.role === 'FSE' ? (
                         <>
                           <Typography variant="body2" fontWeight={700}>{emp.pointsEarned}</Typography>
-                          {emp.slabPoints > 0 && (
-                            <Typography variant="caption" color="text.secondary">
-                              +{emp.slabPoints} slab = <strong>{emp.totalPoints}</strong>
-                            </Typography>
-                          )}
                         </>
                       ) : (
                         <Typography variant="body2" fontWeight={700} sx={{ color: '#1565c0' }}>
                           ₹{(emp.role === 'TL' ? baseSalaryTL : baseSalaryManager).toLocaleString('en-IN')}
                         </Typography>
+                      )}
+                    </TableCell>
+                    {/* 🔥 NEW: Slab Points column */}
+                    <TableCell>
+                      {emp.role === 'FSE' ? (
+                        <>
+                          {(() => {
+                            // If slip exists, get slabPoints from slip, otherwise from employee data
+                            const slip = emp.hasSlip ? salarySlips.find(s => s.employeeEmail === emp.employeeEmail) : null;
+                            const slabPointsValue = slip ? slip.slabPoints : emp.slabPoints;
+                            const totalPointsValue = slip ? slip.totalPoints : emp.totalPoints;
+                            
+                            return slabPointsValue > 0 ? (
+                              <>
+                                <Typography variant="body2" fontWeight={700} sx={{ color: '#ff9800' }}>
+                                  +{slabPointsValue}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  Total: <strong>{totalPointsValue}</strong>
+                                </Typography>
+                              </>
+                            ) : (
+                              <Typography variant="caption" color="text.secondary">—</Typography>
+                            );
+                          })()}
+                        </>
+                      ) : (
+                        <Typography variant="caption" color="text.secondary">N/A</Typography>
                       )}
                     </TableCell>
                     <TableCell>
