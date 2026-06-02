@@ -74,23 +74,37 @@ export default function SalarySlips() {
   const [bulkPdfProgress, setBulkPdfProgress] = useState({ current: 0, total: 0 });
   const [bulkPdfErrors, setBulkPdfErrors] = useState([]);
 
-  // Load employees with points (WITHOUT pointValue - calculate on frontend)
+  // Load employees with points - USE EXACT SAME DATA AS MERCHANT FORMS
   const loadEmployees = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      // ✅ Send roleFilter to backend for server-side filtering
-      const roleParam = roleFilter !== 'All' ? `&roleFilter=${roleFilter}` : '';
-      const res = await fetch(`${EMP_API}/salary/employees?month=${selectedMonth}&year=${selectedYear}&pointValue=250${roleParam}`);
-      if (!res.ok && res.status !== 304) throw new Error('Failed to load employees');
+      console.log(`🔄 Loading employees for ${selectedMonth} ${selectedYear}...`);
+      
+      // Simple approach: Just call backend which will fetch from Merchant Forms points data
+      // that was already calculated and synced
+      const res = await fetch(`${EMP_API}/salary/employees?month=${encodeURIComponent(selectedMonth)}&year=${selectedYear}&pointValue=250&roleFilter=${roleFilter}`);
+      
+      if (!res.ok) throw new Error('Failed to load employees');
       const data = await res.json();
+      
+      console.log(`📦 Loaded ${data.employees.length} employees`);
+      console.log(`🔍 Sample:`, data.employees.slice(0, 3).map(e => ({
+        name: e.employeeName,
+        points: e.pointsEarned,
+        slab: e.slabPoints,
+        total: e.totalPoints
+      })));
+      
       setEmployees(data.employees || []);
+      
     } catch (err) {
+      console.error('❌ Error:', err);
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [selectedMonth, selectedYear, roleFilter]); // ✅ Added roleFilter dependency
+  }, [selectedMonth, selectedYear, roleFilter]);
 
   // Load salary slips
   const loadSalarySlips = useCallback(async () => {
