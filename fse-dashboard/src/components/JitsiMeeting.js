@@ -44,6 +44,7 @@ export default function JitsiMeeting({ open, onClose, employees = [], tls = [] }
   // Attendance tracking
   const [liveAttendance, setLiveAttendance] = useState([]);
   const [jitsiApi, setJitsiApi] = useState(null);
+  const [currentMeetingId, setCurrentMeetingId] = useState(null); // Track the active meeting ID
   const [meetingStartTime, setMeetingStartTime] = useState(null);
   const jitsiContainerRef = React.useRef(null);
 
@@ -339,7 +340,7 @@ export default function JitsiMeeting({ open, onClose, employees = [], tls = [] }
           roomName, 
           meetingLink,
           meetingTitle,
-          scheduledMeetingId: null
+          scheduledMeetingId: data.scheduledMeetingId
         });
         
         // Only show Jitsi iframe if meeting is starting now
@@ -378,6 +379,19 @@ export default function JitsiMeeting({ open, onClose, employees = [], tls = [] }
 
   // Reset form when closing
   const handleClose = () => {
+    // End meeting attendance if a meeting was active
+    if (showJitsi && currentMeetingId && jitsiRoom?.scheduledMeetingId) {
+      console.log('Admin clicked End Meeting, finalizing attendance...');
+      fetch(`${process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api'}/meetings/attendance/end`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          meetingId: currentMeetingId,
+          scheduledMeetingId: jitsiRoom.scheduledMeetingId
+        })
+      }).catch(err => console.error('Failed to end meeting on close:', err));
+    }
+
     // Cleanup Jitsi API
     if (jitsiApi) {
       jitsiApi.dispose();
@@ -385,6 +399,7 @@ export default function JitsiMeeting({ open, onClose, employees = [], tls = [] }
     }
     
     setShowJitsi(false);
+    setCurrentMeetingId(null);
     setJitsiRoom(null);
     setMeetingTitle('');
     setSelectedAttendees([]);
@@ -496,6 +511,7 @@ export default function JitsiMeeting({ open, onClose, employees = [], tls = [] }
 
           // Generate unique meeting ID
           const meetingId = `${jitsiRoom.roomName}-${Date.now()}`;
+          setCurrentMeetingId(meetingId); // Save to state for handleClose
 
           // Start attendance tracking
           fetch(`${process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api'}/meetings/attendance/start`, {
@@ -561,11 +577,14 @@ export default function JitsiMeeting({ open, onClose, employees = [], tls = [] }
           api.addEventListener('videoConferenceLeft', () => {
             console.log('Admin left the meeting');
             
-            // End meeting attendance tracking
+            // End meeting attendance tracking AND update meeting status
             fetch(`${process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api'}/meetings/attendance/end`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ meetingId })
+              body: JSON.stringify({ 
+                meetingId,
+                scheduledMeetingId: jitsiRoom.scheduledMeetingId // Pass this to update meeting status
+              })
             }).catch(err => console.error('Failed to end meeting:', err));
           });
 
