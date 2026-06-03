@@ -306,7 +306,7 @@ export default function JitsiMeeting({ open, onClose, employees = [], tls = [] }
     try {
       // Generate unique room name
       const roomName = `vegavruddhi-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-      const meetingLink = `https://meet.jit.si/${roomName}`;
+      const meetingLink = `https://8x8.vc/vpaas-magic-cookie-85bbd4a4745d48878a0d7c667dd963fe/${roomName}`;
 
       // Get attendee details
       const attendees = selectedAttendees.map(id => {
@@ -484,25 +484,35 @@ export default function JitsiMeeting({ open, onClose, employees = [], tls = [] }
 
         console.log('Initializing Jitsi with container:', jitsiContainerRef.current);
 
-        const domain = 'meet.jit.si';
-        const options = {
-          roomName: jitsiRoom.roomName,
-          width: '100%',
-          height: '100%',
-          parentNode: jitsiContainerRef.current,
-          userInfo: {
-            displayName: 'Admin - Vegavruddhi'
-          },
-          configOverwrite: {
-            prejoinPageEnabled: false,
-            startWithAudioMuted: false,
-            startWithVideoMuted: false
-          },
-          interfaceConfigOverwrite: {
-            SHOW_JITSI_WATERMARK: false,
-            SHOW_WATERMARK_FOR_GUESTS: false
-          }
-        };
+        const domain = '8x8.vc';
+        const appId = 'vpaas-magic-cookie-85bbd4a4745d48878a0d7c667dd963fe';
+        const fullRoomName = `${appId}/${jitsiRoom.roomName}`;
+
+        // Fetch JWT Token from backend
+        fetch(`${process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api'}/meetings/jaas-jwt?name=Admin&isModerator=true`)
+          .then(res => res.json())
+          .then(data => {
+            if (!data.token) throw new Error('Failed to fetch JWT token');
+
+            const options = {
+              roomName: fullRoomName,
+              width: '100%',
+              height: '100%',
+              parentNode: jitsiContainerRef.current,
+              jwt: data.token, // Pass the JWT token here
+              userInfo: {
+                displayName: 'Admin - Vegavruddhi'
+              },
+              configOverwrite: {
+                prejoinPageEnabled: false,
+                startWithAudioMuted: false,
+                startWithVideoMuted: false
+              },
+              interfaceConfigOverwrite: {
+                SHOW_JITSI_WATERMARK: false,
+                SHOW_WATERMARK_FOR_GUESTS: false
+              }
+            };
 
         try {
           const api = new window.JitsiMeetExternalAPI(domain, options);
@@ -583,18 +593,22 @@ export default function JitsiMeeting({ open, onClose, employees = [], tls = [] }
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ 
                 meetingId,
-                scheduledMeetingId: jitsiRoom.scheduledMeetingId // Pass this to update meeting status
+                scheduledMeetingId: jitsiRoom.scheduledMeetingId
               })
-            }).catch(err => console.error('Failed to end meeting:', err));
+            }).catch(err => console.error('Failed to end meeting on leave:', err));
+            
+            handleClose();
           });
-
-          console.log('Jitsi initialized successfully');
-        } catch (error) {
-          console.error('Error initializing Jitsi:', error);
+        } catch (err) {
+          console.error('Error initializing Jitsi API:', err);
         }
-      };
+      })
+      .catch(err => {
+        console.error('Error fetching JWT:', err);
+      });
+    };
 
-      // Wait for DOM to be ready before initializing
+    // Wait for DOM to be ready before initializing
       const timer = setTimeout(initializeJitsi, 200);
 
       // Cleanup
