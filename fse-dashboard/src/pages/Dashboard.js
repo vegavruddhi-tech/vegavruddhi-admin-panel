@@ -17,7 +17,7 @@ import TideMerchantTimeline from "../components/TideMerchantTimeline";
 const COLORS = ["#7c3aed","#10b981","#3b82f6","#f59e0b","#14b8a6","#ec4899","#0ea5e9","#ef4444"];
 
 // ── Cache version: Increment this when verification rules change ─
-const CACHE_VERSION = 2; // Change to 2, 3, etc. to invalidate all caches
+const CACHE_VERSION = 1000; // Change to 2, 3, etc. to invalidate all caches
 
 function OnboardVerifySection({ filteredForms, onboardVerifyMap, onboardVerifying, verifyDrillStatus, setVerifyDrillStatus, employees }) {
   const [drillModal, setDrillModal] = useState(null); // { product, status, color, bg, rows, total, matched }

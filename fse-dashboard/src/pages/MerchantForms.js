@@ -1,4 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { fetchPointsConfig, calculateFormPointsSync } from '../utils/pointsCalculator';
+
 import {
   Box, Typography, Card, CardContent, Button, Chip, CircularProgress,
   Alert, Tooltip, Table, TableBody, TableCell, TableContainer,
@@ -167,8 +169,7 @@ function flattenForm(f, empMap = {}, tlMap = {}, managerMap = {}, verifyMap = {}
   // Calculate points for this form
   let points = 0;
   if (verification === 'Fully Verified') {
-    const productKey = Object.keys(POINTS_MAP).find(k => k.toLowerCase() === product.toLowerCase());
-    points = productKey ? POINTS_MAP[productKey] : 0;
+    points = verifyMap[vKey]?.points || 0;
   }
   
   // 🔥 NEW: Determine designation based on formType
@@ -328,9 +329,7 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
       employeeData[empName].productCounts[product]++;
       
       // Calculate auto points (from verified forms only)
-      const productKey = Object.keys(POINTS_MAP).find(k => k.toLowerCase() === product.toLowerCase());
-      const points = productKey ? POINTS_MAP[productKey] : 0;
-      employeeData[empName].autoPoints += points;
+      employeeData[empName].autoPoints += (verifyMap[vKey]?.points || 0);
     }
   });
   
@@ -656,24 +655,24 @@ async function exportToGoogleSheets(forms, setExporting, setError, cachedVerifyM
 const POINTS_MAP = { 
   'Tide': 2, 
   'Tide MSME': 0.3, 
-  'MSME': 0.3,           // keep for old records
+  'MSME': 0.3,
   'Tide Insurance': 1, 
-  'Tide Credit Card': 1 
+  'Tide Credit Card': 1,
+  'Tide BT': 1
 };
 
 // ── Cache version: Increment this when verification rules change ─
-const CACHE_VERSION = 2; // Change to 2, 3, etc. to invalidate all caches
-
-
-function calcAutoPoints(forms, verifiedPhones) {
-  return forms.reduce((sum, f) => {
-    if (verifiedPhones.has(f.customerNumber)) sum += POINTS_MAP[f.tideProduct] || POINTS_MAP[f.formFillingFor] || 0;
-
-    return sum;
-  }, 0);
-}
+const CACHE_VERSION = 1002;
 
 const EMP_API = process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api';
+
+const formatFormMonth = (dateInput) => {
+  if (!dateInput) return '';
+  const date = new Date(dateInput);
+  if (isNaN(date.getTime())) return '';
+  const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  return `${months[date.getMonth()]} ${date.getFullYear()}`;
+};
 
 function initials(name) {
   return (name || '?').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -1783,7 +1782,8 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
   // ✅ FIXED: unique key
   const getKey = (f) => {
     const p = getProduct(f);
-    return p ? `${f.customerNumber}__${p}` : f.customerNumber;
+    const month = f?.createdAt ? formatFormMonth(f.createdAt) : '';
+    return p ? `${f.customerNumber}__${p}__${month}` : `${f.customerNumber}__${month}`;
   };
 
   const [expanded, setExpanded] = useState(false);
@@ -1813,18 +1813,16 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
 
     setVerifying(true);
     try {
-      const phones   = forms.map(f => f.customerNumber).join(',');
-      const names    = forms.map(f => encodeURIComponent(f.customerName)).join(',');
-      const products = forms.map(f => encodeURIComponent(getProduct(f))).join(',');
-      const months   = forms.map(f =>
-        encodeURIComponent(
-          new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' })
-        )
-      ).join(',');
-
-      const res = await fetch(
-        `${EMP_API}/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`
-      );
+      const res = await fetch(`${EMP_API}/verify/bulk-admin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phones: forms.map(f => f.customerNumber),
+          names: forms.map(f => f.customerName || ''),
+          products: forms.map(f => getProduct(f)),
+          months: forms.map(f => formatFormMonth(f.createdAt))
+        })
+      });
 
       if (res.ok) {
         const data = await res.json();
@@ -1854,9 +1852,9 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
       
       // Only count if this specific form is Fully Verified
       if (verificationStatus === 'Fully Verified') {
-        const product = getProduct(form); // lowercase
-        const pointsKey = Object.keys(POINTS_MAP).find(k => k.toLowerCase().trim() === product);
-        sum += pointsKey ? POINTS_MAP[pointsKey] : 0;
+        const matchedRow = verifyMap[formKey]?.record;
+        
+        sum += (verifyMap[formKey]?.points || 0);
       }
     });
     
@@ -2405,6 +2403,14 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
 
 // ── Main Page ─────────────────────────────────────────────────
 export default function MerchantForms() {
+  const [dynamicPointsMap, setDynamicPointsMap] = useState(null);
+  useEffect(() => {
+    fetchPointsConfig().then(map => {
+      setDynamicPointsMap(map);
+      window.dynamicPointsMap = map;
+      console.log("Loaded dynamic points map:", map);
+    }).catch(console.error);
+  }, []);
   const [forms,      setForms]      = useState([]);
   const [duplicates, setDuplicates] = useState([]);
   const [roleFilter, setRoleFilter] = useState('ALL'); // 🔥 DEFAULT: Show ALL forms on page load
@@ -2500,8 +2506,19 @@ export default function MerchantForms() {
   const editPtsVerifiedTotal = useMemo(() => {
     if (!editPtsEmp?.productBreakdown) return 0;
     return Object.entries(editPtsEmp.productBreakdown).reduce((sum, [product, count]) => {
-      const pk = Object.keys(POINTS_MAP).find(k => k.toLowerCase().trim() === product.toLowerCase().trim());
-      const auto = count * (pk ? POINTS_MAP[pk] : 0);
+      const matchingForms = editPtsEmp.empData.forms?.filter(f => (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim() === product.toLowerCase().trim()) || [];
+      let auto = 0;
+      matchingForms.forEach(f => { 
+        const pName = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+        const vKey = pName ? `${f.customerNumber}__${pName}` : f.customerNumber;
+        
+        auto += (globalVerifyMap[vKey]?.points || 0); 
+      });
+      if (matchingForms.length === 0) {
+         const cfg = dynamicPointsMap?.[product.toLowerCase().trim()];
+         const ppi = cfg?.type === 'simple' ? cfg.points : (POINTS_MAP[product] || 0);
+         auto = count * ppi;
+      }
       const ps = productSlabs[product];
       const bonus = ps?.slabTiers?.length > 0
         ? ps.slabTiers.reduce((s, t) => s + ((t.forms ?? 0) * t.multiplier), 0)
@@ -2514,8 +2531,20 @@ export default function MerchantForms() {
   const editPtsAutoTotal = useMemo(() => {
     if (!editPtsEmp?.productBreakdown) return 0;
     return Object.entries(editPtsEmp.productBreakdown).reduce((sum, [product, count]) => {
-      const pk = Object.keys(POINTS_MAP).find(k => k.toLowerCase().trim() === product.toLowerCase().trim());
-      return sum + (count * (pk ? POINTS_MAP[pk] : 0));
+      const matchingForms = editPtsEmp.empData.forms?.filter(f => (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim() === product.toLowerCase().trim()) || [];
+      let auto = 0;
+      matchingForms.forEach(f => { 
+        const pName = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+        const vKey = pName ? `${f.customerNumber}__${pName}` : f.customerNumber;
+        
+        auto += (globalVerifyMap[vKey]?.points || 0); 
+      });
+      if (matchingForms.length === 0) {
+         const cfg = dynamicPointsMap?.[product.toLowerCase().trim()];
+         const ppi = cfg?.type === 'simple' ? cfg.points : (POINTS_MAP[product] || 0);
+         auto = count * ppi;
+      }
+      return sum + auto;
     }, 0);
   }, [editPtsEmp]);
 
@@ -3108,9 +3137,7 @@ export default function MerchantForms() {
   const handleManualVerify = useCallback(async (form) => {
     // Open manual verification dialog or directly create
     const product = form.formFillingFor || form.tideProduct || form.brand || '';
-    const month = form.createdAt 
-      ? new Date(form.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' })
-      : '';
+    const month = form.createdAt ? formatFormMonth(form.createdAt) : '';
     
     if (!window.confirm(`Manually verify ${form.customerName} (${form.customerNumber}) for ${product}?`)) return;
     
@@ -3339,7 +3366,11 @@ export default function MerchantForms() {
   // Fetch global verification for all filtered forms
   // ✅ FIXED: Use same priority order as backend (formFillingFor first)
   const getFormProduct = (f) => (f?.formFillingFor || f?.tideProduct || f?.brand || '').toLowerCase().trim();
-  const getFormKey     = (f) => { const p = getFormProduct(f); return p ? `${f.customerNumber}__${p}` : f.customerNumber; };
+  const getFormKey     = (f) => {
+    const p = getFormProduct(f);
+    const month = f?.createdAt ? formatFormMonth(f.createdAt) : '';
+    return p ? `${f.customerNumber}__${p}__${month}` : `${f.customerNumber}__${month}`;
+  };
 
   useEffect(() => {
   // ✅ OPTIMIZED: Fetch verification ONCE on page load based on ALL forms, not filtered forms
@@ -3406,9 +3437,17 @@ export default function MerchantForms() {
       const phones   = batch.map(f => f.customerNumber).join(',');
       const names    = batch.map(f => encodeURIComponent(f.customerName || '')).join(',');
       const products = batch.map(f => encodeURIComponent(getFormProduct(f))).join(',');
-      const months   = batch.map(f => encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))).join(',');
-      return fetch(`${EMP_API}/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`)
-        .then(r => (r.ok || r.status === 304) ? r.json() : {})
+      const months   = batch.map(f => encodeURIComponent(formatFormMonth(f.createdAt))).join(',');
+      return fetch(`${EMP_API}/verify/bulk-admin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phones: batch.map(f => f.customerNumber),
+          names: batch.map(f => f.customerName || ''),
+          products: batch.map(f => getFormProduct(f)),
+          months: batch.map(f => formatFormMonth(f.createdAt))
+        })
+      }).then(r => (r.ok || r.status === 304) ? r.json() : {})
         .catch(() => ({}));
     })).then(results => {
       const merged = Object.assign({}, ...results);
@@ -3445,8 +3484,9 @@ useEffect(() => {
           const vKey = product ? `${form.customerNumber}__${product}` : form.customerNumber;
           const status = globalVerifyMap[vKey]?.status;
           if (status === 'Fully Verified') {
-            const pk = Object.keys(POINTS_MAP_SYNC).find(k => k.toLowerCase().trim() === product);
-            autoPoints += pk ? POINTS_MAP_SYNC[pk] : 0;
+            
+            
+            autoPoints += (globalVerifyMap[vKey]?.points || 0);
           }
         });
         autoPoints = Math.round(autoPoints * 10) / 10;
@@ -3502,7 +3542,7 @@ useEffect(() => {
   }, 3000); // 3 second delay to ensure all data is ready
 
   return () => clearTimeout(syncTimeout);
-}, [globalVerifyMap, grouped, empPointsMap, empDataMap, selectedMonth, selectedYear]); // eslint-disable-line
+}, [globalVerifyMap, grouped, empPointsMap, empDataMap, selectedMonth, selectedYear, dynamicPointsMap]); // eslint-disable-line
 
   // ✅ CLEANUP: Remove old verification cache entries (runs once on mount)
   useEffect(() => {
@@ -3709,7 +3749,7 @@ useEffect(() => {
             <MenuItem onClick={() => { 
               setExportAnchor(null); 
               const filterInfo = { dateFilter, fromDate, toDate, selectedMonth, selectedYear };
-              exportToExcel(filteredForms, globalVerifyMap, filterInfo, empPoints); 
+              window.dynamicPointsMap = dynamicPointsMap; exportToExcel(filteredForms, globalVerifyMap, filterInfo, empPoints); 
             }}
               sx={{ gap: 1.5, py: 1.5 }}>
               <ListItemIcon><TableChartIcon sx={{ color: '#217346' }} /></ListItemIcon>
@@ -4347,10 +4387,21 @@ useEffect(() => {
                   const ps = productSlabs[product];
                   const hasCustomSlabs = !!(ps?.slabTiers?.length > 0 || (Array.isArray(ps) && ps.length > 0));
 
-                  // Calculate automatic points
-                  const pointsKey = Object.keys(POINTS_MAP).find(k => k.toLowerCase().trim() === product.toLowerCase().trim());
-                  const pointsPerItem = pointsKey ? POINTS_MAP[pointsKey] : 0;
-                  const autoPoints = totalCount * pointsPerItem;
+                  // Calculate automatic points dynamically
+                  const matchingForms = editPtsEmp.empData.forms?.filter(f => (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim() === product.toLowerCase().trim()) || [];
+                  let autoPoints = 0;
+                  matchingForms.forEach(f => {
+                    const pName = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+                    const vKey = pName ? `${f.customerNumber}__${pName}` : f.customerNumber;
+                    
+                                        autoPoints += (globalVerifyMap[vKey]?.points || 0);
+                  });
+                  // If forms are not explicitly populated, fallback to simple multiplication using simple points
+                  if (matchingForms.length === 0 && dynamicPointsMap) {
+                     const cfg = dynamicPointsMap[product.toLowerCase().trim()];
+                     const pointsPerItem = cfg?.type === 'simple' ? cfg.points : (POINTS_MAP[product] || 0);
+                     autoPoints = totalCount * pointsPerItem;
+                  }
 
                   // Slab bonus (always ADDED on top of automatic)
                   const slabTotal = ps?.slabTiers?.length > 0
@@ -4369,7 +4420,7 @@ useEffect(() => {
                       {/* Automatic Points */}
                       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1, p: 1, bgcolor: '#fff', borderRadius: 1, border: '1px dashed #1565c0' }}>
                         <Typography variant="caption" sx={{ color: '#1565c0', fontWeight: 600 }}>
-                          Automatic: {totalCount} × {pointsPerItem} = {Math.round(autoPoints * 10) / 10} pts
+                          Automatic: {Math.round(autoPoints * 10) / 10} pts
                         </Typography>
                         {hasCustomSlabs && slabTotal > 0 && (
                           <Chip 

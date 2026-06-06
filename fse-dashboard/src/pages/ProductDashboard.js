@@ -30,7 +30,7 @@ const COLORS = ["#7c3aed", "#10b981", "#3b82f6", "#f59e0b", "#14b8a6", "#ec4899"
 const PRODUCT_COLORS = ["#7c3aed","#10b981","#3b82f6","#f59e0b","#14b8a6","#ec4899","#0ea5e9","#ef4444","#f97316","#84cc16","#06b6d4","#8b5cf6"];
 
 // ── Cache version: Increment this when verification rules change ─
-const CACHE_VERSION = 2; // Change to 2, 3, etc. to invalidate all caches
+const CACHE_VERSION = 3; // Change to 2, 3, etc. to invalidate all caches
 
 function toChartTheme(muiTheme) {
   const isDark = muiTheme.palette.mode === "dark";
@@ -963,7 +963,8 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
   // ── Per-product daily trend data (Ready / Fully Verified / Partially Done) ─
   const getVerifyKey = (f) => {
     const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
-    return p ? `${f.customerNumber}__${p}` : f.customerNumber;
+    const month = f?.createdAt ? new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }) : '';
+    return p ? `${f.customerNumber}__${p}__${month}` : `${f.customerNumber}__${month}`;
   };
 
   const productDailyData = useMemo(() => {
@@ -1341,9 +1342,9 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
       if (f.status !== 'Ready for Onboarding') return;
       totalProcessed++;
       
-      // Get verification key
       const product = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
-      const verifyKey = product ? `${f.customerNumber}__${product}` : f.customerNumber;
+      const month = f?.createdAt ? new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }) : '';
+      const verifyKey = product ? `${f.customerNumber}__${product}__${month}` : `${f.customerNumber}__${month}`;
       
       // Only count if "Fully Verified"
       const verifyStatus = globalVerifyMap[verifyKey]?.status;
@@ -1669,6 +1670,7 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
                         tlPhone: tlPhone,
                         status: f.status || '–',
                         date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
+                        createdAt: f.createdAt,
                       };
                     });
                   setProductKpiDrill({ product: k.product, color: k.color, rows });
@@ -2152,9 +2154,10 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
       {/* Product KPI Drill-down - Enhanced with TL Summary & Verification Status */}
       {productKpiDrill && (() => {
         // Get verification key helper
-        const getVerifyKey = (phone, product) => {
+        const getVerifyKey = (phone, product, createdAt) => {
           const p = product.toLowerCase().trim();
-          return p ? `${phone}__${p}` : phone;
+          const month = createdAt ? new Date(createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }) : '';
+          return p ? `${phone}__${p}__${month}` : `${phone}__${month}`;
         };
 
         // Build TL summary data
@@ -2162,7 +2165,7 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
         productKpiDrill.rows.forEach(row => {
           const tlName = row.tl || 'Unknown';
           const tlPhone = row.tlPhone || '–';
-          const verifyKey = getVerifyKey(row.phone, productKpiDrill.product);
+          const verifyKey = getVerifyKey(row.phone, productKpiDrill.product, row.createdAt);
           const verifyStatus = globalVerifyMap[verifyKey]?.status || 'Not Found';
           
           if (!tlSummary[tlName]) {
@@ -2275,7 +2278,7 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
                     </TableHead>
                     <TableBody>
                       {productKpiDrill.rows.map((row, i) => {
-                        const verifyKey = getVerifyKey(row.phone, productKpiDrill.product);
+                        const verifyKey = getVerifyKey(row.phone, productKpiDrill.product, row.createdAt);
                         const verifyStatus = globalVerifyMap[verifyKey]?.status || 'Not Found';
                         const verifyColor = verifyStatus === 'Fully Verified' ? '#2e7d32' : verifyStatus === 'Partially Done' ? '#f57f17' : '#757575';
                         const verifyBg = verifyStatus === 'Fully Verified' ? '#e6f4ea' : verifyStatus === 'Partially Done' ? '#fff8e1' : '#f5f5f5';

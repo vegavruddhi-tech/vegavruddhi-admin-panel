@@ -17,7 +17,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip as RechartsTooltip, ResponsiveCont
 const EMP_API = process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api';
 
 // ── Cache version: Increment this when verification rules change ─
-const CACHE_VERSION = 2; // Change to 2, 3, etc. to invalidate all caches
+const CACHE_VERSION = 1000; // Change to 2, 3, etc. to invalidate all caches
 
 function initials(name) {
   return (name || '?').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);

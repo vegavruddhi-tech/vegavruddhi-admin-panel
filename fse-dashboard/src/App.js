@@ -9,6 +9,8 @@ import TLOverview from './pages/TLOverview';
 import ManagerOverview from './pages/ManagerOverview';
 import AttendanceManagement from './pages/AttendanceManagement';
 import SalarySlips from './pages/SalarySlips';
+import PointsConfiguration from './pages/PointsConfiguration';
+import FormBuilder from './pages/FormBuilder';
 
 import { ThemeProvider, createTheme, useTheme } from "@mui/material/styles";
 import useMediaQuery from "@mui/material/useMediaQuery";
@@ -27,25 +29,34 @@ import ListItem from "@mui/material/ListItem";
 import ListItemButton from "@mui/material/ListItemButton";
 import ListItemText from "@mui/material/ListItemText";
 import Divider from "@mui/material/Divider";
+import Collapse from "@mui/material/Collapse";
+import Menu from "@mui/material/Menu";
+import MenuItem from "@mui/material/MenuItem";
 
 import LightModeIcon from "@mui/icons-material/LightMode";
 import DarkModeIcon from "@mui/icons-material/DarkMode";
 import LogoutIcon from "@mui/icons-material/Logout";
 import MenuIcon from "@mui/icons-material/Menu";
+import ExpandMoreIcon     from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon     from '@mui/icons-material/ExpandLess';
+
+// Dropdown Icons
+import AssignmentIndIcon from "@mui/icons-material/AssignmentInd";
+import RuleIcon from "@mui/icons-material/Rule";
+import HowToRegIcon from "@mui/icons-material/HowToReg";
+import ReceiptLongIcon from "@mui/icons-material/ReceiptLong";
+import SettingsSuggestIcon from "@mui/icons-material/SettingsSuggest";
+import ConstructionIcon from "@mui/icons-material/Construction";
 
 import { BRAND } from "./theme";
 import "./App.css";
 
-const NAV_ITEMS = [
+const MAIN_NAV_ITEMS = [
   { value: "overview",      label: "Overview" },
   { value: "products",      label: "Products" },
   { value: "merchants",     label: "Merchant Forms" },
   { value: "tl",            label: "TL Overview" },
   { value: "manager",       label: "Manager View" },
-  { value: "attendance",    label: "Attendance" },
-  { value: "verification",  label: "Verification Rules" },
-  { value: "approvals",     label: "Approvals" },
-  { value: "salary",        label: "Salary Slips" },
 ];
 
 // ── Responsive Navbar inner component (needs theme/breakpoints) ──
@@ -53,11 +64,44 @@ function NavbarContent({ page, setPage, pendingCount, mode, setMode, user, handl
   const theme    = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("md"));
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [anchorEl, setAnchorEl] = useState(null);
+
+  const DROPDOWN_NAV_ITEMS = [
+    { value: "attendance",    label: "Attendance",           icon: <AssignmentIndIcon fontSize="small" /> },
+    { value: "verification",  label: "Verification Rules",   icon: <RuleIcon fontSize="small" /> },
+    { value: "approvals",     label: "Approvals",            icon: <HowToRegIcon fontSize="small" /> },
+    { value: "salary",        label: "Salary Slips",         icon: <ReceiptLongIcon fontSize="small" /> },
+    { value: "points-config", label: "Points Configuration", icon: <SettingsSuggestIcon fontSize="small" /> },
+    { value: "form-builder",  label: "Form Builder",         icon: <ConstructionIcon fontSize="small" /> },
+  ];
+
+  const isDropdownActive = DROPDOWN_NAV_ITEMS.some(item => item.value === page);
+  const [mobileCollapse, setMobileCollapse] = useState(isDropdownActive);
+
+  // Sync mobile collapse with active dropdown page
+  useEffect(() => {
+    if (isDropdownActive) {
+      setMobileCollapse(true);
+    }
+  }, [page, isDropdownActive]);
 
   const handleNav = (val) => {
     setPage(val);
     localStorage.setItem("vv_page", val);
     setDrawerOpen(false);
+  };
+
+  const handleOpenDropdown = (event) => {
+    setAnchorEl(event.currentTarget);
+  };
+
+  const handleCloseDropdown = () => {
+    setAnchorEl(null);
+  };
+
+  const handleDropdownItemClick = (val) => {
+    handleNav(val);
+    handleCloseDropdown();
   };
 
   return (
@@ -128,23 +172,94 @@ function NavbarContent({ page, setPage, pendingCount, mode, setMode, user, handl
           {!isMobile && (
             <>
               <Tabs
-                value={page}
-                onChange={(_, v) => handleNav(v)}
+                value={MAIN_NAV_ITEMS.some(item => item.value === page) ? page : (isDropdownActive ? "management" : false)}
+                onChange={(_, v) => {
+                  if (v !== "management") {
+                    handleNav(v);
+                  }
+                }}
                 textColor="inherit"
                 variant="scrollable"
                 scrollButtons="auto"
+                sx={{
+                  '& .MuiTabs-flexContainer': {
+                    alignItems: 'center'
+                  }
+                }}
               >
-                {NAV_ITEMS.map(item => (
-                  <Tab key={item.value} value={item.value} label={
-                    item.value === "approvals" ? (
-                      <Badge badgeContent={pendingCount} color="error" max={99}
-                        sx={{ '& .MuiBadge-badge': { right: -8, top: -2 } }}>
-                        <Box sx={{ pr: 2 }}>{item.label}</Box>
-                      </Badge>
-                    ) : item.label
-                  } />
+                {MAIN_NAV_ITEMS.map(item => (
+                  <Tab key={item.value} value={item.value} label={item.label} />
                 ))}
+                
+                {/* Custom trigger tab for the dropdown */}
+                <Tab
+                  value="management"
+                  onClick={handleOpenDropdown}
+                  label={
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                      <Badge badgeContent={page === "approvals" ? 0 : pendingCount} color="error" variant="dot" invisible={pendingCount === 0}>
+                        Management
+                      </Badge>
+                      <ExpandMoreIcon fontSize="small" sx={{ 
+                        transform: Boolean(anchorEl) ? 'rotate(180deg)' : 'none',
+                        transition: 'transform 0.2s',
+                        ml: 0.5
+                      }} />
+                    </Box>
+                  }
+                />
               </Tabs>
+
+              {/* Beautiful Dropdown Menu */}
+              <Menu
+                anchorEl={anchorEl}
+                open={Boolean(anchorEl)}
+                onClose={handleCloseDropdown}
+                disableScrollLock
+                PaperProps={{
+                  sx: {
+                    mt: 1.5,
+                    bgcolor: theme.palette.mode === 'dark' ? '#1c2a3a' : '#ffffff',
+                    border: '1.5px solid rgba(26, 92, 56, 0.15)',
+                    boxShadow: '0 4px 25px rgba(0,0,0,0.18)',
+                    borderRadius: 2,
+                    minWidth: 220,
+                    '& .MuiMenuItem-root': {
+                      fontSize: '0.85rem',
+                      fontWeight: 600,
+                      py: 1.2,
+                      px: 2.5,
+                      gap: 1.5,
+                      color: theme.palette.mode === 'dark' ? '#f1f5f9' : '#1a2e22',
+                      '&:hover': {
+                        bgcolor: 'rgba(26, 92, 56, 0.08)',
+                        color: BRAND.primary
+                      },
+                      '&.Mui-selected': {
+                        bgcolor: 'rgba(26, 92, 56, 0.12)',
+                        color: BRAND.primary,
+                        fontWeight: 700
+                      }
+                    }
+                  }
+                }}
+              >
+                {DROPDOWN_NAV_ITEMS.map(item => (
+                  <MenuItem
+                    key={item.value}
+                    selected={page === item.value}
+                    onClick={() => handleDropdownItemClick(item.value)}
+                  >
+                    {item.icon}
+                    {item.value === "approvals" && pendingCount > 0 ? (
+                      <Badge badgeContent={pendingCount} color="error" max={99} sx={{ '& .MuiBadge-badge': { right: -12, top: 4 } }}>
+                        {item.label}
+                      </Badge>
+                    ) : item.label}
+                  </MenuItem>
+                ))}
+              </Menu>
+
               <Box sx={{ width: "1px", height: 28, bgcolor: "rgba(255,255,255,0.15)", mx: 1 }} />
             </>
           )}
@@ -265,7 +380,7 @@ function NavbarContent({ page, setPage, pendingCount, mode, setMode, user, handl
 
         {/* Nav items */}
         <List sx={{ pt: 1 }}>
-          {NAV_ITEMS.map(item => (
+          {MAIN_NAV_ITEMS.map(item => (
             <ListItem key={item.value} disablePadding>
               <ListItemButton
                 selected={page === item.value}
@@ -281,14 +396,7 @@ function NavbarContent({ page, setPage, pendingCount, mode, setMode, user, handl
                 }}
               >
                 <ListItemText
-                  primary={
-                    item.value === "approvals" && pendingCount > 0 ? (
-                      <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
-                        {item.label}
-                        <Badge badgeContent={pendingCount} color="error" max={99} />
-                      </Box>
-                    ) : item.label
-                  }
+                  primary={item.label}
                   primaryTypographyProps={{
                     fontSize: "0.88rem",
                     fontWeight: page === item.value ? 700 : 500,
@@ -299,6 +407,79 @@ function NavbarContent({ page, setPage, pendingCount, mode, setMode, user, handl
               </ListItemButton>
             </ListItem>
           ))}
+
+          {/* Collapsible Mobile Management Header */}
+          <ListItem disablePadding>
+            <ListItemButton
+              onClick={() => setMobileCollapse(!mobileCollapse)}
+              sx={{
+                px: 2.5, py: 1.2,
+                borderRadius: 2, mx: 1, mb: 0.5,
+                bgcolor: isDropdownActive ? "rgba(255,255,255,0.04)" : "transparent",
+                "&:hover": { bgcolor: "rgba(255,255,255,0.08)" },
+              }}
+            >
+              <ListItemText
+                primary={
+                  <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                    <Badge badgeContent={page === "approvals" ? 0 : pendingCount} color="error" variant="dot" invisible={pendingCount === 0}>
+                      Management
+                    </Badge>
+                  </Box>
+                }
+                primaryTypographyProps={{
+                  fontSize: "0.88rem",
+                  fontWeight: isDropdownActive ? 700 : 500,
+                  color: isDropdownActive ? "#fff" : "rgba(255,255,255,0.7)",
+                  letterSpacing: 0.5,
+                }}
+              />
+              {mobileCollapse ? <ExpandLessIcon fontSize="small" sx={{ color: "rgba(255,255,255,0.7)" }} /> : <ExpandMoreIcon fontSize="small" sx={{ color: "rgba(255,255,255,0.7)" }} />}
+            </ListItemButton>
+          </ListItem>
+
+          <Collapse in={mobileCollapse} timeout="auto" unmountOnExit>
+            <List component="div" disablePadding sx={{ pl: 2 }}>
+              {DROPDOWN_NAV_ITEMS.map(item => (
+                <ListItem key={item.value} disablePadding>
+                  <ListItemButton
+                    selected={page === item.value}
+                    onClick={() => handleNav(item.value)}
+                    sx={{
+                      px: 2.5, py: 1,
+                      borderRadius: 2, mx: 1, mb: 0.5,
+                      "&.Mui-selected": {
+                        bgcolor: `${BRAND.accent}22`,
+                        borderLeft: `3px solid ${BRAND.accent}`,
+                      },
+                      "&:hover": { bgcolor: "rgba(255,255,255,0.08)" },
+                    }}
+                  >
+                    <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, color: page === item.value ? BRAND.accent : "rgba(255,255,255,0.5)" }}>
+                      {item.icon}
+                    </Box>
+                    <ListItemText
+                      primary={
+                        item.value === "approvals" && pendingCount > 0 ? (
+                          <Box sx={{ display: "flex", alignItems: "center", gap: 1 }}>
+                            {item.label}
+                            <Badge badgeContent={pendingCount} color="error" max={99} />
+                          </Box>
+                        ) : item.label
+                      }
+                      primaryTypographyProps={{
+                        fontSize: "0.82rem",
+                        fontWeight: page === item.value ? 700 : 500,
+                        color: page === item.value ? "#fff" : "rgba(255,255,255,0.6)",
+                        letterSpacing: 0.5,
+                      }}
+                      sx={{ pl: 1.5 }}
+                    />
+                  </ListItemButton>
+                </ListItem>
+              ))}
+            </List>
+          </Collapse>
         </List>
 
         <Divider sx={{ borderColor: "rgba(255,255,255,0.12)", mt: "auto" }} />
@@ -526,15 +707,17 @@ function App() {
               transition: "background-color 0.3s",
             }}
           >
-            {page === "overview"     ? <Dashboard onReady={handleDataReady} /> :
-             page === "products"     ? <ProductDashboard /> :
-             page === "merchants"    ? <MerchantForms /> :
-             page === "verification" ? <VerificationRules token={user?.token} /> :
-             page === "approvals"    ? <EmployeeApprovals /> :
-             page === "tl"           ? <TLOverview /> :
-             page === "manager"      ? <ManagerOverview /> :
-             page === "attendance"   ? <AttendanceManagement /> :
-             page === "salary"       ? <SalarySlips /> : null}
+            {page === "overview"       ? <Dashboard onReady={handleDataReady} /> :
+             page === "products"       ? <ProductDashboard /> :
+             page === "merchants"      ? <MerchantForms /> :
+             page === "verification"   ? <VerificationRules token={user?.token} /> :
+             page === "approvals"      ? <EmployeeApprovals /> :
+             page === "tl"             ? <TLOverview /> :
+             page === "manager"        ? <ManagerOverview /> :
+             page === "attendance"     ? <AttendanceManagement /> :
+             page === "salary"         ? <SalarySlips /> :
+             page === "points-config"  ? <PointsConfiguration /> :
+             page === "form-builder"   ? <FormBuilder /> : null}
           </Box>
         </>
       )}
