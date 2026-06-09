@@ -693,10 +693,51 @@ const PRODUCT_COLORS = {
   'Tide Credit Card':    { bg: '#e1f5fe', color: '#01579b' },
 };
 
-function ProductChip({ product }) {
-  const c = PRODUCT_COLORS[product] || { bg: '#f5f5f5', color: '#555' };
+function ProductChip({ product, form, verifyData }) {
+  let amt = '';
+  if (product) {
+    const p = product.toLowerCase().trim();
+    if (p === 'tide insurance') {
+      if (form) {
+         amt = form.amount || form.Amount || form.premium || form.Premium || form.price || form.Price || '';
+      }
+      
+      // Also check verifyData.record which contains the full Google Sheet row
+      if (!amt && verifyData && verifyData.record) {
+        amt = verifyData.record.amount || verifyData.record.Amount || verifyData.record.premium || verifyData.record.Premium || verifyData.record.price || verifyData.record.Price;
+      }
+      
+      if (!amt && verifyData && verifyData.checks && Array.isArray(verifyData.checks)) {
+        const amtCheck = verifyData.checks.find(c => 
+          c.field && (c.field.toLowerCase().includes('amount') || c.field.toLowerCase().includes('premium') || c.field.toLowerCase().includes('price'))
+        );
+        if (amtCheck && amtCheck.sheetValue) amt = amtCheck.sheetValue;
+      }
+    }
+  }
+
+  const baseProductRaw = product ? product.split('(')[0].trim() : '';
+  const normalizedBase = baseProductRaw.toLowerCase() === 'msme' ? 'Tide MSME' :
+    baseProductRaw.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+    
+  let matchKey = normalizedBase;
+  if (normalizedBase.toLowerCase() === 'tide insurance') matchKey = 'Tide Insurance';
+  if (normalizedBase.toLowerCase() === 'tide credit card') matchKey = 'Tide Credit Card';
+
+  const c = PRODUCT_COLORS[matchKey] || PRODUCT_COLORS[product] || { bg: '#f5f5f5', color: '#555' };
+  
+  let displayLabel = product || '–';
+  if (product) {
+    const hasBracket = product.includes('(');
+    const bracketPart = hasBracket ? '(' + product.split('(')[1] : '';
+    displayLabel = matchKey + bracketPart;
+    if (amt && !hasBracket) {
+      displayLabel += `(${amt})`;
+    }
+  }
+
   return (
-    <Chip label={product || '–'} size="small"
+    <Chip label={displayLabel} size="small"
       sx={{ bgcolor: c.bg, color: c.color, fontWeight: 700, fontSize: 11, border: `1px solid ${c.color}30` }} />
   );
 }
@@ -1615,7 +1656,7 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading, onD
                   </Box>
                   <Box>
                     <Typography variant="caption" color="text.secondary">Product</Typography>
-                    <ProductChip product={product} />
+                    <ProductChip product={product} form={form} verifyData={verifyData} />
                   </Box>
                   <Box>
                     <Typography variant="caption" color="text.secondary">Location</Typography>
@@ -2203,7 +2244,7 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
                   <TableCell>{f.customerNumber}</TableCell>
 
                   <TableCell>
-                    <ProductChip product={getProduct(f)} />
+                    <ProductChip product={getProduct(f)} form={f} verifyData={verifyMap[getKey(f)]} />
                   </TableCell>
 
                   <TableCell>
