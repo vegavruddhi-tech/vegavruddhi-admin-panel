@@ -662,7 +662,7 @@ const POINTS_MAP = {
 };
 
 // ── Cache version: Increment this when verification rules change ─
-const CACHE_VERSION = 1004;
+const CACHE_VERSION = 1005;
 
 const EMP_API = process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api';
 
