@@ -12,6 +12,8 @@ import threading
 import os
 from dotenv import load_dotenv
 load_dotenv()
+from pymongo import MongoClient
+import certifi
 
 from connect_sheet import load_sheet
 from clean_duplicates import clean_duplicate_columns
@@ -49,8 +51,7 @@ async def startup_event():
 DATA_SOURCE = "google_sheet"
 
 # MongoDB connection for April+ data
-from pymongo import MongoClient
-import certifi
+
 
 MONGO_URI = os.environ.get("MONGO_URI", "")
 

@@ -662,7 +662,7 @@ const POINTS_MAP = {
 };
 
 // ── Cache version: Increment this when verification rules change ─
-const CACHE_VERSION = 1003;
+const CACHE_VERSION = 1004;
 
 const EMP_API = process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api';
 
@@ -3611,12 +3611,13 @@ useEffect(() => {
 
   // Compute verification KPI counts from global map - Dynamic based on roleFilter
   const verifyKpiCounts = useMemo(() => {
-    const counts = { 'Fully Verified': 0, 'Critical Failure': 0, 'Partially Done': 0, 'Not Found': 0 };
+    const counts = { 'Fully Verified': 0, 'Critical Failure': 0, 'Partially Done': 0, 'Not Verified': 0, 'Not Found': 0 };
     filteredForms.forEach(f => {
       const status = globalVerifyMap[getFormKey(f)]?.status || 'Not Found';
       if (status === 'Fully Verified') counts['Fully Verified']++;
       else if (status === 'Critical Failure') counts['Critical Failure']++;
       else if (status === 'Partially Done') counts['Partially Done']++;
+      else if (status === 'Not Verified') counts['Not Verified']++;
       else counts['Not Found']++;
     });
     
@@ -3970,11 +3971,12 @@ useEffect(() => {
       )}
 
       {/* Verification KPI cards */}
-      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(2, 1fr)', md: 'repeat(4, 1fr)' }, gap: { xs: 1.5, sm: 2 }, mb: 3 }}>
+      <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)', md: 'repeat(5, 1fr)' }, gap: { xs: 1.5, sm: 2 }, mb: 3 }}>
         {[
           { label: 'Fully Verified',   key: 'Fully Verified',   color: '#2e7d32', bg: '#e6f4ea', icon: '✓' },
           { label: 'Critical Failure',  key: 'Critical Failure',  color: '#c62828', bg: '#ffebee', icon: '⚠' },
           { label: 'Partially Done',   key: 'Partially Done',   color: '#f57f17', bg: '#fff8e1', icon: '◑' },
+          { label: 'Not Verified',     key: 'Not Verified',     color: '#c62828', bg: '#fdecea', icon: '✗' },
           { label: 'Not Found',        key: 'Not Found',        color: '#888',    bg: '#f5f5f5', icon: '–' },
         ].map(k => (
           <Card key={k.key} onClick={() => setVerifyKpiOpen(k.key)}
