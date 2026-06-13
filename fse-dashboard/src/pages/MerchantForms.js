@@ -1602,8 +1602,7 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading, onD
   // Notify parent when modal closes with fresh data
   const handleClose = () => {
     if (verifyData && form && onDataFetched) {
-      const vKey = product ? `${form.customerNumber}__${product}` : form.customerNumber;
-      onDataFetched(vKey, verification);
+      onDataFetched(verifyData, form);
     }
     onClose();
   };
@@ -2623,18 +2622,26 @@ export default function MerchantForms() {
   const [settlingForm,     setSettlingForm]     = useState(false); // 🔥 NEW: Settling in progress
 
   // ── Update verification map when modal fetches fresh data ────
-  const handleUpdateVerifyMap = useCallback((vKey, verificationData) => {
-    if (!vKey || !verificationData) return;
+  const handleUpdateVerifyMap = useCallback((newData, form) => {
+    if (!newData || !form) return;
+    
+    // Extract verification object if it's nested (from /verify/admin)
+    const verificationData = newData.verification || newData;
     
     setGlobalVerifyMap(prev => {
-      const updated = { ...prev, [vKey]: verificationData };
+      const p = (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
+      const m = form.createdAt ? formatFormMonth(form.createdAt) : '';
+      const k1 = p ? `${form.customerNumber}__${p}` : form.customerNumber;
+      const k2 = p ? `${form.customerNumber}__${p}__${m}` : `${form.customerNumber}__${m}`;
+      
+      const updated = { ...prev, [k1]: verificationData, [k2]: verificationData };
       
       // Also update localStorage cache
       try {
         const today = new Date().toISOString().split('T')[0];
         const cacheKey = `verification_cache_v${CACHE_VERSION}_${today}`;
         localStorage.setItem(cacheKey, JSON.stringify(updated));
-        console.log(`✅ Updated verification cache for ${vKey}:`, verificationData.status);
+        console.log(`✅ Updated verification cache for ${form.customerNumber}:`, verificationData.status);
       } catch (err) {
         console.warn('Failed to update verification cache:', err);
       }
