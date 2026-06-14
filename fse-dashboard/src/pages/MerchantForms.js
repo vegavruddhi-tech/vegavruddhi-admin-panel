@@ -1827,16 +1827,26 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
   };
 
   const [expanded, setExpanded] = useState(false);
-  const [localVerifyMap, setLocalVerifyMap] = useState({});
-  const [verifying, setVerifying] = useState(false);
   const [verifyDetail, setVerifyDetail] = useState(null);
   const [verifyDetailLoading, setVerifyDetailLoading] = useState(false);
   const [editForm, setEditForm]   = useState(null);
   const [editSaving, setEditSaving] = useState(false);
   const [editSnack, setEditSnack]   = useState('');
 
-  // Use parent globalVerifyMap if available, otherwise fall back to local fetch
-  const verifyMap = Object.keys(parentVerifyMap || {}).length > 0 ? (parentVerifyMap || {}) : localVerifyMap;
+  // 🚀 WRITE-TIME ARCHITECTURE: Build verifyMap instantly from the pre-attached form data!
+  const verifyMap = React.useMemo(() => {
+    const map = {};
+    forms.forEach(f => {
+      const key = getKey(f);
+      if (f.verificationStatus) {
+        map[key] = {
+          status: f.verificationStatus,
+          ...f.verificationChecks
+        };
+      }
+    });
+    return map;
+  }, [forms]);
 
   // ✅ FIXED: Check duplicates by phone+product combination, not just phone
   const dupCount = forms.filter(f => {
@@ -1844,42 +1854,6 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
     const key = product ? `${f.customerNumber}__${product}` : f.customerNumber;
     return duplicatePhones.has(key);
   }).length;
-
-  // ✅ FIXED: consistent product usage
-  const fetchVerification = useCallback(async () => {
-    // Skip if parent already has data
-    if (Object.keys(parentVerifyMap || {}).length > 0) return;
-    if (verifying || Object.keys(localVerifyMap).length > 0) return;
-
-    setVerifying(true);
-    try {
-      const res = await fetch(`${EMP_API}/verify/bulk-admin`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phones: forms.map(f => f.customerNumber),
-          names: forms.map(f => f.customerName || ''),
-          products: forms.map(f => getProduct(f)),
-          months: forms.map(f => formatFormMonth(f.createdAt))
-        })
-      });
-
-      if (res.ok) {
-        const data = await res.json();
-        setLocalVerifyMap(data);
-      }
-
-    } catch (err) {
-      console.error("Verification error:", err);
-    } finally {
-      setVerifying(false);
-    }
-  }, [forms, localVerifyMap, verifying, parentVerifyMap]);
-
-  // Only auto-fetch if parent doesn't have data
-  useEffect(() => {
-    if (forms.length > 0 && Object.keys(parentVerifyMap || {}).length === 0) fetchVerification();
-  }, [forms.length]); // eslint-disable-line
 
   // ✅ FIXED: Count ALL verified forms directly (no deduplication)
   const autoPoints = (() => {
@@ -1988,7 +1962,6 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
         setEditSnack('✓ Form updated successfully');
         setEditForm(null);
         // Reset local verifyMap so verification re-runs with new data
-        setLocalVerifyMap({});
         onReload();
       } else {
         setEditSnack(`Error: ${data.message}`);
@@ -2025,7 +1998,6 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
       
       if (res.ok) {
         setEditSnack('✓ Form deleted successfully');
-        setLocalVerifyMap({});
         onReload();
       } else {
         setEditSnack(`Error: ${data.message}`);
@@ -2037,17 +2009,41 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
   };
 
   const openVerifyDetail = async (f) => {
-    // Use cached verification data instead of fetching fresh
     const product = getProduct(f);
-    const vKey = product ? `${f.customerNumber}__${product}` : f.customerNumber;
-    const cachedData = verifyMap[vKey];
     
-    // Set modal with cached data immediately (no API call)
+    // Optimistically open modal with loading state
     setVerifyDetail({ 
       form: f, 
-      loading: false, 
-      data: cachedData ? { verification: cachedData } : null 
+      loading: true, 
+      data: null
     });
+
+    try {
+      const month = formatFormMonth(f.createdAt);
+      const url = `${EMP_API}/verify/details?phone=${f.customerNumber}&product=${encodeURIComponent(product)}&name=${encodeURIComponent(f.customerName || '')}&month=${encodeURIComponent(month)}`;
+      
+      const res = await fetch(url);
+      if (res.ok) {
+        const result = await res.json();
+        // The VerificationDetailModal expects { verification: { ...data, record: ... } }
+        setVerifyDetail({
+          form: f,
+          loading: false,
+          data: { 
+            verification: {
+              status: result.status,
+              checks: result.checks,
+              record: result.record
+            } 
+          }
+        });
+      } else {
+        setVerifyDetail({ form: f, loading: false, data: { verification: { status: 'Error', checks: [] } } });
+      }
+    } catch (err) {
+      console.error('Failed to fetch details:', err);
+      setVerifyDetail({ form: f, loading: false, data: null });
+    }
   };
 
   return (
@@ -2058,7 +2054,6 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
         onClick={() => {
           const next = !expanded;
           setExpanded(next);
-          if (next) fetchVerification();
         }}
         sx={{
           display: 'flex',
@@ -2247,13 +2242,10 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
                   </TableCell>
 
                   <TableCell>
-                    {verifying
-                      ? <CircularProgress size={12} />
-                      : <VerifyChip
-                          status={verifyMap[getKey(f)]?.status}
-                          onClick={() => openVerifyDetail(f)}
-                        />
-                    }
+                    <VerifyChip
+                      status={verifyMap[getKey(f)]?.status}
+                      onClick={() => openVerifyDetail(f)}
+                    />
                   </TableCell>
 
                   <TableCell>
