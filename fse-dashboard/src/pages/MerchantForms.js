@@ -697,24 +697,71 @@ const PRODUCT_COLORS = {
 };
 
 function ProductChip({ product, form, verifyData }) {
-  let amt = '';
+  // 🔥 GENERIC: Use window.dynamicPointsMap (loaded from Points Config API) to determine bracket
+  // Works automatically for ANY product added to Points Configuration — no hardcoding needed
+  let subType = '';
+
   if (product) {
-    const p = product.toLowerCase().trim();
-    if (p === 'tide insurance') {
-      if (form) {
-         amt = form.amount || form.Amount || form.premium || form.Premium || form.price || form.Price || '';
-      }
-      
-      // Also check verifyData.record which contains the full Google Sheet row
-      if (!amt && verifyData && verifyData.record) {
-        amt = verifyData.record.amount || verifyData.record.Amount || verifyData.record.premium || verifyData.record.Premium || verifyData.record.price || verifyData.record.Price;
-      }
-      
-      if (!amt && verifyData && verifyData.checks && Array.isArray(verifyData.checks)) {
-        const amtCheck = verifyData.checks.find(c => 
-          c.field && (c.field.toLowerCase().includes('amount') || c.field.toLowerCase().includes('premium') || c.field.toLowerCase().includes('price'))
-        );
-        if (amtCheck && amtCheck.sheetValue) amt = amtCheck.sheetValue;
+    const productKey = product.toLowerCase().trim();
+    const cfg = window.dynamicPointsMap?.[productKey];
+
+    if (cfg && form) {
+      if (cfg.type === 'mapped' && cfg.fieldMapping?.mappedColumn) {
+        // MAPPED product (e.g. Tide Insurance) — show the value of the mapped column in brackets
+        // The mapped column (e.g. "amount") lives in the verification collection, not FormResponse
+        // Priority: verifyData.record → verifyData.checks → form directly
+        const col = cfg.fieldMapping.mappedColumn; // e.g. "amount"
+
+        let val = '';
+
+        // 1. Try form field directly (in case it's stored on FormResponse)
+        val = String(form[col] || '').trim();
+
+        // 2. Try verifyData.record (the raw row from verification collection e.g. insurance_june)
+        if (!val && verifyData?.record) {
+          val = String(verifyData.record[col] || verifyData.record[col.toLowerCase()] || '').trim();
+        }
+
+        // 3. Try verifyData.checks — find a check whose field matches the mappedColumn
+        if (!val && verifyData?.checks && Array.isArray(verifyData.checks)) {
+          const match = verifyData.checks.find(c =>
+            c.field && c.field.toLowerCase() === col.toLowerCase()
+          );
+          if (match?.sheetValue) val = String(match.sheetValue).trim();
+          
+          // Broader fallback: field name contains the column name
+          if (!val) {
+            const broader = verifyData.checks.find(c =>
+              c.field && c.field.toLowerCase().includes(col.toLowerCase())
+            );
+            if (broader?.sheetValue) val = String(broader.sheetValue).trim();
+          }
+        }
+
+        // 4. Reverse map from assigned points (Backend saves `points`, we can look up which value gave these points)
+        if (!val && verifyData?.points !== undefined && Array.isArray(cfg.valueMapping)) {
+          const mapped = cfg.valueMapping.find(m => Number(m.points) === Number(verifyData.points));
+          if (mapped && mapped.value) {
+             val = String(mapped.value).trim();
+          }
+        }
+
+        // Show value with ₹ prefix if it looks like a number (amount), plain otherwise
+        if (val) {
+          const num = parseFloat(val);
+          subType = !isNaN(num) ? `₹${num}` : val;
+        }
+
+      } else if (cfg.type === 'complex' && cfg.fieldMapping) {
+        // COMPLEX product — show plan + tier from fieldMapping
+        const planField = cfg.fieldMapping.planField || 'planName';
+        const tierField = cfg.fieldMapping.tierField || 'tierName';
+        const planVal = String(form[planField] || '').trim();
+        const tierVal = String(form[tierField] || '').trim();
+
+        if (planVal && tierVal) subType = `${planVal} - ${tierVal}`;
+        else if (planVal) subType = planVal;
+        else if (tierVal) subType = tierVal;
       }
     }
   }
@@ -734,8 +781,9 @@ function ProductChip({ product, form, verifyData }) {
     const hasBracket = product.includes('(');
     const bracketPart = hasBracket ? '(' + product.split('(')[1] : '';
     displayLabel = matchKey + bracketPart;
-    if (amt && !hasBracket) {
-      displayLabel += `(${amt})`;
+    // Add bracket with the points-determining value
+    if (subType && !hasBracket) {
+      displayLabel += ` (${subType})`;
     }
   }
 
@@ -1816,7 +1864,7 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading, onD
 }
 
 // ── Employee Group Row ────────────────────────────────────────
-function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPointsData, empData, tlData, filterProduct, setFilterProduct, onEditPoints, onManualVerify, onRevertVerification, onReload, globalVerifyMap: parentVerifyMap, onUpdateVerifyMap }) {
+function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPointsData, empData, tlData, filterProduct, setFilterProduct, onEditPoints, onManualVerify, onRevertVerification, onReload, globalVerifyMap: parentVerifyMap, onUpdateVerifyMap, dynamicPointsMap }) {
 
   // ✅ FIXED: Use same priority order as backend (formFillingFor first)
   const getProduct = (f) =>
@@ -2153,6 +2201,7 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
           </Typography>
           {(() => {
             // Calculate product breakdown using ALL forms (not month-filtered)
+            // For complex products: group by product + plan + tier to show bracket
             const productBreakdown = {};
             const allForms4Emp = allEmpForms || forms;
             allForms4Emp.forEach(form => {
@@ -2162,46 +2211,47 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
               if (verificationStatus === 'Fully Verified') {
                 // ✅ FIXED: Use same priority order as backend
                 const rawProduct = form.formFillingFor || form.tideProduct || form.brand || '';
-                // Normalize: trim and lowercase for grouping
                 const normalized = rawProduct.trim().toLowerCase();
+                // Simple grouping by product name only (no brackets in summary chips)
                 const product = normalized === 'msme' ? 'Tide MSME' :
                                normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Other';
                 
                 // Count every verified form (no deduplication)
-                if (!productBreakdown[product]) productBreakdown[product] = 0;
-                productBreakdown[product]++;
+                if (!productBreakdown[product]) productBreakdown[product] = { count: 0, baseProduct: product };
+                productBreakdown[product].count++;
               }
             });
             
             // Sort by count descending
-            const sorted = Object.entries(productBreakdown).sort((a, b) => b[1] - a[1]);
+            const sorted = Object.entries(productBreakdown).sort((a, b) => b[1].count - a[1].count);
             
             if (sorted.length === 0) {
               return <Typography variant="caption" color="text.secondary">No verified forms yet</Typography>;
             }
             
-            return sorted.map(([product, count]) => {
-              const isSelected = filterProduct === product;
+            return sorted.map(([chipLabel, { count, baseProduct }]) => {
+              const isSelected = filterProduct === baseProduct || filterProduct === chipLabel;
+              const isComplex = chipLabel !== baseProduct; // has bracket = complex
               return (
                 <Chip
-                  key={product}
-                  label={`${product}: ${count} ✓`}
+                  key={chipLabel}
+                  label={`${chipLabel}: ${count} ✓`}
                   size="small"
                   onClick={(e) => {
                     e.stopPropagation();
                     if (setFilterProduct) {
-                      setFilterProduct(isSelected ? '' : product);
+                      setFilterProduct(isSelected ? '' : chipLabel);
                     }
                   }}
                   sx={{
-                    bgcolor: isSelected ? '#2e7d32' : '#e6f4ea',
-                    color: isSelected ? '#fff' : '#2e7d32',
+                    bgcolor: isSelected ? '#2e7d32' : (isComplex ? '#e3f2fd' : '#e6f4ea'),
+                    color: isSelected ? '#fff' : (isComplex ? '#1565c0' : '#2e7d32'),
                     fontWeight: 700,
                     fontSize: 11,
-                    border: `1px solid ${isSelected ? '#2e7d32' : '#2e7d3230'}`,
+                    border: `1px solid ${isSelected ? '#2e7d32' : (isComplex ? '#1565c050' : '#2e7d3230')}`,
                     cursor: 'pointer',
                     '&:hover': {
-                      bgcolor: isSelected ? '#1b5e20' : '#c8e6c9',
+                      bgcolor: isSelected ? '#1b5e20' : (isComplex ? '#bbdefb' : '#c8e6c9'),
                       transform: 'scale(1.05)'
                     },
                     transition: 'all 0.2s'
@@ -4335,6 +4385,7 @@ useEffect(() => {
                 onReload={load}
                 globalVerifyMap={globalVerifyMap}
                 onUpdateVerifyMap={handleUpdateVerifyMap}
+                dynamicPointsMap={dynamicPointsMap}
               />
             ))
           )}
