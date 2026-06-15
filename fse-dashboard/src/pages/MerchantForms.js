@@ -2681,7 +2681,7 @@ export default function MerchantForms() {
         
         // Helper function to load all pages for a role
         const loadAllPages = async (role) => {
-          const PAGE_SIZE = 500; // Load 500 records per request
+          const PAGE_SIZE = 5000; // Fetch all lightweight forms in a single request // Load 500 records per request
           let allForms = [];
           let page = 1;
           let hasMore = true;
@@ -2733,7 +2733,7 @@ export default function MerchantForms() {
       } else if (roleFilter === 'MANAGER') {
         // 🔥 NEW: Paginated loading for Manager forms
         console.log('📡 Fetching Manager forms (paginated)');
-        const PAGE_SIZE = 500;
+        const PAGE_SIZE = 5000;
         let page = 1;
         let hasMore = true;
         
@@ -2761,7 +2761,7 @@ export default function MerchantForms() {
       } else {
         // 🔥 NEW: Paginated loading for FSE or TL only
         console.log(`📡 Fetching ${roleFilter} forms (paginated)`);
-        const PAGE_SIZE = 500;
+        const PAGE_SIZE = 5000;
         let page = 1;
         let hasMore = true;
         
