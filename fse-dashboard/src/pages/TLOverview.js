@@ -326,12 +326,23 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
   const [taskFilter, setTaskFilter] = useState('all'); // 'all', 'pending', 'completed'
   const [showAllTasks, setShowAllTasks] = useState(false);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
+    const isForce = force === true;
+    const cache = window.vv_cache || {};
+    if (!isForce && cache.tlData) {
+      setData(cache.tlData);
+      setLoading(false);
+      setPageLoading(false);
+      if (onLoaded) onLoaded();
+      return;
+    }
     setLoading(true); setError('');
     try {
       const res = await fetch(`${EMP_API}/forms/admin/tl-overview`);
       if (!res.ok && res.status !== 304) throw new Error('Failed to load TL data');
-      setData(await res.json());
+      const jsonData = await res.json();
+      setData(jsonData);
+      if (window.vv_cache) window.vv_cache.tlData = jsonData;
     } catch (err) {
       setError(err.message);
     } finally {
@@ -339,7 +350,7 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
       setPageLoading(false);
       if (onLoaded) onLoaded();
     }
-  }, []);
+  }, [onLoaded]);
 
   const loadAdminNotifications = useCallback(async () => {
     try {
@@ -375,7 +386,7 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
     }
   }, [taskFilter]);
 
-  useEffect(() => { load(); loadAdminNotifications(); }, [load, loadAdminNotifications]);
+  useEffect(() => { load(false); loadAdminNotifications(); }, [load, loadAdminNotifications]);
 
   useEffect(() => {
     if (showAllTasks) {
@@ -421,6 +432,12 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
   useEffect(() => {
     if (!allForms.length) { setGlobalVerifyMap({}); return; }
     
+    const cache = window.vv_cache || {};
+    if (cache.tlVerify) {
+      setGlobalVerifyMap(cache.tlVerify);
+      return;
+    }
+
     // Generate cache key with today's date (auto-expires at midnight)
     const today = new Date().toISOString().split('T')[0]; // "2026-05-01"
     const cacheKey = `verification_cache_v${CACHE_VERSION}_tloverview_${today}`;
@@ -432,6 +449,7 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
         // Use cached data (0 API calls)
         const cachedData = JSON.parse(cached);
         setGlobalVerifyMap(cachedData);
+        if (window.vv_cache) window.vv_cache.tlVerify = cachedData;
         console.log('✅ [TLOverview] Using cached verification data from localStorage');
         return;
       }
@@ -456,6 +474,7 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
     })).then(results => {
       const merged = Object.assign({}, ...results);
       setGlobalVerifyMap(merged);
+      if (window.vv_cache) window.vv_cache.tlVerify = merged;
       
       // Store in cache for today
       try {
@@ -680,7 +699,8 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
       alert(`✅ Manual verification reverted successfully!\n\nThe form will now show "Not Found" status.`);
       
       // Reload the page data
-      load();
+      if (window.clearVvCache) window.clearVvCache();
+      load(true);
 
     } catch (err) {
       console.error('Failed to revert manual verification:', err);
@@ -724,7 +744,8 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
       setVerifyReason('');
       
       // Reload the page data to show updated verification status
-      load();
+      if (window.clearVvCache) window.clearVvCache();
+      load(true);
 
     } catch (err) {
       console.error('Failed to create manual verification:', err);
@@ -849,7 +870,7 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
               )}
             </Box>
           </Tooltip>
-          <Button startIcon={<RefreshIcon />} variant="outlined" onClick={() => { load(); loadAdminNotifications(); }}
+          <Button startIcon={<RefreshIcon />} variant="outlined" onClick={() => { if (window.clearVvCache) window.clearVvCache(); load(true); loadAdminNotifications(); }}
             sx={{ borderColor: BRAND.primary, color: BRAND.primary, fontWeight: 700 }}>
             Refresh
           </Button>

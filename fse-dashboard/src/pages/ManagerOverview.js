@@ -725,7 +725,7 @@ function KpiModal({ kpiModal, onClose }) {
 
 // ── Main page ─────────────────────────────────────────────────────────────────
 
-export default function ManagerOverview() {
+export default function ManagerOverview({ onReady }) {
   const [tlData,      setTlData]      = useState([]);
   const [managers,    setManagers]    = useState([]);
   const [loading,     setLoading]     = useState(true);
@@ -760,6 +760,12 @@ export default function ManagerOverview() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!loading && onReady) {
+      onReady();
+    }
+  }, [loading, onReady]);
 
   // Group tl-overview entries by manager name — apply date/year/month filter to forms
   const { managerGroups, unassigned } = useMemo(() => {

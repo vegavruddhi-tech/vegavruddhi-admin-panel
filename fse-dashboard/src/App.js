@@ -512,6 +512,33 @@ function NavbarContent({ page, setPage, pendingCount, mode, setMode, user, handl
   );
 }
 
+// Initialize global cache object on window
+if (typeof window !== "undefined") {
+  window.vv_cache = window.vv_cache || {
+    dashboardData: null,
+    dashboardVerify: null,
+    productData: null,
+    productMongo: null,
+    productVerify: null,
+    tlData: null,
+    tlVerify: null,
+    merchantForms: null
+  };
+  window.clearVvCache = () => {
+    if (window.vv_cache) {
+      window.vv_cache.dashboardData = null;
+      window.vv_cache.dashboardVerify = null;
+      window.vv_cache.productData = null;
+      window.vv_cache.productMongo = null;
+      window.vv_cache.productVerify = null;
+      window.vv_cache.tlData = null;
+      window.vv_cache.tlVerify = null;
+      window.vv_cache.merchantForms = null;
+      console.log('🗑️ [Global Cache] All page caches cleared');
+    }
+  };
+}
+
 function App() {
   const [mode, setMode] = useState("light");
   const [page, setPage] = useState(() => localStorage.getItem("vv_page") || "overview");
@@ -708,16 +735,16 @@ function App() {
             }}
           >
             {page === "overview"       ? <Dashboard onReady={handleDataReady} /> :
-             page === "products"       ? <ProductDashboard /> :
-             page === "merchants"      ? <MerchantForms /> :
-             page === "verification"   ? <VerificationRules token={user?.token} /> :
-             page === "approvals"      ? <EmployeeApprovals /> :
-             page === "tl"             ? <TLOverview /> :
-             page === "manager"        ? <ManagerOverview /> :
-             page === "attendance"     ? <AttendanceManagement /> :
-             page === "salary"         ? <SalarySlips /> :
-             page === "points-config"  ? <PointsConfiguration /> :
-             page === "form-builder"   ? <FormBuilder /> : null}
+             page === "products"       ? <ProductDashboard onLoaded={handleDataReady} /> :
+             page === "merchants"      ? <MerchantForms onReady={handleDataReady} /> :
+             page === "verification"   ? <VerificationRules token={user?.token} onReady={handleDataReady} /> :
+             page === "approvals"      ? <EmployeeApprovals onReady={handleDataReady} /> :
+             page === "tl"             ? <TLOverview onLoaded={handleDataReady} /> :
+             page === "manager"        ? <ManagerOverview onReady={handleDataReady} /> :
+             page === "attendance"     ? <AttendanceManagement onReady={handleDataReady} /> :
+             page === "salary"         ? <SalarySlips onReady={handleDataReady} /> :
+             page === "points-config"  ? <PointsConfiguration onReady={handleDataReady} /> :
+             page === "form-builder"   ? <FormBuilder onReady={handleDataReady} /> : null}
           </Box>
         </>
       )}

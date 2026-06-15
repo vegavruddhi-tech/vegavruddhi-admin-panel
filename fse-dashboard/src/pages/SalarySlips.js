@@ -18,7 +18,7 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 const CURRENT_YEAR = new Date().getFullYear();
 const CURRENT_MONTH = MONTHS[new Date().getMonth()];
 
-export default function SalarySlips() {
+export default function SalarySlips({ onReady }) {
   const [loading, setLoading] = useState(false);
   const [employees, setEmployees] = useState([]);
   const [salarySlips, setSalarySlips] = useState([]);
@@ -123,6 +123,12 @@ export default function SalarySlips() {
     loadEmployees();
     loadSalarySlips();
   }, [loadEmployees, loadSalarySlips]);
+
+  useEffect(() => {
+    if (!loading && onReady) {
+      onReady();
+    }
+  }, [loading, onReady]);
 
   // Recalculate salary when pointValue or base salaries change (frontend only - no API call)
   const employeesWithRecalculatedSalary = employees.map(emp => {

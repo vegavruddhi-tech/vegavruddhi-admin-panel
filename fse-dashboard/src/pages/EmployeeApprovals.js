@@ -110,7 +110,7 @@ function EmployeeRow({ emp, onApprove, onReject, showActions, onEdit }) {
   );
 }
 
-export default function EmployeeApprovals() {
+export default function EmployeeApprovals({ onReady }) {
   const [employees, setEmployees] = useState([]);
   const [loading,   setLoading]   = useState(true);
   const [error,     setError]     = useState('');
@@ -195,6 +195,12 @@ export default function EmployeeApprovals() {
     loadManagerChangeRequests();
     loadManagerPending();
   }, [load]);
+
+  useEffect(() => {
+    if (!loading && onReady) {
+      onReady();
+    }
+  }, [loading, onReady]);
 
   const loadChangeRequests = async () => {
     setChangeReqLoading(true);

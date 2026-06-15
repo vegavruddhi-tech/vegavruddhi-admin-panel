@@ -744,8 +744,28 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
       prev.includes(col) ? prev.filter((c) => c !== col) : [...prev, col]
     );
 
-  const load = async () => {
+  const load = async (force = false) => {
+    const isForce = force === true;
+    const cache = window.vv_cache || {};
+    if (!isForce && cache.productData) {
+      const result = cache.productData;
+      const safeRaw = Array.isArray(result) ? result : result.raw || [];
+      setRaw(safeRaw);
+      if (result && !Array.isArray(result)) {
+        setProductMeta({
+          product_columns: result.product_columns || [],
+          product_totals: result.product_totals || {},
+          product_groups: result.product_groups || {}
+        });
+        setOnboardColMap({
+          byMonth: result.onboard_column_by_month || {},
+          default: result.default_onboard_column || "Tide OB with PP",
+        });
+      }
+      return;
+    }
     const result = await fetchData();
+    if (window.vv_cache) window.vv_cache.productData = result;
     const safeRaw = Array.isArray(result) ? result : result.raw || [];
     setRaw(safeRaw);
     if (result && !Array.isArray(result)) {
@@ -761,18 +781,31 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
     }
   };
 
-  const loadMongoData = async () => {
+  const loadMongoData = async (force = false) => {
+    const isForce = force === true;
     try {
-      const res = await fetch(`${EMP_API}/forms/admin/overview`);
-      const data = res.ok ? await res.json() : { forms: [], employees: [], tls: [] };
+      let data;
+      const cache = window.vv_cache || {};
+      if (!isForce && cache.productMongo) {
+        data = cache.productMongo;
+      } else {
+        const res = await fetch(`${EMP_API}/forms/admin/overview`);
+        data = res.ok ? await res.json() : { forms: [], employees: [], tls: [] };
+        if (window.vv_cache) window.vv_cache.productMongo = data;
+      }
+      
       const forms = data.forms || [];
       setMongoForms(forms);
       setMongoEmployees(data.employees || []);
       setMongoTls(data.tls || []);
 
       // ── Auto-fetch verification for all forms in background ──────────
-      // ✅ CACHED: Uses localStorage to cache verification data for the day (reduces API calls by 90%)
       if (forms.length > 0) {
+        if (!isForce && cache.productVerify) {
+          setGlobalVerifyMap(cache.productVerify);
+          return;
+        }
+
         // Generate cache key with today's date (auto-expires at midnight)
         const today = new Date().toISOString().split('T')[0]; // "2026-05-01"
         const cacheKey = `verification_cache_v${CACHE_VERSION}_productdashboard_${today}`;
@@ -785,6 +818,7 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
             // Use cached data (0 API calls)
             const cachedData = JSON.parse(cached);
             setGlobalVerifyMap(cachedData);
+            if (window.vv_cache) window.vv_cache.productVerify = cachedData;
             console.log('✅ [ProductDashboard] Using cached verification data from localStorage');
             usedCache = true;
           }
@@ -814,6 +848,7 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
             }));
             const merged = Object.assign({}, ...results);
             setGlobalVerifyMap(merged);
+            if (window.vv_cache) window.vv_cache.productVerify = merged;
             
             // Store in cache for today
             try {
@@ -836,10 +871,10 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
   };
 
   useEffect(() => {
-    load();
-    loadMongoData();
-    const iv = setInterval(load, 120000);
-    const iv2 = setInterval(loadMongoData, 120000);
+    load(false);
+    loadMongoData(false);
+    const iv = setInterval(() => load(true), 120000);
+    const iv2 = setInterval(() => loadMongoData(true), 120000);
     // Safety fallback — never stay stuck longer than 10s
     const fallback = setTimeout(() => setPageLoading(false), 10000);
     return () => { clearInterval(iv); clearInterval(iv2); clearTimeout(fallback); };

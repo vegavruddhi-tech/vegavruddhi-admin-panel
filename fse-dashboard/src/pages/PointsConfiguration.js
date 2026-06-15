@@ -15,7 +15,7 @@ import { BRAND } from '../theme';
 
 const EMP_API = process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api';
 
-export default function PointsConfiguration() {
+export default function PointsConfiguration({ onReady }) {
   const [loading, setLoading] = useState(false);
   const [configs, setConfigs] = useState([]);
   const [error, setError] = useState('');
@@ -116,6 +116,12 @@ export default function PointsConfiguration() {
     loadCollections();
     loadConfigs();
   }, []);
+
+  useEffect(() => {
+    if (!loading && onReady) {
+      onReady();
+    }
+  }, [loading, onReady]);
 
   // Fetch distinct values for Plan and Tier dropdowns
   useEffect(() => {

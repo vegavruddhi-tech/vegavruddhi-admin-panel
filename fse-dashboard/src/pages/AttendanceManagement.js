@@ -15,7 +15,7 @@ import RefreshIcon from '@mui/icons-material/Refresh';
 
 const EMP_BASE = process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api';
 
-function AttendanceManagement() {
+function AttendanceManagement({ onReady }) {
   const [allRecords, setAllRecords]     = useState([]);
   const [summary, setSummary]           = useState({ totalPresent: 0, totalAbsent: 0, totalRelogins: 0 });
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
@@ -40,6 +40,12 @@ function AttendanceManagement() {
     fetchFull();
     fetchSummary();
   }, [selectedDate]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (!loading && onReady) {
+      onReady();
+    }
+  }, [loading, onReady]);
 
   const fetchFull = async () => {
     setLoading(true);

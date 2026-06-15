@@ -27,6 +27,9 @@ import JitsiMeeting       from '../components/JitsiMeeting';
 import TideMerchantTimeline from '../components/TideMerchantTimeline';
 import PriorityPassTracking from '../components/PriorityPassTracking';
 
+// Module-level cache for loaded data to prevent loading spinners on tab switches
+// Cache is now stored globally on window.vv_cache.merchantForms
+
 // ── SlabTierRow: name + forms + multiplier all in one row ──
 const SlabTierRow = React.memo(function SlabTierRow({ tier, idx, onCommit, onDelete }) {
   const [name, setName]             = useState(tier.name ?? '');
@@ -2434,7 +2437,7 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
 }
 
 // ── Main Page ─────────────────────────────────────────────────
-export default function MerchantForms() {
+export default function MerchantForms({ onReady }) {
   const [dynamicPointsMap, setDynamicPointsMap] = useState(null);
   useEffect(() => {
     fetchPointsConfig().then(map => {
@@ -2443,11 +2446,18 @@ export default function MerchantForms() {
       console.log("Loaded dynamic points map:", map);
     }).catch(console.error);
   }, []);
+
   const [forms,      setForms]      = useState([]);
   const [duplicates, setDuplicates] = useState([]);
   const [roleFilter, setRoleFilter] = useState('ALL'); // 🔥 DEFAULT: Show ALL forms on page load
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState('');
+
+  useEffect(() => {
+    if (!loading && onReady) {
+      onReady();
+    }
+  }, [loading, onReady]);
   const [search,     setSearch]     = useState('');
   const [dupOpen,    setDupOpen]    = useState(false);
   const [filledLateOpen, setFilledLateOpen] = useState(false); // 🔥 NEW: Filled late dialog
@@ -2642,7 +2652,29 @@ export default function MerchantForms() {
     });
   }, []);
 
-  const load = useCallback(async () => {
+  const load = useCallback(async (force = false) => {
+    const isForce = force === true || (force && force.nativeEvent);
+    const cache = (window.vv_cache && window.vv_cache.merchantForms) || null;
+    
+    // Check if we have cached data for the same filter parameters
+    if (!isForce && cache && 
+        cache.roleFilter === roleFilter && 
+        cache.selectedMonth === selectedMonth && 
+        cache.selectedYear === selectedYear) {
+      
+      console.log('⚡ Using cached MerchantForms data');
+      setForms(cache.forms);
+      setDuplicates(cache.duplicates);
+      setEmpPoints(cache.empPoints);
+      setEmployees(cache.employees);
+      setTeamLeaders(cache.teamLeaders);
+      setTls(cache.tls);
+      setLoading(false);
+      
+      if (onReady) onReady();
+      return;
+    }
+
     setLoading(true); setError('');
     try {
       console.log('🔄 Loading forms with role:', roleFilter); // 🔥 DEBUG
@@ -2795,20 +2827,39 @@ export default function MerchantForms() {
         fetch(`${EMP_API}/tl/approved-list`),
       ]);
       
-      setForms(formsData);
-      setDuplicates(dupRes.ok ? await dupRes.json() : []);
-      setEmpPoints(ptsRes.ok ? await ptsRes.json() : []);
-      setEmployees(empRes.ok ? await empRes.json() : []);
+      const duplicatesData = dupRes.ok ? await dupRes.json() : [];
+      const empPointsData = ptsRes.ok ? await ptsRes.json() : [];
+      const employeesData = empRes.ok ? await empRes.json() : [];
       const tlData = tlRes.ok ? await tlRes.json() : [];
+
+      setForms(formsData);
+      setDuplicates(duplicatesData);
+      setEmpPoints(empPointsData);
+      setEmployees(employeesData);
       setTeamLeaders(tlData);
       setTls(tlData); // Also set for meetings component
+
+      // Save to cache
+      if (window.vv_cache) {
+        window.vv_cache.merchantForms = {
+          roleFilter,
+          selectedMonth,
+          selectedYear,
+          forms: formsData,
+          duplicates: duplicatesData,
+          empPoints: empPointsData,
+          employees: employeesData,
+          teamLeaders: tlData,
+          tls: tlData
+        };
+      }
     } catch (err) {
       console.error('❌ Error loading forms:', err); // 🔥 DEBUG
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [roleFilter, selectedMonth, selectedYear]); // 🔥 Add dependencies
+  }, [roleFilter, selectedMonth, selectedYear, onReady]); // 🔥 Add dependencies
 
   const loadPointsActivity = useCallback(async () => {
     setActivityLoading(true);
@@ -2841,6 +2892,7 @@ export default function MerchantForms() {
       const data = await res.json();
       if (res.ok) {
         setNotifySnack('✓ Duplicate marked as settled. Record saved to history.');
+        if (window.clearVvCache) window.clearVvCache();
         load(); // refresh to remove from active list
       } else {
         setNotifySnack(`Error: ${data.message}`);
@@ -2883,6 +2935,7 @@ export default function MerchantForms() {
           // 🔥 NEW: Update settled count in state
           setSettledCount(statsData.stats?.totalSettled || 0);
         }
+        if (window.clearVvCache) window.clearVvCache();
         load(); // refresh main forms list
         return true;
       } else {
@@ -2917,6 +2970,7 @@ export default function MerchantForms() {
           const refreshData = await refreshRes.json();
           setFilledLateForms(refreshData.filledLateForms || []);
         }
+        if (window.clearVvCache) window.clearVvCache();
         load(); // refresh main forms list
       } else {
         setNotifySnack(`Error: ${data.message || data.error}`);
@@ -3162,6 +3216,7 @@ export default function MerchantForms() {
       }
       
       // ✅ Reload forms data
+      if (window.clearVvCache) window.clearVvCache();
       await load();
       
       console.log('✅ All data reloaded successfully');
@@ -3198,6 +3253,7 @@ export default function MerchantForms() {
       
       if (res.ok) {
         setNotifySnack('✓ Form manually verified successfully');
+        if (window.clearVvCache) window.clearVvCache();
         load(); // Reload to refresh verification status
       } else {
         const data = await res.json();
@@ -3224,6 +3280,7 @@ export default function MerchantForms() {
           
           if (deleteRes.ok) {
             setNotifySnack('✓ Verification reverted successfully');
+            if (window.clearVvCache) window.clearVvCache();
             load();
           } else {
             setNotifySnack('Error reverting verification');
@@ -3693,7 +3750,7 @@ useEffect(() => {
 
           {/* REFRESH Button */}
           <IconButton 
-            onClick={load} 
+            onClick={() => { if (window.clearVvCache) window.clearVvCache(); load(true); }} 
             disabled={loading}
             sx={{ 
               border: `1.5px solid ${BRAND.primaryLight}`,

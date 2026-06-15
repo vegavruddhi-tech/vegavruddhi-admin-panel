@@ -277,13 +277,37 @@ function Dashboard({ onReady }) {
 
 const EMP_API = process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api';
 
-const loadData = async () => {
+const loadData = async (isForce = false) => {
+  const cache = window.vv_cache || {};
+  if (!isForce && cache.dashboardData) {
+    setForms(cache.dashboardData.forms || []);
+    setEmployees(cache.dashboardData.employees || []);
+    setTls(cache.dashboardData.tls || []);
+    setLoading(false);
+    setPageLoading(false);
+    if (onReady) onReady();
+    return;
+  }
+
+  setLoading(true);
   try {
     const res = await fetch(`${EMP_API}/forms/admin/overview`);
-    const data = res.ok ? await res.json() : { filteredForms: [], employees: [], tls: [] };
-    setForms(data.forms || []);
-    setEmployees(data.employees || []);
-    setTls(data.tls || []);
+    const data = res.ok ? await res.json() : { forms: [], employees: [], tls: [] };
+    const formsList = data.forms || [];
+    const empList = data.employees || [];
+    const tlList = data.tls || [];
+
+    setForms(formsList);
+    setEmployees(empList);
+    setTls(tlList);
+
+    if (window.vv_cache) {
+      window.vv_cache.dashboardData = {
+        forms: formsList,
+        employees: empList,
+        tls: tlList
+      };
+    }
   } catch (err) {
     console.error('Overview load error:', err);
   } finally {
@@ -294,8 +318,8 @@ const loadData = async () => {
 
 
   useEffect(() => {
-    loadData();
-    const iv = setInterval(loadData, 1200000);
+    loadData(false);
+    const iv = setInterval(() => loadData(true), 1200000);
     return () => clearInterval(iv);
   }, []);
   const filteredForms = useMemo(() => {
@@ -333,6 +357,13 @@ const loadData = async () => {
 useEffect(() => {
   if (!forms.length) { setGlobalVerifyMap({}); return; }
   
+  const cache = window.vv_cache || {};
+  if (cache.dashboardVerify) {
+    setGlobalVerifyMap(cache.dashboardVerify);
+    if (onReady) onReady();
+    return;
+  }
+
   // Generate cache key with today's date (auto-expires at midnight)
   const today = new Date().toISOString().split('T')[0]; // "2026-05-01"
   const cacheKey = `verification_cache_v${CACHE_VERSION}_dashboard_${today}`;
@@ -344,6 +375,7 @@ useEffect(() => {
       // Use cached data (0 API calls)
       const cachedData = JSON.parse(cached);
       setGlobalVerifyMap(cachedData);
+      if (window.vv_cache) window.vv_cache.dashboardVerify = cachedData;
       if (onReady) onReady();
       console.log('✅ [Dashboard] Using cached verification data from localStorage');
       return;
@@ -369,6 +401,7 @@ useEffect(() => {
   })).then(results => {
     const merged = Object.assign({}, ...results);
     setGlobalVerifyMap(merged);
+    if (window.vv_cache) window.vv_cache.dashboardVerify = merged;
     if (onReady) onReady();
     
     // Store in cache for today

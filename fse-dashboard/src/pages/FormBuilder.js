@@ -3,7 +3,7 @@ import { Box, Typography, Button } from '@mui/material';
 
 const EMP_API = process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api';
 
-export default function FormBuilder() {
+export default function FormBuilder({ onReady }) {
   const token = localStorage.getItem('token');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -14,6 +14,12 @@ export default function FormBuilder() {
   useEffect(() => {
     fetchConfig();
   }, []);
+
+  useEffect(() => {
+    if (!loading && onReady) {
+      onReady();
+    }
+  }, [loading, onReady]);
   
   const fetchConfig = async () => {
     try {

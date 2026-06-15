@@ -453,7 +453,7 @@ function AddRuleDialog({ open, onClose, token, onSaved }) {
 }
 
 // ── Main Page ──────────────────────────────────────────────────
-export default function VerificationRules({ token: propToken }) {
+export default function VerificationRules({ token: propToken, onReady }) {
   const [rules,   setRules]   = useState([]);
   const [loading, setLoading] = useState(true);
   const [error,   setError]   = useState("");
@@ -480,6 +480,12 @@ export default function VerificationRules({ token: propToken }) {
   }, [token]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    if (!loading && onReady) {
+      onReady();
+    }
+  }, [loading, onReady]);
 
   return (
     <Box sx={{ maxWidth: { xs: '100%', md: 900 }, mx: "auto", px: { xs: 2, md: 4 }, py: 4 }}>
