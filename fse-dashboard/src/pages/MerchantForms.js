@@ -3413,98 +3413,22 @@ export default function MerchantForms() {
   };
 
   useEffect(() => {
-  // ✅ OPTIMIZED: Fetch verification ONCE on page load based on ALL forms, not filtered forms
-  // This prevents re-fetching when user types in search or changes filters
-  // ✅ CACHED: Uses localStorage to cache verification data for the day (reduces API calls by 90%)
-  // ✅ AUTO-REFRESH: Checks if verification rules changed and auto-clears cache
-  if (!forms.length) { setGlobalVerifyMap({}); return; }
+    if (!forms.length) { setGlobalVerifyMap({}); return; }
 
-  // Generate cache key with today's date (auto-expires at midnight)
-  const today = new Date().toISOString().split('T')[0]; // "2026-05-01"
-  const cacheKey = `verification_cache_v${CACHE_VERSION}_${today}`;
-
-  // Check if verification rules were updated (auto-clear cache if rules changed)
-  const checkAndFetchVerification = async () => {
-    try {
-      // Check rules timestamp
-      const res = await fetch(`${EMP_API}/verify/rules-timestamp`);
-      if (res.ok) {
-        const { timestamp } = await res.json();
-        const lastRulesUpdate = parseInt(timestamp);
-        const cachedRulesTimestamp = localStorage.getItem('verification_rules_timestamp');
-        
-        if (cachedRulesTimestamp && parseInt(cachedRulesTimestamp) < lastRulesUpdate) {
-          // Rules were updated - clear all verification caches
-          console.log('🔄 Verification rules updated - clearing cache');
-          Object.keys(localStorage).forEach(key => {
-            if (key.startsWith('verification_cache_')) {
-              localStorage.removeItem(key);
-            }
-          });
-        }
-        
-        // Store current timestamp
-        localStorage.setItem('verification_rules_timestamp', lastRulesUpdate.toString());
-      }
-    } catch (err) {
-      console.warn('Failed to check rules timestamp:', err);
-    }
-
-    // Check if we have cached data for TODAY
-    try {
-      const cached = localStorage.getItem(cacheKey);
-      if (cached) {
-        // Use cached data (0 API calls)
-        const cachedData = JSON.parse(cached);
-        setGlobalVerifyMap(cachedData);
-        console.log('✅ Using cached verification data from localStorage');
-        return;
-      }
-    } catch (err) {
-      console.warn('Failed to read verification cache:', err);
-      // Continue to fetch from API if cache read fails
-    }
-
-    // No cache - fetch from API (17 calls)
-    console.log('📡 Fetching fresh verification data from API...');
-    const BATCH = 50;
-    const batches = [];
-    for (let i = 0; i < forms.length; i += BATCH) {
-      batches.push(forms.slice(i, i + BATCH));
-    }
-
-    Promise.all(batches.map(batch => {
-      const phones   = batch.map(f => f.customerNumber).join(',');
-      const names    = batch.map(f => encodeURIComponent(f.customerName || '')).join(',');
-      const products = batch.map(f => encodeURIComponent(getFormProduct(f))).join(',');
-      const months   = batch.map(f => encodeURIComponent(formatFormMonth(f.createdAt))).join(',');
-      return fetch(`${EMP_API}/verify/bulk-admin`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phones: batch.map(f => f.customerNumber),
-          names: batch.map(f => f.customerName || ''),
-          products: batch.map(f => getFormProduct(f)),
-          months: batch.map(f => formatFormMonth(f.createdAt))
-        })
-      }).then(r => (r.ok || r.status === 304) ? r.json() : {})
-        .catch(() => ({}));
-    })).then(results => {
-      const merged = Object.assign({}, ...results);
-      setGlobalVerifyMap(merged);
-      
-      // Store in cache for today
-      try {
-        localStorage.setItem(cacheKey, JSON.stringify(merged));
-        console.log('✅ Verification data cached in localStorage');
-      } catch (err) {
-        console.warn('Failed to cache verification data:', err);
-      }
+    console.log('✅ Generating globalVerifyMap instantly from precomputed forms (Zero extra network calls)');
+    const vMap = {};
+    
+    forms.forEach(f => {
+      const vKey = getFormKey(f);
+      vMap[vKey] = {
+        status: f.verificationStatus || 'Not Found',
+        points: f.verificationChecks?.points || 0,
+        rulesCache: f.verificationChecks?.rulesCache || {}
+      };
     });
-  };
-
-  checkAndFetchVerification();
-}, [forms]); // ✅ Changed from [grouped] to [forms] - only fetch once on page load
+    
+    setGlobalVerifyMap(vMap);
+  }, [forms]); // ✅ Generates instantly when forms load
 
 // ✅ SYNC POINTS TO BACKEND: Runs when globalVerifyMap + grouped data are both ready
 // Uses the EXACT same points calculation as EmployeeGroup component
@@ -3520,8 +3444,7 @@ useEffect(() => {
         // EXACT same logic as EmployeeGroup autoPoints calculation
         let autoPoints = 0;
         empForms.forEach(form => {
-          const product = (form.formFillingFor || form.tideProduct || form.brand || '').toLowerCase().trim();
-          const vKey = product ? `${form.customerNumber}__${product}` : form.customerNumber;
+          const vKey = getFormKey(form);
           const status = globalVerifyMap[vKey]?.status;
           if (status === 'Fully Verified') {
             
