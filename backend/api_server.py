@@ -8,7 +8,6 @@ import threading
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 import subprocess
-import threading
 import os
 from dotenv import load_dotenv
 load_dotenv()

@@ -11,6 +11,7 @@ import AttendanceManagement from './pages/AttendanceManagement';
 import SalarySlips from './pages/SalarySlips';
 import PointsConfiguration from './pages/PointsConfiguration';
 import FormBuilder from './pages/FormBuilder';
+import { subscribeUserToPush } from './pushSubscriptionHelper';
 
 import { ThemeProvider, createTheme, useTheme } from "@mui/material/styles";
 import useMediaQuery from "@mui/material/useMediaQuery";
@@ -606,6 +607,16 @@ function App() {
     setPagesLoaded({});
     setUser(null);
   };
+
+  // Subscribe to push notifications when user is logged in
+  useEffect(() => {
+    if (user) {
+      const token = localStorage.getItem('token') || localStorage.getItem('emp_token');
+      if (token) {
+        subscribeUserToPush(EMP_BASE, token);
+      }
+    }
+  }, [user]);
 
   const theme = createTheme({
     palette: {
