@@ -164,9 +164,15 @@ function flattenForm(f, empMap = {}, tlMap = {}, managerMap = {}, verifyMap = {}
   }
   
   const product = f.formFillingFor || f.tideProduct || f.brand || (f.attemptedProducts || []).join(', ');
-  const vKey = (f.formFillingFor || f.tideProduct || f.brand || '')
-    ? `${f.customerNumber}__${(f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim()}`
-    : f.customerNumber;
+  
+  const mDate = f.createdAt ? new Date(f.createdAt) : null;
+  const month = (mDate && !isNaN(mDate.getTime())) 
+    ? `${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][mDate.getMonth()]} ${mDate.getFullYear()}`
+    : '';
+
+  const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+  const vKey = p ? `${f.customerNumber}__${p}__${month}` : `${f.customerNumber}__${month}`;
+  
   const verification = verifyMap[vKey]?.status || 'Not Found';
   
   // Calculate points for this form
@@ -319,9 +325,12 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
     
     // Only count fully verified forms
     const product = f.formFillingFor || f.tideProduct || f.brand || 'Other';
-    const vKey = product
-      ? `${f.customerNumber}__${product.toLowerCase().trim()}`
-      : f.customerNumber;
+    const mDate = f.createdAt ? new Date(f.createdAt) : null;
+    const month = (mDate && !isNaN(mDate.getTime())) 
+      ? `${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][mDate.getMonth()]} ${mDate.getFullYear()}`
+      : '';
+    const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+    const vKey = p ? `${f.customerNumber}__${p}__${month}` : `${f.customerNumber}__${month}`;
     const verification = verifyMap[vKey]?.status || 'Not Found';
     
     if (verification === 'Fully Verified') {
@@ -494,7 +503,12 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
     }
     
     const product = f.formFillingFor || f.tideProduct || f.brand || 'Other';
-    const vKey = product ? `${f.customerNumber}__${product.toLowerCase().trim()}` : f.customerNumber;
+    const mDate = f.createdAt ? new Date(f.createdAt) : null;
+    const month = (mDate && !isNaN(mDate.getTime())) 
+      ? `${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][mDate.getMonth()]} ${mDate.getFullYear()}`
+      : '';
+    const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+    const vKey = p ? `${f.customerNumber}__${p}__${month}` : `${f.customerNumber}__${month}`;
     const verification = verifyMap[vKey] || {};
     
     // 🔥 NEW: Determine designation based on formType
@@ -521,21 +535,17 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
       'In Google Sheet': verification.inSheet ? 'YES' : 'NO',
     };
     
-    // Add actual field values from Google Sheet using exact field names
+    // Add actual field values and pass/fail status for each verification rule
     if (verification.checks && Array.isArray(verification.checks)) {
       verification.checks.forEach(check => {
-        // Use the exact field name from the verification rule
-        const fieldName = check.field || check.rule || check.name || 'unknown_field';
+        // Use the descriptive label if available, fallback to field name
+        const label = check.label || check.field || check.rule || check.name || 'Check';
         
-        // Add the actual value from Google Sheet with exact field name
-        if (check.sheetValue !== undefined && check.sheetValue !== null) {
-          row[fieldName] = check.sheetValue;
-        } else {
-          row[fieldName] = ''; // Empty if not found in sheet
-        }
+        // Add the actual value extracted
+        row[label] = check.actual !== undefined ? check.actual : (check.sheetValue || '');
         
-        // ❌ REMOVED: Status columns (no longer needed)
-        // row[`${fieldName}_status`] = check.passed ? 'PASS' : 'FAIL';
+        // Add the pass/fail status column
+        row[`${label} Status`] = check.pass ? 'PASS' : 'FAIL';
       });
     }
     
@@ -697,6 +707,7 @@ const PRODUCT_COLORS = {
 };
 
 function ProductChip({ product, form, verifyData }) {
+  console.log("PRODUCT CHIP RENDER:", product, verifyData?.points, window.dynamicPointsMap?.[product.toLowerCase().trim()]);
   // 🔥 GENERIC: Use window.dynamicPointsMap (loaded from Points Config API) to determine bracket
   // Works automatically for ANY product added to Points Configuration — no hardcoding needed
   let subType = '';
@@ -3530,7 +3541,10 @@ export default function MerchantForms({ onReady }) {
       vMap[vKey] = {
         status: f.verificationStatus || 'Not Found',
         points: f.verificationChecks?.points || 0,
-        rulesCache: f.verificationChecks?.rulesCache || {}
+        rulesCache: f.verificationChecks?.rulesCache || {},
+        checks: f.verificationChecks?.checks || [],
+        phoneMatch: f.verificationChecks?.phoneMatch || false,
+        inSheet: f.verificationChecks?.matched || f.verificationChecks?.inSheet || false
       };
     });
     

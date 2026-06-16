@@ -461,16 +461,20 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
     // No cache - fetch from API
     console.log('📡 [TLOverview] Fetching fresh verification data from API...');
     const getP = (f) => (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
-    const BATCH = 50;
+    const BATCH = 1000;
     const batches = [];
     for (let i = 0; i < allForms.length; i += BATCH) batches.push(allForms.slice(i, i + BATCH));
     Promise.all(batches.map(batch => {
-      const phones   = batch.map(f => f.customerNumber).join(',');
-      const names    = batch.map(f => encodeURIComponent(f.customerName || '')).join(',');
-      const products = batch.map(f => encodeURIComponent(getP(f))).join(',');
-      const months   = batch.map(f => encodeURIComponent(new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }))).join(',');
-      return fetch(`${EMP_API}/verify/bulk-admin?phones=${encodeURIComponent(phones)}&names=${names}&products=${products}&months=${months}`)
-        .then(r => r.ok ? r.json() : {}).catch(() => ({}));
+      const phones   = batch.map(f => f.customerNumber);
+      const names    = batch.map(f => f.customerName || '');
+      const products = batch.map(f => getP(f));
+      const months   = batch.map(f => new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }));
+      
+      return fetch(`${EMP_API}/verify/bulk-admin`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phones, names, products, months })
+      }).then(r => r.ok ? r.json() : {}).catch(() => ({}));
     })).then(results => {
       const merged = Object.assign({}, ...results);
       setGlobalVerifyMap(merged);

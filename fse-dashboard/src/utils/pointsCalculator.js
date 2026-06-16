@@ -35,7 +35,7 @@ export async function fetchPointsConfig() {
     const pointsMap = {};
     
     data.configs.forEach(config => {
-      const productKey = config.productName.toLowerCase();
+      const productKey = config.productName.toLowerCase().trim();
       
       const configData = {
         type: config.productType,
