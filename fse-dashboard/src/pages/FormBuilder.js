@@ -4,12 +4,13 @@ import { Box, Typography, Button } from '@mui/material';
 const EMP_API = process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api';
 
 export default function FormBuilder({ onReady }) {
-  const token = localStorage.getItem('token');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [config, setConfig] = useState({ brands: [] });
+  const [showTokenForm, setShowTokenForm] = useState(false);
+  const [tokenInput, setTokenInput] = useState('');
   
   useEffect(() => {
     fetchConfig();
@@ -35,11 +36,17 @@ export default function FormBuilder({ onReady }) {
     }
   };
   
-  const handleSave = async () => {
+  const handleSave = async (suppliedToken = null) => {
     try {
       setSaving(true);
       setError('');
       setSuccess('');
+      
+      const activeToken = suppliedToken || localStorage.getItem('token') || localStorage.getItem('emp_token');
+      if (!activeToken) {
+        setShowTokenForm(true);
+        throw new Error('Authentication token is required to save. Please enter a valid Employee App JWT token below.');
+      }
       
       // deeply clone config.brands and process options before saving
       const payloadBrands = JSON.parse(JSON.stringify(config.brands));
@@ -62,13 +69,19 @@ export default function FormBuilder({ onReady }) {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${activeToken}`
         },
         body: JSON.stringify({ brands: payloadBrands })
       });
       
+      if (res.status === 401) {
+        setShowTokenForm(true);
+        throw new Error('Unauthorized: Your token is invalid or expired. Please paste a new token below.');
+      }
+      
       if (!res.ok) throw new Error('Failed to save configuration');
       setSuccess('Form configuration saved successfully! It will instantly update across Employee, TL, and Manager apps.');
+      setShowTokenForm(false);
       setTimeout(() => setSuccess(''), 5000);
     } catch (err) {
       setError(err.message);
@@ -233,6 +246,41 @@ export default function FormBuilder({ onReady }) {
       </Box>
       
       {error && <Box sx={{ bgcolor: '#fef2f2', color: '#b91c1c', p: 1.5, borderRadius: 2, mb: 3, border: '1px solid #fca5a5' }}>{error}</Box>}
+      
+      {showTokenForm && (
+        <Box sx={{ bgcolor: '#fffbeb', color: '#b45309', p: 2, borderRadius: 2, mb: 3, border: '1px solid #fde68a' }}>
+          <Typography variant="subtitle2" fontWeight={700} sx={{ mb: 1, color: '#92400e' }}>
+            🔑 Employee App JWT Token Required
+          </Typography>
+          <Typography variant="body2" sx={{ mb: 2, fontSize: 13, color: '#b45309' }}>
+            Please paste the JWT token from your Employee App to authorize saving. Go to your Employee App (e.g. localhost:4000), open Developer Tools (F12) &rarr; Application &rarr; Local Storage &rarr; copy the <code>token</code> value and paste it below.
+          </Typography>
+          <Box sx={{ display: "flex", gap: 1 }}>
+            <input 
+              type="password" 
+              placeholder="Paste token here..." 
+              value={tokenInput} 
+              onChange={e => setTokenInput(e.target.value)}
+              style={{ flex: 1, padding: '8px 12px', borderRadius: 4, border: '1px solid #cbd5e1', fontSize: 13, background: '#fff', color: '#000' }} 
+            />
+            <Button 
+              variant="contained" 
+              onClick={() => {
+                if (tokenInput.trim()) {
+                  localStorage.setItem("emp_token", tokenInput.trim());
+                  setShowTokenForm(false);
+                  setError('');
+                  handleSave(tokenInput.trim());
+                }
+              }} 
+              sx={{ bgcolor: 'var(--primary, #1a4731)', fontWeight: 700 }}
+            >
+              Apply Token & Save
+            </Button>
+          </Box>
+        </Box>
+      )}
+      
       {success && <Box sx={{ bgcolor: '#f0fdf4', color: '#15803d', p: 1.5, borderRadius: 2, mb: 3, border: '1px solid #86efac' }}>{success}</Box>}
       
       {loading ? (
