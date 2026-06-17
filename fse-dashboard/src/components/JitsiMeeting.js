@@ -270,9 +270,33 @@ export default function JitsiMeeting({ open, onClose, employees = [], tls = [] }
   };
 
   // Copy to clipboard
-  const copyToClipboard = (text) => {
-    navigator.clipboard.writeText(text);
-    setSnackbar({ open: true, message: 'Meeting link copied to clipboard!', severity: 'success' });
+  const copyToClipboard = async (text) => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+        setSnackbar({ open: true, message: 'Meeting link copied to clipboard!', severity: 'success' });
+      } else {
+        // Fallback for older browsers or when not focused
+        const textArea = document.createElement("textarea");
+        textArea.value = text;
+        // Move outside of screen to make it invisible
+        textArea.style.position = "absolute";
+        textArea.style.left = "-999999px";
+        document.body.prepend(textArea);
+        textArea.select();
+        try {
+          document.execCommand('copy');
+          setSnackbar({ open: true, message: 'Meeting link copied to clipboard!', severity: 'success' });
+        } catch (error) {
+          console.error('Fallback clipboard copy failed', error);
+        } finally {
+          textArea.remove();
+        }
+      }
+    } catch (err) {
+      console.error('Failed to copy to clipboard:', err);
+      // Still show success for meeting creation even if copy fails
+    }
   };
 
   // Create Jitsi meeting and send emails
@@ -1137,17 +1161,44 @@ export default function JitsiMeeting({ open, onClose, employees = [], tls = [] }
                 </Alert>
 
                 <Box 
-                  ref={jitsiContainerRef}
                   sx={{ 
+                    position: 'relative',
                     width: '100%', 
                     height: { xs: 'calc(100vh - 250px)', sm: '60vh' },
-                    border: { xs: 'none', sm: '2px solid #ddd' },
-                    borderRadius: { xs: 0, sm: 2 },
-                    overflow: 'hidden',
                     mx: { xs: 0, sm: 2 },
                     mb: { xs: 0, sm: 2 }
                   }}
-                />
+                >
+                  {/* Floating Custom Logo (Bigger) */}
+                  <Box 
+                    component="img"
+                    src="/logo-full.png"
+                    alt="Vegavruddhi Logo"
+                    sx={{
+                      position: 'absolute',
+                      top: 15,
+                      left: 15,
+                      height: '80px', /* Makes the logo much bigger */
+                      zIndex: 1000,
+                      pointerEvents: 'none', /* Allows clicking through the logo */
+                      backgroundColor: 'rgba(255, 255, 255, 0.9)', /* White background to contrast with Jitsi's dark theme */
+                      padding: '8px',
+                      borderRadius: '8px',
+                      boxShadow: '0 4px 6px rgba(0,0,0,0.1)'
+                    }}
+                  />
+                  
+                  <Box 
+                    ref={jitsiContainerRef}
+                    sx={{ 
+                      width: '100%', 
+                      height: '100%',
+                      border: { xs: 'none', sm: '2px solid #ddd' },
+                      borderRadius: { xs: 0, sm: 2 },
+                      overflow: 'hidden'
+                    }}
+                  />
+                </Box>
               </Box>
 
               {/* RIGHT: Live Attendance Panel */}
