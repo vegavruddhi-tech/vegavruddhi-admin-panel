@@ -21,18 +21,44 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
-// Fetch event - serve from cache, fallback to network
+// Fetch event - Network first for navigation (HTML), cache fallback
 self.addEventListener('fetch', (event) => {
+  // Use Network-First strategy for HTML navigation requests to ensure users get the latest updates
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          return caches.open(CACHE_NAME).then((cache) => {
+            cache.put(event.request, response.clone());
+            return response;
+          });
+        })
+        .catch(() => {
+          return caches.match(event.request).then((response) => {
+            if (response) return response;
+            return caches.match('/index.html');
+          });
+        })
+    );
+    return;
+  }
+
+  // Stale-while-revalidate for everything else
   event.respondWith(
     caches.match(event.request)
       .then((response) => {
-        if (response) {
-          return response;
-        }
-        return fetch(event.request);
-      })
-      .catch(() => {
-        return caches.match('/index.html');
+        const fetchPromise = fetch(event.request).then((networkResponse) => {
+          if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+            caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, networkResponse.clone());
+            });
+          }
+          return networkResponse;
+        }).catch((err) => {
+          console.log('[Service Worker] Fetch failed, returning cache if available', err);
+        });
+        
+        return response || fetchPromise;
       })
   );
 });
