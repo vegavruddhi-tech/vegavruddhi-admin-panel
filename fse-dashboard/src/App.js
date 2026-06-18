@@ -12,6 +12,7 @@ import SalarySlips from './pages/SalarySlips';
 import PointsConfiguration from './pages/PointsConfiguration';
 import FormBuilder from './pages/FormBuilder';
 import { subscribeUserToPush } from './pushSubscriptionHelper';
+import PullToRefresh from './components/PullToRefresh';
 
 import { ThemeProvider, createTheme, useTheme } from "@mui/material/styles";
 import useMediaQuery from "@mui/material/useMediaQuery";
@@ -680,86 +681,88 @@ function App() {
   });
 
   return (
-    <ThemeProvider theme={theme}>
-      <CssBaseline />
+    <PullToRefresh onRefresh={() => window.location.reload(true)}>
+      <ThemeProvider theme={theme}>
+        <CssBaseline />
 
-      {/* ── SPLASH SCREEN ─────────────────────────────────────── */}
-      <style>{`
-        @keyframes splashLogoIn {
-          0%   { opacity: 0; transform: scale(0.7); }
-          60%  { opacity: 1; transform: scale(1.08); }
-          100% { opacity: 1; transform: scale(1); }
-        }
-        @keyframes splashBar {
-          0%   { width: 0%; margin-left: 0%; }
-          50%  { width: 60%; margin-left: 20%; }
-          100% { width: 0%; margin-left: 100%; }
-        }
-      `}</style>
-      {splash && (
-        <Box sx={{
-          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99999,
-          bgcolor: '#071a0f',
-          display: 'flex', flexDirection: 'column',
-          alignItems: 'center', justifyContent: 'center', gap: 3,
-          overflow: 'hidden',
-        }}>
-          <Box sx={{ animation: 'splashLogoIn 0.8s ease forwards', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5 }}>
-            <Box component="img" src="/logo-full.png" alt="Vegavruddhi"
-              sx={{ width: 80, height: 80, objectFit: 'contain', filter: 'brightness(0) invert(1)' }} />
-            <Typography sx={{ color: '#fff', fontFamily: "'Georgia', serif", fontWeight: 700, fontSize: '1.4rem', letterSpacing: 3, textTransform: 'uppercase' }}>
-              Vegavruddhi
-            </Typography>
-            <Typography sx={{ color: BRAND.accent, fontSize: '0.65rem', letterSpacing: 4, textTransform: 'uppercase', fontWeight: 600 }}>
-              Admin Panel
-            </Typography>
+        {/* ── SPLASH SCREEN ─────────────────────────────────────── */}
+        <style>{`
+          @keyframes splashLogoIn {
+            0%   { opacity: 0; transform: scale(0.7); }
+            60%  { opacity: 1; transform: scale(1.08); }
+            100% { opacity: 1; transform: scale(1); }
+          }
+          @keyframes splashBar {
+            0%   { width: 0%; margin-left: 0%; }
+            50%  { width: 60%; margin-left: 20%; }
+            100% { width: 0%; margin-left: 100%; }
+          }
+        `}</style>
+        {splash && (
+          <Box sx={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99999,
+            bgcolor: '#071a0f',
+            display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', gap: 3,
+            overflow: 'hidden',
+          }}>
+            <Box sx={{ animation: 'splashLogoIn 0.8s ease forwards', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5 }}>
+              <Box component="img" src="/logo-full.png" alt="Vegavruddhi"
+                sx={{ width: 80, height: 80, objectFit: 'contain', filter: 'brightness(0) invert(1)' }} />
+              <Typography sx={{ color: '#fff', fontFamily: "'Georgia', serif", fontWeight: 700, fontSize: '1.4rem', letterSpacing: 3, textTransform: 'uppercase' }}>
+                Vegavruddhi
+              </Typography>
+              <Typography sx={{ color: BRAND.accent, fontSize: '0.65rem', letterSpacing: 4, textTransform: 'uppercase', fontWeight: 600 }}>
+                Admin Panel
+              </Typography>
+            </Box>
+            {/* Progress bar */}
+            <Box sx={{ width: 180, height: 3, bgcolor: 'rgba(255,255,255,0.1)', borderRadius: 10, overflow: 'hidden', mt: 1 }}>
+              <Box sx={{ height: '100%', bgcolor: BRAND.accent, borderRadius: 10, animation: 'splashBar 1.4s ease-in-out infinite' }} />
+            </Box>
           </Box>
-          {/* Progress bar */}
-          <Box sx={{ width: 180, height: 3, bgcolor: 'rgba(255,255,255,0.1)', borderRadius: 10, overflow: 'hidden', mt: 1 }}>
-            <Box sx={{ height: '100%', bgcolor: BRAND.accent, borderRadius: 10, animation: 'splashBar 1.4s ease-in-out infinite' }} />
-          </Box>
-        </Box>
-      )}
+        )}
 
-      {!user && <Login onLogin={handleLogin} />}
+        {!user && <Login onLogin={handleLogin} />}
 
-      {user && (
-        <>
-          <NavbarContent
-            page={page}
-            setPage={setPage}
-            pendingCount={pendingCount}
-            mode={mode}
-            setMode={setMode}
-            user={user}
-            handleLogout={handleLogout}
-          />
+        {user && (
+          <>
+            <NavbarContent
+              page={page}
+              setPage={setPage}
+              pendingCount={pendingCount}
+              mode={mode}
+              setMode={setMode}
+              user={user}
+              handleLogout={handleLogout}
+            />
 
-          {/* ── PAGE CONTENT ─────────────────────────────────────── */}
-          <Box
-            key={page}
-            className="page-enter"
-            sx={{
-              minHeight: "calc(100vh - 62px)",
-              bgcolor: "background.default",
-              transition: "background-color 0.3s",
-            }}
-          >
-            {page === "overview"       ? <Dashboard onReady={handleDataReady} /> :
-             page === "products"       ? <ProductDashboard onLoaded={handleDataReady} /> :
-             page === "merchants"      ? <MerchantForms onReady={handleDataReady} /> :
-             page === "verification"   ? <VerificationRules token={user?.token} onReady={handleDataReady} /> :
-             page === "approvals"      ? <EmployeeApprovals onReady={handleDataReady} /> :
-             page === "tl"             ? <TLOverview onLoaded={handleDataReady} /> :
-             page === "manager"        ? <ManagerOverview onReady={handleDataReady} /> :
-             page === "attendance"     ? <AttendanceManagement onReady={handleDataReady} /> :
-             page === "salary"         ? <SalarySlips onReady={handleDataReady} /> :
-             page === "points-config"  ? <PointsConfiguration onReady={handleDataReady} /> :
-             page === "form-builder"   ? <FormBuilder onReady={handleDataReady} /> : null}
-          </Box>
-        </>
-      )}
-    </ThemeProvider>
+            {/* ── PAGE CONTENT ─────────────────────────────────────── */}
+            <Box
+              key={page}
+              className="page-enter"
+              sx={{
+                minHeight: "calc(100vh - 62px)",
+                bgcolor: "background.default",
+                transition: "background-color 0.3s",
+              }}
+            >
+              {page === "overview"       ? <Dashboard onReady={handleDataReady} /> :
+               page === "products"       ? <ProductDashboard onLoaded={handleDataReady} /> :
+               page === "merchants"      ? <MerchantForms onReady={handleDataReady} /> :
+               page === "verification"   ? <VerificationRules token={user?.token} onReady={handleDataReady} /> :
+               page === "approvals"      ? <EmployeeApprovals onReady={handleDataReady} /> :
+               page === "tl"             ? <TLOverview onLoaded={handleDataReady} /> :
+               page === "manager"        ? <ManagerOverview onReady={handleDataReady} /> :
+               page === "attendance"     ? <AttendanceManagement onReady={handleDataReady} /> :
+               page === "salary"         ? <SalarySlips onReady={handleDataReady} /> :
+               page === "points-config"  ? <PointsConfiguration onReady={handleDataReady} /> :
+               page === "form-builder"   ? <FormBuilder onReady={handleDataReady} /> : null}
+            </Box>
+          </>
+        )}
+      </ThemeProvider>
+    </PullToRefresh>
   );
 }
 
