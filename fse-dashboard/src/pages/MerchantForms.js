@@ -2543,6 +2543,28 @@ export default function MerchantForms({ onReady }) {
   const [editPtsSaving,setEditPtsSaving]= useState(false);
   const [productSlabs, setProductSlabs] = useState({}); // {productName: {slabTiers:[{name,multiplier}], assignments:[{tierIdx,forms,reason}]}}
 
+  // 🔥 NEW: Sync Sheet State
+  const [syncingSheet, setSyncingSheet] = useState(false);
+  const [syncSnack, setSyncSnack] = useState({ open: false, message: '', severity: 'info' });
+
+  const handleSyncSheet = async () => {
+    setSyncingSheet(true);
+    setSyncSnack({ open: true, message: 'Syncing with Google Sheets...', severity: 'info' });
+    try {
+      const PYTHON_API = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000';
+      const res = await fetch(`${PYTHON_API}/cron/sync-sheets`);
+      if (!res.ok) throw new Error('Failed to sync sheet');
+      
+      setSyncSnack({ open: true, message: 'Sync Completed Successfully!', severity: 'success' });
+      // Reload the data so the new synced forms show up immediately
+      if (window.clearVvCache) window.clearVvCache();
+      load(true);
+    } catch (err) {
+      setSyncSnack({ open: true, message: `Sync failed: ${err.message}`, severity: 'error' });
+      setSyncingSheet(false);
+    }
+  };
+
   // ── Tier handlers ─────────────────────────────────────────────────────────
   const handleTierCommit = useCallback((product, idx, name, forms, multiplier, reason) => {
     setProductSlabs(prev => ({
@@ -3812,6 +3834,34 @@ useEffect(() => {
             )}
           </Button>
 
+          {/* Sync Sheet Button */}
+          <Button
+            variant="contained"
+            size="small"
+            disabled={syncingSheet}
+            onClick={handleSyncSheet}
+            sx={{ 
+              bgcolor: '#1976d2', 
+              fontWeight: 700, 
+              fontSize: { xs: '0.7rem', sm: '0.875rem' },
+              px: { xs: 1, sm: 2 },
+              minWidth: { xs: 'auto', sm: 'auto' },
+              '&:hover': { bgcolor: '#115293' }
+            }}
+          >
+            {syncingSheet ? (
+              <>
+                <CircularProgress size={14} sx={{ color: 'inherit', mr: { xs: 0, sm: 0.5 } }} />
+                <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>Syncing...</Box>
+              </>
+            ) : (
+              <>
+                <RefreshIcon sx={{ fontSize: { xs: 16, sm: 20 }, mr: { xs: 0, sm: 0.5 } }} />
+                <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>Sync Sheet</Box>
+              </>
+            )}
+          </Button>
+
           {/* REFRESH Button */}
           <IconButton 
             onClick={() => { if (window.clearVvCache) window.clearVvCache(); load(true); }} 
@@ -4969,6 +5019,27 @@ useEffect(() => {
         forms={forms}
         globalVerifyMap={globalVerifyMap}
       />
+      <Snackbar
+        open={syncSnack.open}
+        autoHideDuration={syncSnack.severity === 'info' ? null : 6000}
+        onClose={(e, reason) => {
+          if (reason !== 'clickaway') setSyncSnack({ ...syncSnack, open: false });
+          // If success, reset syncing status so the button can be clicked again
+          if (syncSnack.severity === 'success') {
+            setSyncingSheet(false);
+          }
+        }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert 
+          severity={syncSnack.severity} 
+          sx={{ width: '100%', alignItems: 'center' }}
+          icon={syncSnack.severity === 'info' ? <CircularProgress size={20} /> : undefined}
+        >
+          {syncSnack.message}
+        </Alert>
+      </Snackbar>
+
     </Box>
   );
 }
