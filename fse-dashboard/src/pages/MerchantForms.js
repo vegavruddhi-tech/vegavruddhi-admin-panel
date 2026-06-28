@@ -2790,117 +2790,60 @@ export default function MerchantForms({ onReady }) {
         setTls([]);
         setLoading(false);
         return;
-      } else if (roleFilter === 'ALL') {
-        // 🔥 NEW: Fetch both FSE and TL forms for ALL view with pagination
-        console.log('📡 Fetching both FSE and TL forms for ALL view (paginated)');
-        
-        // Helper function to load all pages for a role
-        const loadAllPages = async (role) => {
-          const PAGE_SIZE = 5000; // Fetch all lightweight forms in a single request // Load 500 records per request
-          let allForms = [];
-          let page = 1;
-          let hasMore = true;
+      } else {
+        // Helper function to load all pages for a role in parallel (blazing fast)
+        const loadAllPagesParallel = async (roleQuery) => {
+          const PAGE_SIZE = 2000;
+          const res = await fetch(`${EMP_API}/forms/admin/all?role=${roleQuery}&limit=${PAGE_SIZE}&page=1`);
+          if (!res.ok && res.status !== 304) throw new Error(`Failed to load ${roleQuery} forms`);
+          const data = await res.json();
+          let allForms = data.forms ? data.forms : (Array.isArray(data) ? data : []);
           
-          while (hasMore) {
-            const res = await fetch(`${EMP_API}/forms/admin/all?role=${role}&limit=${PAGE_SIZE}&page=${page}`);
-            if (!res.ok && res.status !== 304) throw new Error(`Failed to load ${role} forms`);
-            const data = await res.json();
-            
-            // Check if response is paginated (new format) or array (old format)
-            if (data.forms && data.pagination) {
-              // New paginated format
-              allForms = allForms.concat(data.forms);
-              hasMore = data.pagination.hasMore;
-              console.log(`📄 Loaded ${role} page ${page}/${data.pagination.pages} (${data.forms.length} records)`);
-            } else {
-              // Old format (array) - backward compatible
-              allForms = Array.isArray(data) ? data : [];
-              hasMore = false;
-              console.log(`📄 Loaded ${role} (old format, ${allForms.length} records)`);
+          if (data.pagination && data.pagination.pages > 1) {
+            const totalPages = data.pagination.pages;
+            const promises = [];
+            for (let p = 2; p <= totalPages; p++) {
+              promises.push(
+                fetch(`${EMP_API}/forms/admin/all?role=${roleQuery}&limit=${PAGE_SIZE}&page=${p}`)
+                  .then(r => r.json())
+                  .then(d => d.forms || [])
+              );
             }
-            page++;
+            const restPages = await Promise.all(promises);
+            restPages.forEach(pForms => { allForms = allForms.concat(pForms); });
           }
-          
           return allForms;
         };
-        
-        // Load all roles in parallel
-        const [fseData, tlData, mgrData] = await Promise.all([
-          loadAllPages('FSE'),
-          loadAllPages('TL'),
-          loadAllPages('MANAGER')
-        ]);
-        
-        // 🔥 Tag forms with formType for export
-        fseData.forEach(f => f.formType = 'FSE');
-        tlData.forEach(f => f.formType = 'TL');
-        mgrData.forEach(f => f.formType = 'Manager');
-        
-        // Combine and deduplicate by form ID
-        const formMap = new Map();
-        [...fseData, ...tlData, ...mgrData].forEach(form => {
-          if (!formMap.has(form._id)) {
-            formMap.set(form._id, form);
-          }
-        });
-        formsData = Array.from(formMap.values());
-        console.log(`✅ Loaded ${fseData.length} FSE + ${tlData.length} TL + ${mgrData.length} Manager = ${formsData.length} total forms`);
-      } else if (roleFilter === 'MANAGER') {
-        // 🔥 NEW: Paginated loading for Manager forms
-        console.log('📡 Fetching Manager forms (paginated)');
-        const PAGE_SIZE = 5000;
-        let page = 1;
-        let hasMore = true;
-        
-        while (hasMore) {
-          const apiUrl = `${EMP_API}/forms/admin/all?role=MANAGER&limit=${PAGE_SIZE}&page=${page}`;
-          const formsRes = await fetch(apiUrl);
-          if (!formsRes.ok && formsRes.status !== 304) throw new Error('Failed to load manager forms');
-          const data = await formsRes.json();
+
+        if (roleFilter === 'ALL') {
+          console.log('📡 Fetching FSE, TL, and Manager forms (parallel)');
+          const [fseData, tlData, mgrData] = await Promise.all([
+            loadAllPagesParallel('FSE'),
+            loadAllPagesParallel('TL'),
+            loadAllPagesParallel('MANAGER')
+          ]);
           
-          if (data.forms && data.pagination) {
-            formsData = formsData.concat(data.forms);
-            hasMore = data.pagination.hasMore;
-            console.log(`📄 Loaded Manager page ${page}/${data.pagination.pages} (${data.forms.length} records)`);
-          } else {
-            formsData = Array.isArray(data) ? data : [];
-            hasMore = false;
-            console.log(`📄 Loaded Manager (old format, ${formsData.length} records)`);
-          }
-          page++;
-        }
-        
-        // 🔥 Tag Manager forms
-        formsData.forEach(f => f.formType = 'Manager');
-        console.log(`✅ Loaded ${formsData.length} Manager forms`);
-      } else {
-        // 🔥 NEW: Paginated loading for FSE or TL only
-        console.log(`📡 Fetching ${roleFilter} forms (paginated)`);
-        const PAGE_SIZE = 5000;
-        let page = 1;
-        let hasMore = true;
-        
-        while (hasMore) {
-          const apiUrl = `${EMP_API}/forms/admin/all?role=${roleFilter}&limit=${PAGE_SIZE}&page=${page}`;
-          const formsRes = await fetch(apiUrl);
-          if (!formsRes.ok && formsRes.status !== 304) throw new Error('Failed to load merchant forms');
-          const data = await formsRes.json();
+          fseData.forEach(f => f.formType = 'FSE');
+          tlData.forEach(f => f.formType = 'TL');
+          mgrData.forEach(f => f.formType = 'Manager');
           
-          if (data.forms && data.pagination) {
-            formsData = formsData.concat(data.forms);
-            hasMore = data.pagination.hasMore;
-            console.log(`📄 Loaded ${roleFilter} page ${page}/${data.pagination.pages} (${data.forms.length} records)`);
-          } else {
-            formsData = Array.isArray(data) ? data : [];
-            hasMore = false;
-            console.log(`📄 Loaded ${roleFilter} (old format, ${formsData.length} records)`);
-          }
-          page++;
+          const formMap = new Map();
+          [...fseData, ...tlData, ...mgrData].forEach(form => {
+            if (!formMap.has(form._id)) formMap.set(form._id, form);
+          });
+          formsData = Array.from(formMap.values());
+          console.log(`✅ Loaded ${formsData.length} total forms in parallel`);
+        } else if (roleFilter === 'MANAGER') {
+          console.log('📡 Fetching Manager forms (parallel)');
+          const mgrForms = await loadAllPagesParallel('MANAGER');
+          mgrForms.forEach(f => f.formType = 'Manager');
+          formsData = mgrForms;
+        } else {
+          console.log(`📡 Fetching ${roleFilter} forms (parallel)`);
+          const roleForms = await loadAllPagesParallel(roleFilter);
+          roleForms.forEach(f => f.formType = roleFilter === 'TL' ? 'TL' : 'FSE');
+          formsData = roleForms;
         }
-        
-        // 🔥 Tag forms with formType
-        formsData.forEach(f => f.formType = roleFilter === 'TL' ? 'TL' : 'FSE');
-        console.log(`✅ Loaded ${formsData.length} ${roleFilter} forms`);
       }
       
       const [dupRes, ptsRes, empRes, tlRes] = await Promise.all([
