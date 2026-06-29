@@ -55,8 +55,12 @@ export default function Login({ onLogin }) {
       // Store auth in Tide BT localStorage
       const authData = JSON.stringify(pendingAuth);
       localStorage.setItem("vv_tidebt_auth", authData);
-      // Redirect to Tide BT Admin panel with auth data in URL
-      window.location.href = `http://localhost:3006?auth=${encodeURIComponent(authData)}`;
+      // Redirect to Tide BT Admin panel — uses env var, then auto-detects prod vs dev
+      const tidebtUrl = process.env.REACT_APP_TIDEBT_ADMIN_URL
+        || (window.location.hostname === 'localhost'
+            ? 'http://localhost:3006'
+            : 'https://vegavruddhi-admin-tide-bt-cyej.vercel.app');
+      window.location.href = `${tidebtUrl}?auth=${encodeURIComponent(authData)}`;
     }
   };
 
