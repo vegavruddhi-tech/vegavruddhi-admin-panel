@@ -819,7 +819,7 @@ function StatusChip({ status }) {
 }
 
 // ── Duplicate Alert Panel ─────────────────────────────────────
-function DuplicatePanel({ duplicates, open, onClose, onNotify, notifying, onSettle, settling }) {
+function DuplicatePanel({ duplicates, allForms = [], open, onClose, onNotify, notifying, onSettle, settling }) {
   const [tab, setTab]               = useState('active');
   const [settlements, setSettlements] = useState([]);
   const [loadingSett, setLoadingSett] = useState(false);
@@ -845,26 +845,34 @@ function DuplicatePanel({ duplicates, open, onClose, onNotify, notifying, onSett
     setEmployeeDrillDown({ employeeName, customerNumber, product, forms: [] });
     
     try {
-      // Fetch all forms (FSE, TL, Manager) and filter by employee and customer
-      const [fseRes, tlRes, mgrRes] = await Promise.all([
-        fetch(`${EMP_API}/forms/admin/all?role=FSE`),
-        fetch(`${EMP_API}/forms/admin/all?role=TL`),
-        fetch(`${EMP_API}/forms/admin/all?role=MANAGER`)
-      ]);
+      // 1. Check in-memory dashboard forms first (instant speed & 0 network calls)
+      let formsList = Array.isArray(allForms) ? allForms : [];
       
-      const [fseForms, tlForms, mgrForms] = await Promise.all([
-        fseRes.ok ? fseRes.json() : [],
-        tlRes.ok ? tlRes.json() : [],
-        mgrRes.ok ? mgrRes.json() : []
-      ]);
-      
-      const allForms = [...fseForms, ...tlForms, ...mgrForms];
+      // 2. If memory forms empty, fetch lightweight paginated batch
+      if (formsList.length === 0) {
+        const [fseRes, tlRes, mgrRes] = await Promise.all([
+          fetch(`${EMP_API}/forms/admin/all?role=FSE&limit=2000&page=1`),
+          fetch(`${EMP_API}/forms/admin/all?role=TL&limit=2000&page=1`),
+          fetch(`${EMP_API}/forms/admin/all?role=MANAGER&limit=2000&page=1`)
+        ]);
+        
+        const [fseData, tlData, mgrData] = await Promise.all([
+          fseRes.ok ? fseRes.json() : {},
+          tlRes.ok ? tlRes.json() : {},
+          mgrRes.ok ? mgrRes.json() : {}
+        ]);
+        
+        const fseForms = fseData.forms || (Array.isArray(fseData) ? fseData : []);
+        const tlForms = tlData.forms || (Array.isArray(tlData) ? tlData : []);
+        const mgrForms = mgrData.forms || (Array.isArray(mgrData) ? mgrData : []);
+        formsList = [...fseForms, ...tlForms, ...mgrForms];
+      }
       
       // Filter forms by employee name and customer number
-      const employeeForms = allForms.filter(f => 
+      const employeeForms = formsList.filter(f => 
         f.employeeName === employeeName && 
         f.customerNumber === customerNumber &&
-        (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim() === product.toLowerCase().trim()
+        (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim() === (product || '').toLowerCase().trim()
       );
       
       // Sort by date (newest first)
@@ -2543,6 +2551,28 @@ export default function MerchantForms({ onReady }) {
   const [editPtsSaving,setEditPtsSaving]= useState(false);
   const [productSlabs, setProductSlabs] = useState({}); // {productName: {slabTiers:[{name,multiplier}], assignments:[{tierIdx,forms,reason}]}}
 
+  // 🔥 NEW: Sync Sheet State
+  const [syncingSheet, setSyncingSheet] = useState(false);
+  const [syncSnack, setSyncSnack] = useState({ open: false, message: '', severity: 'info' });
+
+  const handleSyncSheet = async () => {
+    setSyncingSheet(true);
+    setSyncSnack({ open: true, message: 'Syncing with Google Sheets...', severity: 'info' });
+    try {
+      const PYTHON_API = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000';
+      const res = await fetch(`${PYTHON_API}/cron/sync-sheets`);
+      if (!res.ok) throw new Error('Failed to sync sheet');
+      
+      setSyncSnack({ open: true, message: 'Sync Completed Successfully!', severity: 'success' });
+      // Reload the data so the new synced forms show up immediately
+      if (window.clearVvCache) window.clearVvCache();
+      load(true);
+    } catch (err) {
+      setSyncSnack({ open: true, message: `Sync failed: ${err.message}`, severity: 'error' });
+      setSyncingSheet(false);
+    }
+  };
+
   // ── Tier handlers ─────────────────────────────────────────────────────────
   const handleTierCommit = useCallback((product, idx, name, forms, multiplier, reason) => {
     setProductSlabs(prev => ({
@@ -2768,117 +2798,60 @@ export default function MerchantForms({ onReady }) {
         setTls([]);
         setLoading(false);
         return;
-      } else if (roleFilter === 'ALL') {
-        // 🔥 NEW: Fetch both FSE and TL forms for ALL view with pagination
-        console.log('📡 Fetching both FSE and TL forms for ALL view (paginated)');
-        
-        // Helper function to load all pages for a role
-        const loadAllPages = async (role) => {
-          const PAGE_SIZE = 5000; // Fetch all lightweight forms in a single request // Load 500 records per request
-          let allForms = [];
-          let page = 1;
-          let hasMore = true;
+      } else {
+        // Helper function to load all pages for a role in parallel (blazing fast)
+        const loadAllPagesParallel = async (roleQuery) => {
+          const PAGE_SIZE = 2000;
+          const res = await fetch(`${EMP_API}/forms/admin/all?role=${roleQuery}&limit=${PAGE_SIZE}&page=1`);
+          if (!res.ok && res.status !== 304) throw new Error(`Failed to load ${roleQuery} forms`);
+          const data = await res.json();
+          let allForms = data.forms ? data.forms : (Array.isArray(data) ? data : []);
           
-          while (hasMore) {
-            const res = await fetch(`${EMP_API}/forms/admin/all?role=${role}&limit=${PAGE_SIZE}&page=${page}`);
-            if (!res.ok && res.status !== 304) throw new Error(`Failed to load ${role} forms`);
-            const data = await res.json();
-            
-            // Check if response is paginated (new format) or array (old format)
-            if (data.forms && data.pagination) {
-              // New paginated format
-              allForms = allForms.concat(data.forms);
-              hasMore = data.pagination.hasMore;
-              console.log(`📄 Loaded ${role} page ${page}/${data.pagination.pages} (${data.forms.length} records)`);
-            } else {
-              // Old format (array) - backward compatible
-              allForms = Array.isArray(data) ? data : [];
-              hasMore = false;
-              console.log(`📄 Loaded ${role} (old format, ${allForms.length} records)`);
+          if (data.pagination && data.pagination.pages > 1) {
+            const totalPages = data.pagination.pages;
+            const promises = [];
+            for (let p = 2; p <= totalPages; p++) {
+              promises.push(
+                fetch(`${EMP_API}/forms/admin/all?role=${roleQuery}&limit=${PAGE_SIZE}&page=${p}`)
+                  .then(r => r.json())
+                  .then(d => d.forms || [])
+              );
             }
-            page++;
+            const restPages = await Promise.all(promises);
+            restPages.forEach(pForms => { allForms = allForms.concat(pForms); });
           }
-          
           return allForms;
         };
-        
-        // Load all roles in parallel
-        const [fseData, tlData, mgrData] = await Promise.all([
-          loadAllPages('FSE'),
-          loadAllPages('TL'),
-          loadAllPages('MANAGER')
-        ]);
-        
-        // 🔥 Tag forms with formType for export
-        fseData.forEach(f => f.formType = 'FSE');
-        tlData.forEach(f => f.formType = 'TL');
-        mgrData.forEach(f => f.formType = 'Manager');
-        
-        // Combine and deduplicate by form ID
-        const formMap = new Map();
-        [...fseData, ...tlData, ...mgrData].forEach(form => {
-          if (!formMap.has(form._id)) {
-            formMap.set(form._id, form);
-          }
-        });
-        formsData = Array.from(formMap.values());
-        console.log(`✅ Loaded ${fseData.length} FSE + ${tlData.length} TL + ${mgrData.length} Manager = ${formsData.length} total forms`);
-      } else if (roleFilter === 'MANAGER') {
-        // 🔥 NEW: Paginated loading for Manager forms
-        console.log('📡 Fetching Manager forms (paginated)');
-        const PAGE_SIZE = 5000;
-        let page = 1;
-        let hasMore = true;
-        
-        while (hasMore) {
-          const apiUrl = `${EMP_API}/forms/admin/all?role=MANAGER&limit=${PAGE_SIZE}&page=${page}`;
-          const formsRes = await fetch(apiUrl);
-          if (!formsRes.ok && formsRes.status !== 304) throw new Error('Failed to load manager forms');
-          const data = await formsRes.json();
+
+        if (roleFilter === 'ALL') {
+          console.log('📡 Fetching FSE, TL, and Manager forms (parallel)');
+          const [fseData, tlData, mgrData] = await Promise.all([
+            loadAllPagesParallel('FSE'),
+            loadAllPagesParallel('TL'),
+            loadAllPagesParallel('MANAGER')
+          ]);
           
-          if (data.forms && data.pagination) {
-            formsData = formsData.concat(data.forms);
-            hasMore = data.pagination.hasMore;
-            console.log(`📄 Loaded Manager page ${page}/${data.pagination.pages} (${data.forms.length} records)`);
-          } else {
-            formsData = Array.isArray(data) ? data : [];
-            hasMore = false;
-            console.log(`📄 Loaded Manager (old format, ${formsData.length} records)`);
-          }
-          page++;
-        }
-        
-        // 🔥 Tag Manager forms
-        formsData.forEach(f => f.formType = 'Manager');
-        console.log(`✅ Loaded ${formsData.length} Manager forms`);
-      } else {
-        // 🔥 NEW: Paginated loading for FSE or TL only
-        console.log(`📡 Fetching ${roleFilter} forms (paginated)`);
-        const PAGE_SIZE = 5000;
-        let page = 1;
-        let hasMore = true;
-        
-        while (hasMore) {
-          const apiUrl = `${EMP_API}/forms/admin/all?role=${roleFilter}&limit=${PAGE_SIZE}&page=${page}`;
-          const formsRes = await fetch(apiUrl);
-          if (!formsRes.ok && formsRes.status !== 304) throw new Error('Failed to load merchant forms');
-          const data = await formsRes.json();
+          fseData.forEach(f => f.formType = 'FSE');
+          tlData.forEach(f => f.formType = 'TL');
+          mgrData.forEach(f => f.formType = 'Manager');
           
-          if (data.forms && data.pagination) {
-            formsData = formsData.concat(data.forms);
-            hasMore = data.pagination.hasMore;
-            console.log(`📄 Loaded ${roleFilter} page ${page}/${data.pagination.pages} (${data.forms.length} records)`);
-          } else {
-            formsData = Array.isArray(data) ? data : [];
-            hasMore = false;
-            console.log(`📄 Loaded ${roleFilter} (old format, ${formsData.length} records)`);
-          }
-          page++;
+          const formMap = new Map();
+          [...fseData, ...tlData, ...mgrData].forEach(form => {
+            if (!formMap.has(form._id)) formMap.set(form._id, form);
+          });
+          formsData = Array.from(formMap.values());
+          console.log(`✅ Loaded ${formsData.length} total forms in parallel`);
+        } else if (roleFilter === 'MANAGER') {
+          console.log('📡 Fetching Manager forms (parallel)');
+          const mgrForms = await loadAllPagesParallel('MANAGER');
+          mgrForms.forEach(f => f.formType = 'Manager');
+          formsData = mgrForms;
+        } else {
+          console.log(`📡 Fetching ${roleFilter} forms (parallel)`);
+          const roleForms = await loadAllPagesParallel(roleFilter);
+          roleForms.forEach(f => f.formType = roleFilter === 'TL' ? 'TL' : 'FSE');
+          formsData = roleForms;
         }
-        
-        // 🔥 Tag forms with formType
-        formsData.forEach(f => f.formType = roleFilter === 'TL' ? 'TL' : 'FSE');
-        console.log(`✅ Loaded ${formsData.length} ${roleFilter} forms`);
       }
       
       const [dupRes, ptsRes, empRes, tlRes] = await Promise.all([
@@ -3812,6 +3785,34 @@ useEffect(() => {
             )}
           </Button>
 
+          {/* Sync Sheet Button */}
+          <Button
+            variant="contained"
+            size="small"
+            disabled={syncingSheet}
+            onClick={handleSyncSheet}
+            sx={{ 
+              bgcolor: '#1976d2', 
+              fontWeight: 700, 
+              fontSize: { xs: '0.7rem', sm: '0.875rem' },
+              px: { xs: 1, sm: 2 },
+              minWidth: { xs: 'auto', sm: 'auto' },
+              '&:hover': { bgcolor: '#115293' }
+            }}
+          >
+            {syncingSheet ? (
+              <>
+                <CircularProgress size={14} sx={{ color: 'inherit', mr: { xs: 0, sm: 0.5 } }} />
+                <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>Syncing...</Box>
+              </>
+            ) : (
+              <>
+                <RefreshIcon sx={{ fontSize: { xs: 16, sm: 20 }, mr: { xs: 0, sm: 0.5 } }} />
+                <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>Sync Sheet</Box>
+              </>
+            )}
+          </Button>
+
           {/* REFRESH Button */}
           <IconButton 
             onClick={() => { if (window.clearVvCache) window.clearVvCache(); load(true); }} 
@@ -4406,7 +4407,7 @@ useEffect(() => {
         </>
       )}
 
-      <DuplicatePanel duplicates={duplicates} open={dupOpen} onClose={() => setDupOpen(false)}
+      <DuplicatePanel duplicates={duplicates} allForms={forms} open={dupOpen} onClose={() => setDupOpen(false)}
         onNotify={handleNotify} notifying={notifying}
         onSettle={handleSettle} settling={settling} />
 
@@ -4969,6 +4970,27 @@ useEffect(() => {
         forms={forms}
         globalVerifyMap={globalVerifyMap}
       />
+      <Snackbar
+        open={syncSnack.open}
+        autoHideDuration={syncSnack.severity === 'info' ? null : 6000}
+        onClose={(e, reason) => {
+          if (reason !== 'clickaway') setSyncSnack({ ...syncSnack, open: false });
+          // If success, reset syncing status so the button can be clicked again
+          if (syncSnack.severity === 'success') {
+            setSyncingSheet(false);
+          }
+        }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert 
+          severity={syncSnack.severity} 
+          sx={{ width: '100%', alignItems: 'center' }}
+          icon={syncSnack.severity === 'info' ? <CircularProgress size={20} /> : undefined}
+        >
+          {syncSnack.message}
+        </Alert>
+      </Snackbar>
+
     </Box>
   );
 }
