@@ -819,7 +819,7 @@ function StatusChip({ status }) {
 }
 
 // ── Duplicate Alert Panel ─────────────────────────────────────
-function DuplicatePanel({ duplicates, open, onClose, onNotify, notifying, onSettle, settling }) {
+function DuplicatePanel({ duplicates, allForms = [], open, onClose, onNotify, notifying, onSettle, settling }) {
   const [tab, setTab]               = useState('active');
   const [settlements, setSettlements] = useState([]);
   const [loadingSett, setLoadingSett] = useState(false);
@@ -845,26 +845,34 @@ function DuplicatePanel({ duplicates, open, onClose, onNotify, notifying, onSett
     setEmployeeDrillDown({ employeeName, customerNumber, product, forms: [] });
     
     try {
-      // Fetch all forms (FSE, TL, Manager) and filter by employee and customer
-      const [fseRes, tlRes, mgrRes] = await Promise.all([
-        fetch(`${EMP_API}/forms/admin/all?role=FSE`),
-        fetch(`${EMP_API}/forms/admin/all?role=TL`),
-        fetch(`${EMP_API}/forms/admin/all?role=MANAGER`)
-      ]);
+      // 1. Check in-memory dashboard forms first (instant speed & 0 network calls)
+      let formsList = Array.isArray(allForms) ? allForms : [];
       
-      const [fseForms, tlForms, mgrForms] = await Promise.all([
-        fseRes.ok ? fseRes.json() : [],
-        tlRes.ok ? tlRes.json() : [],
-        mgrRes.ok ? mgrRes.json() : []
-      ]);
-      
-      const allForms = [...fseForms, ...tlForms, ...mgrForms];
+      // 2. If memory forms empty, fetch lightweight paginated batch
+      if (formsList.length === 0) {
+        const [fseRes, tlRes, mgrRes] = await Promise.all([
+          fetch(`${EMP_API}/forms/admin/all?role=FSE&limit=2000&page=1`),
+          fetch(`${EMP_API}/forms/admin/all?role=TL&limit=2000&page=1`),
+          fetch(`${EMP_API}/forms/admin/all?role=MANAGER&limit=2000&page=1`)
+        ]);
+        
+        const [fseData, tlData, mgrData] = await Promise.all([
+          fseRes.ok ? fseRes.json() : {},
+          tlRes.ok ? tlRes.json() : {},
+          mgrRes.ok ? mgrRes.json() : {}
+        ]);
+        
+        const fseForms = fseData.forms || (Array.isArray(fseData) ? fseData : []);
+        const tlForms = tlData.forms || (Array.isArray(tlData) ? tlData : []);
+        const mgrForms = mgrData.forms || (Array.isArray(mgrData) ? mgrData : []);
+        formsList = [...fseForms, ...tlForms, ...mgrForms];
+      }
       
       // Filter forms by employee name and customer number
-      const employeeForms = allForms.filter(f => 
+      const employeeForms = formsList.filter(f => 
         f.employeeName === employeeName && 
         f.customerNumber === customerNumber &&
-        (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim() === product.toLowerCase().trim()
+        (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim() === (product || '').toLowerCase().trim()
       );
       
       // Sort by date (newest first)
@@ -4399,7 +4407,7 @@ useEffect(() => {
         </>
       )}
 
-      <DuplicatePanel duplicates={duplicates} open={dupOpen} onClose={() => setDupOpen(false)}
+      <DuplicatePanel duplicates={duplicates} allForms={forms} open={dupOpen} onClose={() => setDupOpen(false)}
         onNotify={handleNotify} notifying={notifying}
         onSettle={handleSettle} settling={settling} />
 
