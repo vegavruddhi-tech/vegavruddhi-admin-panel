@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import Dashboard from "./pages/Dashboard";
 import ProductDashboard from "./pages/ProductDashboard";
 import Login from "./pages/Login";
@@ -563,9 +563,9 @@ function App() {
     return () => clearTimeout(fallback);
   }, []);
 
-  const handleDataReady = () => {
+  const handleDataReady = useCallback(() => {
     setDataReady(true);
-  };
+  }, []);
 
   const EMP_BASE = process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api';
 

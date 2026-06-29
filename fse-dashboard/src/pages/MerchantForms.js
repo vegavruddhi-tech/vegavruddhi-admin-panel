@@ -819,7 +819,7 @@ function StatusChip({ status }) {
 }
 
 // ── Duplicate Alert Panel ─────────────────────────────────────
-function DuplicatePanel({ duplicates, allForms = [], open, onClose, onNotify, notifying, onSettle, settling }) {
+function DuplicatePanel({ duplicates, allForms = [], open, onClose, onNotify, notifying, onSettle, settling, selectedMonth, selectedYear }) {
   const [tab, setTab]               = useState('active');
   const [settlements, setSettlements] = useState([]);
   const [loadingSett, setLoadingSett] = useState(false);
@@ -850,10 +850,12 @@ function DuplicatePanel({ duplicates, allForms = [], open, onClose, onNotify, no
       
       // 2. If memory forms empty, fetch lightweight paginated batch
       if (formsList.length === 0) {
+        const mP = selectedMonth ? `&month=${encodeURIComponent(selectedMonth)}` : '';
+        const yP = selectedYear ? `&year=${encodeURIComponent(selectedYear)}` : '';
         const [fseRes, tlRes, mgrRes] = await Promise.all([
-          fetch(`${EMP_API}/forms/admin/all?role=FSE&limit=2000&page=1`),
-          fetch(`${EMP_API}/forms/admin/all?role=TL&limit=2000&page=1`),
-          fetch(`${EMP_API}/forms/admin/all?role=MANAGER&limit=2000&page=1`)
+          fetch(`${EMP_API}/forms/admin/all?role=FSE&limit=5000&page=1${mP}${yP}`),
+          fetch(`${EMP_API}/forms/admin/all?role=TL&limit=5000&page=1${mP}${yP}`),
+          fetch(`${EMP_API}/forms/admin/all?role=MANAGER&limit=5000&page=1${mP}${yP}`)
         ]);
         
         const [fseData, tlData, mgrData] = await Promise.all([
@@ -2801,8 +2803,10 @@ export default function MerchantForms({ onReady }) {
       } else {
         // Helper function to load all pages for a role in parallel (blazing fast)
         const loadAllPagesParallel = async (roleQuery) => {
-          const PAGE_SIZE = 2000;
-          const res = await fetch(`${EMP_API}/forms/admin/all?role=${roleQuery}&limit=${PAGE_SIZE}&page=1`);
+          const PAGE_SIZE = 5000;
+          const monthParam = selectedMonth ? `&month=${encodeURIComponent(selectedMonth)}` : '';
+          const yearParam = selectedYear ? `&year=${encodeURIComponent(selectedYear)}` : '';
+          const res = await fetch(`${EMP_API}/forms/admin/all?role=${roleQuery}&limit=${PAGE_SIZE}&page=1${monthParam}${yearParam}`);
           if (!res.ok && res.status !== 304) throw new Error(`Failed to load ${roleQuery} forms`);
           const data = await res.json();
           let allForms = data.forms ? data.forms : (Array.isArray(data) ? data : []);
@@ -2812,7 +2816,7 @@ export default function MerchantForms({ onReady }) {
             const promises = [];
             for (let p = 2; p <= totalPages; p++) {
               promises.push(
-                fetch(`${EMP_API}/forms/admin/all?role=${roleQuery}&limit=${PAGE_SIZE}&page=${p}`)
+                fetch(`${EMP_API}/forms/admin/all?role=${roleQuery}&limit=${PAGE_SIZE}&page=${p}${monthParam}${yearParam}`)
                   .then(r => r.json())
                   .then(d => d.forms || [])
               );
@@ -2854,17 +2858,25 @@ export default function MerchantForms({ onReady }) {
         }
       }
       
-      const [dupRes, ptsRes, empRes, tlRes] = await Promise.all([
-        fetch(`${EMP_API}/forms/admin/duplicates`),
-        fetch(`${EMP_API}/forms/admin/employee-points`),
-        fetch(`${EMP_API}/auth/all-employees`),
-        fetch(`${EMP_API}/tl/approved-list`),
-      ]);
-      
-      const duplicatesData = dupRes.ok ? await dupRes.json() : [];
-      const empPointsData = ptsRes.ok ? await ptsRes.json() : [];
-      const employeesData = empRes.ok ? await empRes.json() : [];
-      const tlData = tlRes.ok ? await tlRes.json() : [];
+      let duplicatesData, empPointsData, employeesData, tlData;
+      if (!isForce && window.vv_meta_cache) {
+        duplicatesData = window.vv_meta_cache.duplicatesData;
+        empPointsData = window.vv_meta_cache.empPointsData;
+        employeesData = window.vv_meta_cache.employeesData;
+        tlData = window.vv_meta_cache.tlData;
+      } else {
+        const [dupRes, ptsRes, empRes, tlRes] = await Promise.all([
+          fetch(`${EMP_API}/forms/admin/duplicates`),
+          fetch(`${EMP_API}/forms/admin/employee-points`),
+          fetch(`${EMP_API}/auth/all-employees`),
+          fetch(`${EMP_API}/tl/approved-list`),
+        ]);
+        duplicatesData = dupRes.ok ? await dupRes.json() : [];
+        empPointsData = ptsRes.ok ? await ptsRes.json() : [];
+        employeesData = empRes.ok ? await empRes.json() : [];
+        tlData = tlRes.ok ? await tlRes.json() : [];
+        window.vv_meta_cache = { duplicatesData, empPointsData, employeesData, tlData };
+      }
 
       setForms(formsData);
       setDuplicates(duplicatesData);
@@ -4409,7 +4421,8 @@ useEffect(() => {
 
       <DuplicatePanel duplicates={duplicates} allForms={forms} open={dupOpen} onClose={() => setDupOpen(false)}
         onNotify={handleNotify} notifying={notifying}
-        onSettle={handleSettle} settling={settling} />
+        onSettle={handleSettle} settling={settling}
+        selectedMonth={selectedMonth} selectedYear={selectedYear} />
 
       {/* 🔥 NEW: Filled Late Panel */}
       <FilledLatePanel 
