@@ -352,40 +352,18 @@ const loadData = async (isForce = false) => {
 }, [forms, dateFilter, fromDate, toDate, filterMonth, filterTL, filterFSE, filterStatus, employees]);
 
 // Fetch global verification for all filtered forms (batched to avoid URL length limit)
-// Fetch verification for all forms once on page load (not on filter changes)
-// ✅ CACHED: Uses localStorage to cache verification data for the day (reduces API calls by 90%)
+// Fetch verification for all forms once on session load (in-memory cache across page navigation)
 useEffect(() => {
   if (!forms.length) { setGlobalVerifyMap({}); return; }
   
   const cache = window.vv_cache || {};
-  if (cache.dashboardVerify) {
-    setGlobalVerifyMap(cache.dashboardVerify);
+  if (cache.universalVerify || cache.dashboardVerify) {
+    setGlobalVerifyMap(cache.universalVerify || cache.dashboardVerify);
     if (onReady) onReady();
     return;
   }
 
-  // Generate cache key with today's date (auto-expires at midnight)
-  const today = new Date().toISOString().split('T')[0]; // "2026-05-01"
-  const cacheKey = `verification_cache_v${CACHE_VERSION}_dashboard_${today}`;
-
-  // Check if we have cached data for TODAY
-  try {
-    const cached = localStorage.getItem(cacheKey);
-    if (cached) {
-      // Use cached data (0 API calls)
-      const cachedData = JSON.parse(cached);
-      setGlobalVerifyMap(cachedData);
-      if (window.vv_cache) window.vv_cache.dashboardVerify = cachedData;
-      if (onReady) onReady();
-      console.log('✅ [Dashboard] Using cached verification data from localStorage');
-      return;
-    }
-  } catch (err) {
-    console.warn('[Dashboard] Failed to read verification cache:', err);
-    // Continue to fetch from API if cache read fails
-  }
-
-  // No cache - fetch from API
+  // No in-memory cache - fetch fresh from API
   console.log('📡 [Dashboard] Fetching fresh verification data from API...');
   const getP = (f) => (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
   const BATCH = 1000;
@@ -405,43 +383,25 @@ useEffect(() => {
   })).then(results => {
     const merged = Object.assign({}, ...results);
     setGlobalVerifyMap(merged);
-    if (window.vv_cache) window.vv_cache.dashboardVerify = merged;
+    if (!window.vv_cache) window.vv_cache = {};
+    window.vv_cache.universalVerify = merged;
     if (onReady) onReady();
-    
-    // Store in cache for today
-    try {
-      localStorage.setItem(cacheKey, JSON.stringify(merged));
-      console.log('✅ [Dashboard] Verification data cached in localStorage');
-    } catch (err) {
-      console.warn('[Dashboard] Failed to cache verification data:', err);
-      // Continue even if caching fails
-    }
   });
-}, [forms]); // Only run when forms data changes (page load/refresh)
+}, [forms]); // Only run when forms data changes
 
-// ✅ CLEANUP: Remove old verification cache entries (runs once on mount)
+// ✅ CLEANUP: Remove any legacy verification cache entries from localStorage
 useEffect(() => {
   try {
-    const today = new Date().toISOString().split('T')[0];
-    const currentCacheKey = `verification_cache_v${CACHE_VERSION}_dashboard_${today}`;
-    
-    // Find and remove old cache entries
     const keysToRemove = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
-      if (key && key.startsWith('verification_cache_dashboard_') && key !== currentCacheKey) {
+      if (key && key.startsWith('verification_cache_')) {
         keysToRemove.push(key);
       }
     }
-    
-    keysToRemove.forEach(key => {
-      localStorage.removeItem(key);
-      console.log(`🗑️ [Dashboard] Removed old cache: ${key}`);
-    });
-  } catch (err) {
-    console.warn('[Dashboard] Failed to cleanup old cache:', err);
-  }
-}, []); // Run once on mount
+    keysToRemove.forEach(key => localStorage.removeItem(key));
+  } catch (err) {}
+}, []);
 const monthOptions = useMemo(() => {
   const seen = new Set();
   forms.forEach(f => {

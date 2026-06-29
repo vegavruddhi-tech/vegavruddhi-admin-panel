@@ -800,67 +800,37 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
       setMongoTls(data.tls || []);
 
       // ── Auto-fetch verification for all forms in background ──────────
+      // ── Auto-fetch verification for all forms in background (in-memory cache) ──
       if (forms.length > 0) {
-        if (!isForce && cache.productVerify) {
-          setGlobalVerifyMap(cache.productVerify);
+        if (!isForce && (cache.universalVerify || cache.productVerify)) {
+          setGlobalVerifyMap(cache.universalVerify || cache.productVerify);
           return;
         }
 
-        // Generate cache key with today's date (auto-expires at midnight)
-        const today = new Date().toISOString().split('T')[0]; // "2026-05-01"
-        const cacheKey = `verification_cache_v${CACHE_VERSION}_productdashboard_${today}`;
-
-        // Check if we have cached data for TODAY
-        let usedCache = false;
+        // No in-memory cache - fetch fresh from API
+        console.log('📡 [ProductDashboard] Fetching fresh verification data from API...');
+        const getP = (f) => (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+        const BATCH = 1000;
+        const batches = [];
+        for (let i = 0; i < forms.length; i += BATCH) batches.push(forms.slice(i, i + BATCH));
         try {
-          const cached = localStorage.getItem(cacheKey);
-          if (cached) {
-            // Use cached data (0 API calls)
-            const cachedData = JSON.parse(cached);
-            setGlobalVerifyMap(cachedData);
-            if (window.vv_cache) window.vv_cache.productVerify = cachedData;
-            console.log('✅ [ProductDashboard] Using cached verification data from localStorage');
-            usedCache = true;
-          }
-        } catch (err) {
-          console.warn('[ProductDashboard] Failed to read verification cache:', err);
-          // Continue to fetch from API if cache read fails
-        }
-
-        // No cache - fetch from API
-        if (!usedCache) {
-          console.log('📡 [ProductDashboard] Fetching fresh verification data from API...');
-          const getP = (f) => (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
-          const BATCH = 1000;
-          const batches = [];
-          for (let i = 0; i < forms.length; i += BATCH) batches.push(forms.slice(i, i + BATCH));
-          try {
-            const results = await Promise.all(batches.map(batch => {
-              const phones   = batch.map(f => f.customerNumber);
-              const names    = batch.map(f => f.customerName || '');
-              const products = batch.map(f => getP(f));
-              const months   = batch.map(f => new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }));
-              
-              return fetch(`${EMP_API}/verify/bulk-admin`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ phones, names, products, months })
-              }).then(r => r.ok ? r.json() : {}).catch(() => ({}));
-            }));
-            const merged = Object.assign({}, ...results);
-            setGlobalVerifyMap(merged);
-            if (window.vv_cache) window.vv_cache.productVerify = merged;
+          const results = await Promise.all(batches.map(batch => {
+            const phones   = batch.map(f => f.customerNumber);
+            const names    = batch.map(f => f.customerName || '');
+            const products = batch.map(f => getP(f));
+            const months   = batch.map(f => new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }));
             
-            // Store in cache for today
-            try {
-              localStorage.setItem(cacheKey, JSON.stringify(merged));
-              console.log('✅ [ProductDashboard] Verification data cached in localStorage');
-            } catch (err) {
-              console.warn('[ProductDashboard] Failed to cache verification data:', err);
-              // Continue even if caching fails
-            }
-          } catch { /* ignore verify errors */ }
-        }
+            return fetch(`${EMP_API}/verify/bulk-admin`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ phones, names, products, months })
+            }).then(r => r.ok ? r.json() : {}).catch(() => ({}));
+          }));
+          const merged = Object.assign({}, ...results);
+          setGlobalVerifyMap(merged);
+          if (!window.vv_cache) window.vv_cache = {};
+          window.vv_cache.universalVerify = merged;
+        } catch { /* ignore verify errors */ }
       }
     } catch (err) {
       console.error('Product page MongoDB load error:', err);
@@ -881,29 +851,19 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
     return () => { clearInterval(iv); clearInterval(iv2); clearTimeout(fallback); };
   }, []);
 
-  // ✅ CLEANUP: Remove old verification cache entries (runs once on mount)
+  // ✅ CLEANUP: Remove any legacy verification cache entries from localStorage
   useEffect(() => {
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const currentCacheKey = `verification_cache_v${CACHE_VERSION}_productdashboard_${today}`;
-      
-      // Find and remove old cache entries
       const keysToRemove = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && key.startsWith('verification_cache_productdashboard_') && key !== currentCacheKey) {
+        if (key && key.startsWith('verification_cache_')) {
           keysToRemove.push(key);
         }
       }
-      
-      keysToRemove.forEach(key => {
-        localStorage.removeItem(key);
-        console.log(`🗑️ [ProductDashboard] Removed old cache: ${key}`);
-      });
-    } catch (err) {
-      console.warn('[ProductDashboard] Failed to cleanup old cache:', err);
-    }
-  }, []); // Run once on mount
+      keysToRemove.forEach(key => localStorage.removeItem(key));
+    } catch (err) {}
+  }, []);
 
   // ── MongoDB: filtered forms for top section ───────────────────────────────
   const topFilteredForms = useMemo(() => {

@@ -2748,15 +2748,10 @@ export default function MerchantForms({ onReady }) {
       
       const updated = { ...prev, [k1]: verificationData, [k2]: verificationData };
       
-      // Also update localStorage cache
-      try {
-        const today = new Date().toISOString().split('T')[0];
-        const cacheKey = `verification_cache_v${CACHE_VERSION}_${today}`;
-        localStorage.setItem(cacheKey, JSON.stringify(updated));
-        console.log(`✅ Updated verification cache for ${form.customerNumber}:`, verificationData.status);
-      } catch (err) {
-        console.warn('Failed to update verification cache:', err);
-      }
+      // Also update window cache for fast session switching
+      if (!window.vv_cache) window.vv_cache = {};
+      window.vv_cache.universalVerify = updated;
+      console.log(`✅ Updated session verification cache for ${form.customerNumber}:`, verificationData.status);
       
       return updated;
     });
@@ -3535,23 +3530,32 @@ export default function MerchantForms({ onReady }) {
   useEffect(() => {
     if (!forms.length) { setGlobalVerifyMap({}); return; }
 
-    console.log('✅ Generating globalVerifyMap instantly from precomputed forms (Zero extra network calls)');
-    const vMap = {};
+    console.log('✅ Generating globalVerifyMap instantly from precomputed forms & session cache');
+    const universalCache = (window.vv_cache && window.vv_cache.universalVerify) || null;
+    const vMap = { ...(universalCache || {}) };
     
     forms.forEach(f => {
       const vKey = getFormKey(f);
+      const p = getFormProduct(f);
+      const shortKey = p ? `${f.customerNumber}__${p}` : f.customerNumber;
+      
+      const cachedEntry = vMap[vKey] || vMap[shortKey] || (universalCache && (universalCache[vKey] || universalCache[shortKey]));
+      
       vMap[vKey] = {
-        status: f.verificationStatus || 'Not Found',
-        points: f.verificationChecks?.points || 0,
-        rulesCache: f.verificationChecks?.rulesCache || {},
-        checks: f.verificationChecks?.checks || [],
-        phoneMatch: f.verificationChecks?.phoneMatch || false,
-        inSheet: f.verificationChecks?.matched || f.verificationChecks?.inSheet || false
+        status: cachedEntry?.status || f.verificationStatus || 'Not Found',
+        points: cachedEntry?.points ?? (f.verificationChecks?.points || 0),
+        rulesCache: cachedEntry?.rulesCache || f.verificationChecks?.rulesCache || {},
+        checks: cachedEntry?.checks || f.verificationChecks?.checks || [],
+        phoneMatch: cachedEntry?.phoneMatch ?? (f.verificationChecks?.phoneMatch || false),
+        inSheet: cachedEntry?.inSheet ?? (f.verificationChecks?.matched || f.verificationChecks?.inSheet || false)
       };
+      if (shortKey) vMap[shortKey] = vMap[vKey];
     });
     
     setGlobalVerifyMap(vMap);
-  }, [forms]); // ✅ Generates instantly when forms load
+    if (!window.vv_cache) window.vv_cache = {};
+    window.vv_cache.universalVerify = vMap;
+  }, [forms]); // ✅ Generates instantly when forms load & integrates window cache
 
 // ✅ SYNC POINTS TO BACKEND: Runs when globalVerifyMap + grouped data are both ready
 // Uses the EXACT same points calculation as EmployeeGroup component
@@ -3630,29 +3634,19 @@ useEffect(() => {
   return () => clearTimeout(syncTimeout);
 }, [globalVerifyMap, grouped, empPointsMap, empDataMap, selectedMonth, selectedYear, dynamicPointsMap]); // eslint-disable-line
 
-  // ✅ CLEANUP: Remove old verification cache entries (runs once on mount)
+  // ✅ CLEANUP: Remove any legacy verification cache entries from localStorage
   useEffect(() => {
     try {
-      const today = new Date().toISOString().split('T')[0];
-      const currentCacheKey = `verification_cache_v${CACHE_VERSION}_${today}`;
-      
-      // Find and remove old cache entries
       const keysToRemove = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && key.startsWith('verification_cache_') && key !== currentCacheKey) {
+        if (key && key.startsWith('verification_cache_')) {
           keysToRemove.push(key);
         }
       }
-      
-      keysToRemove.forEach(key => {
-        localStorage.removeItem(key);
-        console.log(`🗑️ Removed old cache: ${key}`);
-      });
-    } catch (err) {
-      console.warn('Failed to cleanup old cache:', err);
-    }
-  }, []); // Run once on mount
+      keysToRemove.forEach(key => localStorage.removeItem(key));
+    } catch (err) {}
+  }, []);
 
   // Compute verification KPI counts from global map - Dynamic based on roleFilter
   const verifyKpiCounts = useMemo(() => {
