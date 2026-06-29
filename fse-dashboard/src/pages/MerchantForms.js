@@ -1885,7 +1885,7 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading, onD
 }
 
 // ── Employee Group Row ────────────────────────────────────────
-function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPointsData, empData, tlData, filterProduct, setFilterProduct, onEditPoints, onManualVerify, onRevertVerification, onReload, globalVerifyMap: parentVerifyMap, onUpdateVerifyMap, dynamicPointsMap }) {
+const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPointsData, empData, tlData, filterProduct, setFilterProduct, onEditPoints, onManualVerify, onRevertVerification, onReload, globalVerifyMap: parentVerifyMap, onUpdateVerifyMap, dynamicPointsMap }) {
 
   // ✅ FIXED: Use same priority order as backend (formFillingFor first)
   const getProduct = (f) =>
@@ -1899,6 +1899,8 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
   };
 
   const [expanded, setExpanded] = useState(false);
+  const [page, setPage] = useState(1);
+  useEffect(() => { setPage(1); }, [filterProduct]);
   const [verifyDetail, setVerifyDetail] = useState(null);
   const [verifyDetailLoading, setVerifyDetailLoading] = useState(false);
   const [editForm, setEditForm]   = useState(null);
@@ -2284,94 +2286,106 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
         </Box>
         
         <Box sx={{ overflowX: 'auto' }}>
-        <Table size="small">
-          <TableBody>
-            {forms
-              .filter(f => {
-                // Filter by selected product chip
-                if (!filterProduct) return true; // Show all if no filter
-                // ✅ FIXED: Use same priority order as backend
-                const rawProduct = f.formFillingFor || f.tideProduct || f.brand || '';
-                // Normalize: trim and lowercase for comparison
-                const normalized = rawProduct.trim().toLowerCase();
-                const product = normalized === 'msme' ? 'Tide MSME' :
-                               normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Other';
-                return product === filterProduct;
-              })
-              .map(f => {
-              // ✅ FIXED: Check duplicate by phone+product combination
-              const product = getProduct(f);
-              const dupKey = product ? `${f.customerNumber}__${product}` : f.customerNumber;
-              const isDup = duplicatePhones.has(dupKey);
-              const date  = f.createdAt ? new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '–';
+        {(() => {
+          const filteredList = forms.filter(f => {
+            if (!filterProduct) return true;
+            const rawProduct = f.formFillingFor || f.tideProduct || f.brand || '';
+            const normalized = rawProduct.trim().toLowerCase();
+            const product = normalized === 'msme' ? 'Tide MSME' :
+                           normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Other';
+            return product === filterProduct;
+          });
+          const pageSize = 10;
+          const totalPages = Math.ceil(filteredList.length / pageSize) || 1;
+          const currentPage = Math.min(page, totalPages);
+          const paginatedList = filteredList.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-              return (
-                <TableRow key={f._id}>
+          return (
+            <>
+              <Table size="small">
+                <TableBody>
+                  {paginatedList.map(f => {
+                    const product = getProduct(f);
+                    const dupKey = product ? `${f.customerNumber}__${product}` : f.customerNumber;
+                    const isDup = duplicatePhones.has(dupKey);
+                    const date  = f.createdAt ? new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '–';
 
-                  <TableCell>{f.customerName}</TableCell>
-                  <TableCell>{f.customerNumber}</TableCell>
-
-                  <TableCell>
-                    <ProductChip product={getProduct(f)} form={f} verifyData={verifyMap[getKey(f)]} />
-                  </TableCell>
-
-                  <TableCell>
-                    <VerifyChip
-                      status={verifyMap[getKey(f)]?.status}
-                      onClick={() => openVerifyDetail(f)}
-                    />
-                  </TableCell>
-
-                  <TableCell>
-                    <Typography variant="caption" color="text.secondary">{date}</Typography>
-                  </TableCell>
-
-                  <TableCell>
-                    {isDup && <WarningAmberIcon color="error" />}
-                  </TableCell>
-
-                  {/* Timeline Button - Only for Tide product */}
-                  <TableCell>
-                    {getProduct(f) === 'tide' && (
-                      <TideMerchantTimeline
-                        phone={f.customerNumber}
-                        customerName={f.customerName}
-                        inline={true}
-                      />
-                    )}
-                  </TableCell>
-
-                  {/* Edit + Delete */}
-                  <TableCell>
-                    <Box sx={{ display: 'flex', gap: 0.5 }}>
-                      <Tooltip title="Edit form">
-                        <IconButton size="small"
-                          onClick={() => {
-                            console.log('🔍 Edit button clicked for form:', f);
-                            console.log('📋 Form ID:', f._id);
-                            console.log('📋 Form ID type:', typeof f._id);
-                            console.log('📋 Form ID length:', f._id?.length);
-                            setEditForm({ ...f });
-                          }}
-                          sx={{ color: BRAND.primary, '&:hover': { bgcolor: '#e6f4ea' } }}>
-                          <EditIcon sx={{ fontSize: 16 }} />
-                        </IconButton>
-                      </Tooltip>
-                      <Tooltip title="Delete form">
-                        <IconButton size="small"
-                          onClick={() => handleDeleteForm(f)}
-                          sx={{ color: '#c62828', '&:hover': { bgcolor: '#fdecea' } }}>
-                          <DeleteIcon sx={{ fontSize: 16 }} />
-                        </IconButton>
-                      </Tooltip>
-                    </Box>
-                  </TableCell>
-
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
+                    return (
+                      <TableRow key={f._id}>
+                        <TableCell>{f.customerName}</TableCell>
+                        <TableCell>{f.customerNumber}</TableCell>
+                        <TableCell>
+                          <ProductChip product={getProduct(f)} form={f} verifyData={verifyMap[getKey(f)]} />
+                        </TableCell>
+                        <TableCell>
+                          <VerifyChip
+                            status={verifyMap[getKey(f)]?.status}
+                            onClick={() => openVerifyDetail(f)}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Typography variant="caption" color="text.secondary">{date}</Typography>
+                        </TableCell>
+                        <TableCell>
+                          {isDup && <WarningAmberIcon color="error" />}
+                        </TableCell>
+                        <TableCell>
+                          {getProduct(f) === 'tide' && (
+                            <TideMerchantTimeline
+                              phone={f.customerNumber}
+                              customerName={f.customerName}
+                              inline={true}
+                            />
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Box sx={{ display: 'flex', gap: 0.5 }}>
+                            <Tooltip title="Edit form">
+                              <IconButton size="small"
+                                onClick={() => {
+                                  console.log('🔍 Edit button clicked for form:', f);
+                                  console.log('📋 Form ID:', f._id);
+                                  setEditForm({ ...f });
+                                }}
+                                sx={{ color: BRAND.primary, '&:hover': { bgcolor: '#e6f4ea' } }}>
+                                <EditIcon sx={{ fontSize: 16 }} />
+                              </IconButton>
+                            </Tooltip>
+                            <Tooltip title="Delete form">
+                              <IconButton size="small"
+                                onClick={() => handleDeleteForm(f)}
+                                sx={{ color: '#c62828', '&:hover': { bgcolor: '#fdecea' } }}>
+                                <DeleteIcon sx={{ fontSize: 16 }} />
+                              </IconButton>
+                            </Tooltip>
+                          </Box>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+              {totalPages > 1 && (
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 1.5, borderTop: '1px solid #e0e0e0', bgcolor: '#fbfbfb', borderRadius: '0 0 8px 8px' }}>
+                  <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
+                    Showing {Math.min((currentPage - 1) * pageSize + 1, filteredList.length)} - {Math.min(currentPage * pageSize, filteredList.length)} of {filteredList.length} forms
+                  </Typography>
+                  <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                    <Button size="small" variant="outlined" disabled={currentPage <= 1} onClick={() => setPage(p => Math.max(1, p - 1))} sx={{ textTransform: 'none', py: 0.2, px: 1.5, fontSize: 12, borderRadius: 1.5 }}>
+                      Previous
+                    </Button>
+                    <Typography variant="caption" sx={{ fontWeight: 700, px: 1 }}>
+                      Page {currentPage} of {totalPages}
+                    </Typography>
+                    <Button size="small" variant="outlined" disabled={currentPage >= totalPages} onClick={() => setPage(p => Math.min(totalPages, p + 1))} sx={{ textTransform: 'none', py: 0.2, px: 1.5, fontSize: 12, borderRadius: 1.5 }}>
+                      Next
+                    </Button>
+                  </Box>
+                </Box>
+              )}
+            </>
+          );
+        })()}
         </Box>
       </Collapse>
 
@@ -2505,7 +2519,7 @@ function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPoints
 
     </Card>
   );
-}
+});
 
 // ── Main Page ─────────────────────────────────────────────────
 export default function MerchantForms({ onReady }) {
@@ -2530,6 +2544,7 @@ export default function MerchantForms({ onReady }) {
     }
   }, [loading, onReady]);
   const [search,     setSearch]     = useState('');
+  const [fsePage,    setFsePage]    = useState(1);
   const [dupOpen,    setDupOpen]    = useState(false);
   const [filledLateOpen, setFilledLateOpen] = useState(false); // 🔥 NEW: Filled late dialog
   const [settledOpen,setSettledOpen]= useState(false);
@@ -2715,6 +2730,8 @@ export default function MerchantForms({ onReady }) {
   const [settleDialogOpen, setSettleDialogOpen] = useState(false); // 🔥 NEW: Settle dialog state
   const [settleFormData,   setSettleFormData]   = useState(null); // 🔥 NEW: Form being settled
   const [settlingForm,     setSettlingForm]     = useState(false); // 🔥 NEW: Settling in progress
+
+  useEffect(() => { setFsePage(1); }, [search, roleFilter, selectedMonth, selectedYear, dateFilter]);
 
   // ── Update verification map when modal fetches fresh data ────
   const handleUpdateVerifyMap = useCallback((newData, form) => {
@@ -3421,42 +3438,42 @@ export default function MerchantForms({ onReady }) {
   const grouped = useMemo(() => {
   const q = search.toLowerCase();
   const now = new Date();
-  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const weekStart = new Date(todayStart); weekStart.setDate(todayStart.getDate() - todayStart.getDay());
-  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const weekStart = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay()).getTime();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  const MONTH_NAMES_LIST = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
   const filtered = forms.filter(f => {
+    if (!f._time && f.createdAt) {
+      const d = new Date(f.createdAt);
+      f._time = d.getTime();
+      f._year = d.getFullYear();
+      f._monthName = MONTH_NAMES_LIST[d.getMonth()];
+    }
+    if (!f._searchStr) {
+      f._searchStr = ((f.customerName || '') + ' ' + (f.customerNumber || '') + ' ' + (f.employeeName || '') + ' ' + (f.location || '')).toLowerCase();
+    }
+
     // Date filter
     if (dateFilter !== 'all') {
-      const d = new Date(f.createdAt);
-      if (dateFilter === 'today' && d < todayStart) return false;
-      if (dateFilter === 'week'  && d < weekStart) return false;
-      if (dateFilter === 'month' && d < monthStart) return false;
+      const t = f._time || 0;
+      if (dateFilter === 'today' && t < todayStart) return false;
+      if (dateFilter === 'week'  && t < weekStart) return false;
+      if (dateFilter === 'month' && t < monthStart) return false;
       if (dateFilter === 'custom') {
-      if (fromDate && d < new Date(fromDate)) return false;
-      if (toDate   && d > new Date(toDate + 'T23:59:59')) return false;
+        if (fromDate && t < new Date(fromDate).getTime()) return false;
+        if (toDate   && t > new Date(toDate + 'T23:59:59').getTime()) return false;
       }
     }
 
     // Month/Year filter - ONLY apply if NOT using custom date range
-    // This prevents month filter from overriding the date range filter
     if ((selectedYear || selectedMonth) && dateFilter !== 'custom') {
-      const formDate = new Date(f.createdAt);
-      const formYear = formDate.getFullYear();
-      const formMonth = formDate.toLocaleString('en-US', { month: 'long' });
-      
-      if (selectedYear && formYear !== selectedYear) return false;
-      if (selectedMonth && formMonth !== selectedMonth) return false;
+      if (selectedYear && f._year !== Number(selectedYear)) return false;
+      if (selectedMonth && f._monthName !== selectedMonth) return false;
     }
 
     // Search filter
-    return (
-      !q ||
-      (f.customerName   || '').toLowerCase().includes(q) ||
-      (f.customerNumber || '').includes(q) ||
-      (f.employeeName   || '').toLowerCase().includes(q) ||
-      (f.location       || '').toLowerCase().includes(q)
-    );
+    return !q || f._searchStr.includes(q);
   });
   const map = {};
   filtered.forEach(f => {
@@ -4394,27 +4411,56 @@ useEffect(() => {
               <Typography color="text.secondary">No merchant forms found.</Typography>
             </Card>
           ) : (
-            groupedEntries.map(([empName, empForms]) => (
-              <EmployeeGroup 
-                key={empName} 
-                empName={empName} 
-                forms={empForms}
-                allEmpForms={filteredForms.filter(f => f.employeeName === empName)}
-                duplicatePhones={duplicatePhones}
-                empPointsData={empPointsMap[empName.trim()]}
-                empData={empDataMap[empName]}
-                tlData={tlDataMap[(empDataMap[empName]?.reportingManager || '').toLowerCase().trim()]}
-                filterProduct={filterProduct}
-                setFilterProduct={setFilterProduct}
-                onEditPoints={handleEditPoints}
-                onManualVerify={handleManualVerify}
-                onRevertVerification={handleRevertVerification}
-                onReload={load}
-                globalVerifyMap={globalVerifyMap}
-                onUpdateVerifyMap={handleUpdateVerifyMap}
-                dynamicPointsMap={dynamicPointsMap}
-              />
-            ))
+            (() => {
+              const fsePageSize = 10;
+              const fseTotalPages = Math.ceil(groupedEntries.length / fsePageSize) || 1;
+              const currentFsePage = Math.min(fsePage, fseTotalPages);
+              const paginatedFseList = groupedEntries.slice((currentFsePage - 1) * fsePageSize, currentFsePage * fsePageSize);
+
+              return (
+                <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                  {paginatedFseList.map(([empName, empForms]) => (
+                    <EmployeeGroup 
+                      key={empName} 
+                      empName={empName} 
+                      forms={empForms}
+                      allEmpForms={empForms}
+                      duplicatePhones={duplicatePhones}
+                      empPointsData={empPointsMap[empName.trim()]}
+                      empData={empDataMap[empName]}
+                      tlData={tlDataMap[(empDataMap[empName]?.reportingManager || '').toLowerCase().trim()]}
+                      filterProduct={filterProduct}
+                      setFilterProduct={setFilterProduct}
+                      onEditPoints={handleEditPoints}
+                      onManualVerify={handleManualVerify}
+                      onRevertVerification={handleRevertVerification}
+                      onReload={load}
+                      globalVerifyMap={globalVerifyMap}
+                      onUpdateVerifyMap={handleUpdateVerifyMap}
+                      dynamicPointsMap={dynamicPointsMap}
+                    />
+                  ))}
+                  {fseTotalPages > 1 && (
+                    <Card sx={{ p: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center', bgcolor: '#fff', border: '1px solid #e0e0e0', borderRadius: 2, boxShadow: '0 2px 8px rgba(0,0,0,0.05)' }}>
+                      <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 600 }}>
+                        Showing FSEs {Math.min((currentFsePage - 1) * fsePageSize + 1, groupedEntries.length)} - {Math.min(currentFsePage * fsePageSize, groupedEntries.length)} of {groupedEntries.length} total FSEs
+                      </Typography>
+                      <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'center' }}>
+                        <Button size="small" variant="outlined" disabled={currentFsePage <= 1} onClick={() => { setFsePage(p => Math.max(1, p - 1)); window.scrollTo({ top: 400, behavior: 'smooth' }); }} sx={{ textTransform: 'none', py: 0.5, px: 2, fontWeight: 600, borderRadius: 2 }}>
+                          Previous
+                        </Button>
+                        <Typography variant="body2" sx={{ fontWeight: 700, px: 1, color: BRAND.primary }}>
+                          Page {currentFsePage} of {fseTotalPages}
+                        </Typography>
+                        <Button size="small" variant="outlined" disabled={currentFsePage >= fseTotalPages} onClick={() => { setFsePage(p => Math.min(fseTotalPages, p + 1)); window.scrollTo({ top: 400, behavior: 'smooth' }); }} sx={{ textTransform: 'none', py: 0.5, px: 2, fontWeight: 600, borderRadius: 2 }}>
+                          Next
+                        </Button>
+                      </Box>
+                    </Card>
+                  )}
+                </Box>
+              );
+            })()
           )}
         </>
       )}
