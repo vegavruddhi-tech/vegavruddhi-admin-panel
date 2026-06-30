@@ -541,6 +541,59 @@ if (typeof window !== "undefined") {
   };
 }
 
+function AutoUpdateChecker() {
+  useEffect(() => {
+    const CURRENT_SCRIPT_SRCS = Array.from(document.querySelectorAll('script[src]')).map(s => s.src);
+
+    const checkForUpdate = async () => {
+      try {
+        if ('serviceWorker' in navigator) {
+          const reg = await navigator.serviceWorker.getRegistration();
+          if (reg) {
+            await reg.update();
+            if (reg.waiting) {
+              reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+            }
+          }
+        }
+        const res = await fetch(window.location.origin + window.location.pathname + '?t=' + Date.now(), {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+        });
+        if (!res.ok) return;
+        const htmlText = await res.text();
+        const scriptMatches = htmlText.match(/src=["']([^"']+\.js[^"']*)["']/g);
+        if (scriptMatches && CURRENT_SCRIPT_SRCS.length > 0) {
+          const hasNewScript = scriptMatches.some(matchStr => {
+            const src = matchStr.replace(/src=["']|["']/g, '');
+            if (src.includes('http') && !src.includes(window.location.host)) return false;
+            return !CURRENT_SCRIPT_SRCS.some(cur => cur.includes(src));
+          });
+          if (hasNewScript) {
+            console.log('🚀 New deployment detected! Hard refreshing app...');
+            if ('caches' in window) {
+              const cacheNames = await caches.keys();
+              await Promise.all(cacheNames.map(name => caches.delete(name)));
+            }
+            Object.keys(localStorage).forEach(key => {
+              if (key.includes('cache') || key.includes('forms')) localStorage.removeItem(key);
+            });
+            window.location.reload(true);
+          }
+        }
+      } catch (e) {}
+    };
+
+    window.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') checkForUpdate();
+    });
+    window.addEventListener('focus', checkForUpdate);
+    const interval = setInterval(checkForUpdate, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, []);
+  return null;
+}
+
 function App() {
   const [mode, setMode] = useState("light");
   const [page, setPage] = useState(() => localStorage.getItem("vv_page") || "overview");
@@ -683,6 +736,7 @@ function App() {
   return (
     <PullToRefresh onRefresh={() => window.location.reload(true)}>
       <ThemeProvider theme={theme}>
+        <AutoUpdateChecker />
         <CssBaseline />
 
         {/* ── SPLASH SCREEN ─────────────────────────────────────── */}
