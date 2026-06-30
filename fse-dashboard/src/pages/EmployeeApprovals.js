@@ -386,6 +386,10 @@ const rejectManagerChangeReq = async (id) => {
   };
 
   const saveEdit = async () => {
+    if (editForm.newJoinerPhone && !/^\d{10}$/.test(editForm.newJoinerPhone)) {
+      setSnack({ open: true, msg: 'Phone number must be exactly 10 digits.', sev: 'error' });
+      return;
+    }
     setEditSaving(true);
     try {
       const res  = await fetch(`${EMP_API.replace('/auth', '')}/auth/admin/update-employee/${editEmp._id}`, {
@@ -1340,10 +1344,12 @@ const rejectManagerChangeReq = async (id) => {
                 <MenuItem key={tl._id} value={tl.name}>{tl.name}</MenuItem>
               ))}
             </TextField>
-
             <TextField fullWidth label="Phone Number" size="small"
               value={editForm.newJoinerPhone || ''}
-              onChange={e => setEditForm(f => ({ ...f, newJoinerPhone: e.target.value }))} />
+              onChange={e => {
+                const val = e.target.value.replace(/\D/g, '').slice(0, 10);
+                setEditForm(f => ({ ...f, newJoinerPhone: val }));
+              }} />
 
             <TextField fullWidth label="Joiner Email ID" size="small"
               value={editForm.newJoinerEmailId || ''}

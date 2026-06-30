@@ -1,4 +1,4 @@
-const CACHE_NAME = 'vegavruddhi-admin-v1.0.1';
+const CACHE_NAME = 'vegavruddhi-admin-v1.0.2';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -23,15 +23,29 @@ self.addEventListener('install', (event) => {
 
 // Fetch event - Network first for navigation (HTML), cache fallback
 self.addEventListener('fetch', (event) => {
+  // Never cache API calls or non-GET requests
+  if (
+    event.request.method !== 'GET' ||
+    event.request.url.includes('/api/') ||
+    event.request.url.includes('localhost') ||
+    event.request.url.includes('vercel.app/api')
+  ) {
+    event.respondWith(fetch(event.request));
+    return;
+  }
+
   // Use Network-First strategy for HTML navigation requests to ensure users get the latest updates
   if (event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
         .then((response) => {
-          return caches.open(CACHE_NAME).then((cache) => {
-            cache.put(event.request, response.clone());
-            return response;
-          });
+          if (response && response.status === 200) {
+            return caches.open(CACHE_NAME).then((cache) => {
+              cache.put(event.request, response.clone());
+              return response;
+            });
+          }
+          return response;
         })
         .catch(() => {
           return caches.match(event.request).then((response) => {
@@ -43,22 +57,24 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Stale-while-revalidate for everything else
+  // Stale-while-revalidate for static assets only
   event.respondWith(
     caches.match(event.request)
-      .then((response) => {
+      .then((cachedResponse) => {
         const fetchPromise = fetch(event.request).then((networkResponse) => {
           if (networkResponse && networkResponse.status === 200 && networkResponse.type === 'basic') {
+            const responseToCache = networkResponse.clone();
             caches.open(CACHE_NAME).then((cache) => {
-              cache.put(event.request, networkResponse.clone());
+              cache.put(event.request, responseToCache);
             });
           }
           return networkResponse;
-        }).catch((err) => {
-          console.log('[Service Worker] Fetch failed, returning cache if available', err);
+        }).catch(() => {
+          // fetch failed, return cached if available
+          return cachedResponse;
         });
-        
-        return response || fetchPromise;
+
+        return cachedResponse || fetchPromise;
       })
   );
 });
