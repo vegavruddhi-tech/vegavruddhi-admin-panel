@@ -555,10 +555,10 @@ const kpiData = useMemo(() => {
     ))}
     <TextField size="small" type="date" label="From" value={fromDate}
       onChange={e => { setFromDate(e.target.value); setDateFilter('custom'); }}
-      InputLabelProps={{ shrink: true }} sx={{ minWidth: 150 }} />
+      InputLabelProps={{ shrink: true }} sx={{ width: { xs: '100%', sm: 'auto' }, minWidth: { xs: '100%', sm: 150 } }} />
     <TextField size="small" type="date" label="To" value={toDate}
       onChange={e => { setToDate(e.target.value); setDateFilter('custom'); }}
-      InputLabelProps={{ shrink: true }} sx={{ minWidth: 150 }} />
+      InputLabelProps={{ shrink: true }} sx={{ width: { xs: '100%', sm: 'auto' }, minWidth: { xs: '100%', sm: 150 } }} />
     {(dateFilter !== 'all' || fromDate || toDate) && (
       <Button size="small" variant="outlined" color="error" fontWeight={700}
         onClick={() => { setDateFilter('all'); setFromDate(''); setToDate(''); }}>
@@ -571,13 +571,13 @@ const kpiData = useMemo(() => {
     size="small" options={monthOptions} value={filterMonth || null}
     onChange={(_, v) => setFilterMonth(v || '')}
     renderInput={(params) => <TextField {...params} label="Month" />}
-    sx={{ minWidth: 150 }} freeSolo={false} />
+    sx={{ width: { xs: '100%', sm: 'auto' }, minWidth: { xs: '100%', sm: 150 } }} freeSolo={false} />
 
   <Autocomplete
     size="small" options={tlOptions} value={filterTL || null}
     onChange={(_, v) => { setFilterTL(v || ''); setFilterFSE(''); }}
     renderInput={(params) => <TextField {...params} label="Team Leader" />}
-    sx={{ minWidth: 180 }} freeSolo={false} />
+    sx={{ width: { xs: '100%', sm: 'auto' }, minWidth: { xs: '100%', sm: 180 } }} freeSolo={false} />
 
   <Autocomplete
     size="small" options={fseOptions} value={filterFSE || null}
@@ -590,13 +590,13 @@ const kpiData = useMemo(() => {
       }
     }}
     renderInput={(params) => <TextField {...params} label="Employee" />}
-    sx={{ minWidth: 180 }} freeSolo={false} />
+    sx={{ width: { xs: '100%', sm: 'auto' }, minWidth: { xs: '100%', sm: 180 } }} freeSolo={false} />
 
   <Autocomplete
     size="small" options={statusOptions} value={filterStatus || null}
     onChange={(_, v) => setFilterStatus(v || '')}
     renderInput={(params) => <TextField {...params} label="Status" />}
-    sx={{ minWidth: 220 }} freeSolo={false} />
+    sx={{ width: { xs: '100%', sm: 'auto' }, minWidth: { xs: '100%', sm: 220 } }} freeSolo={false} />
 
   <Button variant="outlined" size="small" onClick={() => {
     setFilterTL(''); setFilterFSE(''); setFilterStatus(''); setFilterMonth('');

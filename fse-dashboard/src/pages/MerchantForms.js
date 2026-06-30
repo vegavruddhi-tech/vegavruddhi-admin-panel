@@ -853,9 +853,9 @@ function DuplicatePanel({ duplicates, allForms = [], open, onClose, onNotify, no
         const mP = selectedMonth ? `&month=${encodeURIComponent(selectedMonth)}` : '';
         const yP = selectedYear ? `&year=${encodeURIComponent(selectedYear)}` : '';
         const [fseRes, tlRes, mgrRes] = await Promise.all([
-          fetch(`${EMP_API}/forms/admin/all?role=FSE&limit=5000&page=1${mP}${yP}`),
-          fetch(`${EMP_API}/forms/admin/all?role=TL&limit=5000&page=1${mP}${yP}`),
-          fetch(`${EMP_API}/forms/admin/all?role=MANAGER&limit=5000&page=1${mP}${yP}`)
+          fetch(`${EMP_API}/forms/admin/all?role=FSE&limit=2000&page=1${mP}${yP}`),
+          fetch(`${EMP_API}/forms/admin/all?role=TL&limit=2000&page=1${mP}${yP}`),
+          fetch(`${EMP_API}/forms/admin/all?role=MANAGER&limit=2000&page=1${mP}${yP}`)
         ]);
         
         const [fseData, tlData, mgrData] = await Promise.all([
@@ -2815,7 +2815,7 @@ export default function MerchantForms({ onReady }) {
       } else {
         // Helper function to load all pages for a role in parallel (blazing fast)
         const loadAllPagesParallel = async (roleQuery) => {
-          const PAGE_SIZE = 5000;
+          const PAGE_SIZE = 2000;
           const monthParam = selectedMonth ? `&month=${encodeURIComponent(selectedMonth)}` : '';
           const yearParam = selectedYear ? `&year=${encodeURIComponent(selectedYear)}` : '';
           const res = await fetch(`${EMP_API}/forms/admin/all?role=${roleQuery}&limit=${PAGE_SIZE}&page=1${monthParam}${yearParam}`);
