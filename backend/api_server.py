@@ -25,8 +25,11 @@ from feature_engineering import feature_engineering
 # -----------------------------
 # CREATE FASTAPI APP
 # -----------------------------
+from fastapi.middleware.gzip import GZipMiddleware
+
 app = FastAPI()
 
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],

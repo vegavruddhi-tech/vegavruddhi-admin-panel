@@ -2024,6 +2024,7 @@ const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmp
           location:       editForm.location,
           status:         editForm.status,
           formFillingFor: editForm.formFillingFor,
+          createdAt:      editForm.createdAt,
           reason:         editForm._editReason || '',
         }),
       });
@@ -2421,6 +2422,23 @@ const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmp
               <TextField fullWidth size="small" label="Product (formFillingFor)"
                 value={editForm.formFillingFor || ''}
                 onChange={e => setEditForm(p => ({ ...p, formFillingFor: e.target.value }))} />
+
+              <TextField 
+                fullWidth size="small" 
+                label="Submission Date (createdAt)" 
+                type="date"
+                InputLabelProps={{ shrink: true }}
+                value={editForm.createdAt ? new Date(editForm.createdAt).toISOString().split('T')[0] : ''}
+                onChange={e => {
+                  const newDateStr = e.target.value;
+                  if (newDateStr) {
+                    const oldDate = editForm.createdAt ? new Date(editForm.createdAt) : new Date();
+                    const [yyyy, mm, dd] = newDateStr.split('-');
+                    oldDate.setFullYear(parseInt(yyyy, 10), parseInt(mm, 10) - 1, parseInt(dd, 10));
+                    setEditForm(p => ({ ...p, createdAt: oldDate.toISOString() }));
+                  }
+                }} 
+              />
 
               <TextField fullWidth size="small" label="Visit Status" select
                 value={editForm.status || ''}
