@@ -543,6 +543,7 @@ if (typeof window !== "undefined") {
 
 function AutoUpdateChecker() {
   useEffect(() => {
+    if (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') return;
     const CURRENT_SCRIPT_SRCS = Array.from(document.querySelectorAll('script[src]')).map(s => s.src);
 
     const checkForUpdate = async () => {
