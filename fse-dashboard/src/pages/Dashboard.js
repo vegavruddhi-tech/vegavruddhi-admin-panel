@@ -351,8 +351,7 @@ const loadData = async (isForce = false) => {
   });
 }, [forms, dateFilter, fromDate, toDate, filterMonth, filterTL, filterFSE, filterStatus, employees]);
 
-// Fetch global verification for all filtered forms (batched to avoid URL length limit)
-// Fetch verification for all forms once on session load (in-memory cache across page navigation)
+// Build verification status instantly from loaded records (0 network calls, 0 timeouts)
 useEffect(() => {
   if (!forms.length) { setGlobalVerifyMap({}); return; }
   
@@ -363,30 +362,17 @@ useEffect(() => {
     return;
   }
 
-  // No in-memory cache - fetch fresh from API
-  console.log('📡 [Dashboard] Fetching fresh verification data from API...');
-  const getP = (f) => (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
-  const BATCH = 1000;
-  const batches = [];
-  for (let i = 0; i < forms.length; i += BATCH) batches.push(forms.slice(i, i + BATCH));
-  Promise.all(batches.map(batch => {
-    const phones   = batch.map(f => f.customerNumber);
-    const names    = batch.map(f => f.customerName || '');
-    const products = batch.map(f => getP(f));
-    const months   = batch.map(f => new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }));
-    
-    return fetch(`${EMP_API}/verify/bulk-admin`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phones, names, products, months })
-    }).then(r => r.ok ? r.json() : {}).catch(() => ({}));
-  })).then(results => {
-    const merged = Object.assign({}, ...results);
-    setGlobalVerifyMap(merged);
-    if (!window.vv_cache) window.vv_cache = {};
-    window.vv_cache.universalVerify = merged;
-    if (onReady) onReady();
+  const map = {};
+  forms.forEach(f => {
+    const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+    const key = p ? `${f.customerNumber}__${p}` : f.customerNumber;
+    const s = f.verificationStatus || f.verificationChecks?.status || 'Not Found';
+    map[key] = { status: s, points: f.verificationChecks?.points || 0 };
   });
+  setGlobalVerifyMap(map);
+  if (!window.vv_cache) window.vv_cache = {};
+  window.vv_cache.universalVerify = map;
+  if (onReady) onReady();
 }, [forms]); // Only run when forms data changes
 
 // ✅ CLEANUP: Remove any legacy verification cache entries from localStorage

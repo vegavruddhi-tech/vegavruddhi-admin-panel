@@ -800,37 +800,23 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
       setMongoTls(data.tls || []);
 
       // ── Auto-fetch verification for all forms in background ──────────
-      // ── Auto-fetch verification for all forms in background (in-memory cache) ──
+      // Build verification status instantly from loaded records (0 network calls, 0 timeouts)
       if (forms.length > 0) {
         if (!isForce && (cache.universalVerify || cache.productVerify)) {
           setGlobalVerifyMap(cache.universalVerify || cache.productVerify);
           return;
         }
 
-        // No in-memory cache - fetch fresh from API
-        console.log('📡 [ProductDashboard] Fetching fresh verification data from API...');
-        const getP = (f) => (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
-        const BATCH = 1000;
-        const batches = [];
-        for (let i = 0; i < forms.length; i += BATCH) batches.push(forms.slice(i, i + BATCH));
-        try {
-          const results = await Promise.all(batches.map(batch => {
-            const phones   = batch.map(f => f.customerNumber);
-            const names    = batch.map(f => f.customerName || '');
-            const products = batch.map(f => getP(f));
-            const months   = batch.map(f => new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }));
-            
-            return fetch(`${EMP_API}/verify/bulk-admin`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ phones, names, products, months })
-            }).then(r => r.ok ? r.json() : {}).catch(() => ({}));
-          }));
-          const merged = Object.assign({}, ...results);
-          setGlobalVerifyMap(merged);
-          if (!window.vv_cache) window.vv_cache = {};
-          window.vv_cache.universalVerify = merged;
-        } catch { /* ignore verify errors */ }
+        const map = {};
+        forms.forEach(f => {
+          const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+          const key = p ? `${f.customerNumber}__${p}` : f.customerNumber;
+          const s = f.verificationStatus || f.verificationChecks?.status || 'Not Found';
+          map[key] = { status: s, points: f.verificationChecks?.points || 0 };
+        });
+        setGlobalVerifyMap(map);
+        if (!window.vv_cache) window.vv_cache = {};
+        window.vv_cache.universalVerify = map;
       }
     } catch (err) {
       console.error('Product page MongoDB load error:', err);

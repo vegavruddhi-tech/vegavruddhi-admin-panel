@@ -29,25 +29,17 @@ function FSERow({ fse, formCount, forms }) {
   const [verifyMap, setVerifyMap] = useState({});
   const [verifyLoading, setVerifyLoading] = useState(false);
 
-  const openModal = async () => {
+  const openModal = () => {
     setOpen(true);
     if (forms.length === 0) return;
-    setVerifyLoading(true);
-    try {
-      const vRes = await fetch(`${EMP_API}/verify/bulk-admin`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          phones:   forms.map(f => f.customerNumber || ''),
-          names:    forms.map(f => f.customerName || ''),
-          products: forms.map(f => (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim()),
-          months:   forms.map(f => f.createdAt ? new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }) : ''),
-        }),
-      });
-      const data = await vRes.json();
-      setVerifyMap(data || {});
-    } catch { setVerifyMap({}); }
-    finally { setVerifyLoading(false); }
+    const map = {};
+    forms.forEach(f => {
+      const product = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+      const key = product ? `${f.customerNumber}__${product}` : f.customerNumber;
+      const s = f.verificationStatus || f.verificationChecks?.status || 'Not Found';
+      map[key] = { status: s, points: f.verificationChecks?.points || 0 };
+    });
+    setVerifyMap(map);
   };
 
   const getVerification = (f) => {
