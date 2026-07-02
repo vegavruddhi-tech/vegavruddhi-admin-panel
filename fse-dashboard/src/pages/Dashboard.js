@@ -292,26 +292,27 @@ const loadData = async (isForce = false) => {
   setLoading(true);
   try {
     const [empRes, tlRes] = await Promise.all([
-      fetch(`${EMP_API}/auth/all-employees`),
-      fetch(`${EMP_API}/tl/approved`)
+      fetch(`${EMP_API}/auth/all-employees`).catch(() => ({ ok: false })),
+      fetch(`${EMP_API}/tl/approved-list`).catch(() => ({ ok: false }))
     ]);
-    const empList = empRes.ok ? await empRes.json() : [];
-    const tlList = tlRes.ok ? await tlRes.json() : [];
+    const empList = empRes.ok ? await empRes.json().catch(() => ([])) : [];
+    const tlList = tlRes.ok ? await tlRes.json().catch(() => ([])) : [];
 
     // Helper to fetch all pages for a role cleanly in parallel 200-item chunks
     const loadFormsParallel = async (roleQuery) => {
-      const res1 = await fetch(`${EMP_API}/forms/admin/all?role=${roleQuery}&page=1&limit=200`);
+      const res1 = await fetch(`${EMP_API}/forms/admin/all?role=${roleQuery}&page=1&limit=200`).catch(() => ({ ok: false }));
       if (!res1.ok) return [];
-      const data1 = await res1.json();
+      const data1 = await res1.json().catch(() => ({ forms: [] }));
       let allForms = data1.forms || (Array.isArray(data1) ? data1 : []);
       const totalPages = data1.pagination?.pages || 1;
-      if (totalPages > 1 && totalPages <= 30) {
+      if (totalPages > 1 && totalPages <= 50) {
         const pagePromises = [];
         for (let p = 2; p <= totalPages; p++) {
           pagePromises.push(
             fetch(`${EMP_API}/forms/admin/all?role=${roleQuery}&page=${p}&limit=200`)
               .then(r => r.ok ? r.json() : { forms: [] })
               .then(d => d.forms || (Array.isArray(d) ? d : []))
+              .catch(() => ([]))
           );
         }
         const rest = await Promise.all(pagePromises);
