@@ -853,9 +853,9 @@ function DuplicatePanel({ duplicates, allForms = [], open, onClose, onNotify, no
         const mP = selectedMonth ? `&month=${encodeURIComponent(selectedMonth)}` : '';
         const yP = selectedYear ? `&year=${encodeURIComponent(selectedYear)}` : '';
         const [fseRes, tlRes, mgrRes] = await Promise.all([
-          fetch(`${EMP_API}/forms/admin/all?role=FSE${mP}${yP}`),
-          fetch(`${EMP_API}/forms/admin/all?role=TL${mP}${yP}`),
-          fetch(`${EMP_API}/forms/admin/all?role=MANAGER${mP}${yP}`)
+          fetch(`${EMP_API}/forms/admin/all?role=FSE${mP}${yP}&limit=200`),
+          fetch(`${EMP_API}/forms/admin/all?role=TL${mP}${yP}&limit=200`),
+          fetch(`${EMP_API}/forms/admin/all?role=MANAGER${mP}${yP}&limit=200`)
         ]);
         
         const [fseData, tlData, mgrData] = await Promise.all([
@@ -2831,14 +2831,28 @@ export default function MerchantForms({ onReady }) {
         setLoading(false);
         return;
       } else {
-        // Helper function to load all forms for a role cleanly in 1 unpaginated summary query
+        // Helper function to load all forms for a role cleanly via fast 200-item parallel batches
         const loadAllPagesParallel = async (roleQuery) => {
           const monthParam = selectedMonth ? `&month=${encodeURIComponent(selectedMonth)}` : '';
           const yearParam = selectedYear ? `&year=${encodeURIComponent(selectedYear)}` : '';
-          const res = await fetch(`${EMP_API}/forms/admin/all?role=${roleQuery}${monthParam}${yearParam}`);
-          if (!res.ok && res.status !== 304) throw new Error(`Failed to load ${roleQuery} forms`);
-          const data = await res.json();
-          return data.forms || (Array.isArray(data) ? data : []);
+          const res1 = await fetch(`${EMP_API}/forms/admin/all?role=${roleQuery}${monthParam}${yearParam}&page=1&limit=200`);
+          if (!res1.ok && res1.status !== 304) throw new Error(`Failed to load ${roleQuery} forms`);
+          const data1 = await res1.json();
+          let allForms = data1.forms || (Array.isArray(data1) ? data1 : []);
+          const totalPages = data1.pagination?.pages || 1;
+          if (totalPages > 1 && totalPages <= 30) {
+            const pagePromises = [];
+            for (let p = 2; p <= totalPages; p++) {
+              pagePromises.push(
+                fetch(`${EMP_API}/forms/admin/all?role=${roleQuery}${monthParam}${yearParam}&page=${p}&limit=200`)
+                  .then(r => r.ok ? r.json() : { forms: [] })
+                  .then(d => d.forms || (Array.isArray(d) ? d : []))
+              );
+            }
+            const remainingPages = await Promise.all(pagePromises);
+            remainingPages.forEach(pForms => { allForms = allForms.concat(pForms); });
+          }
+          return allForms;
         };
 
         if (roleFilter === 'ALL') {
