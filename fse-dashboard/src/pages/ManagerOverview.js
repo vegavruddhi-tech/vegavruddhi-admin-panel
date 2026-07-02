@@ -735,13 +735,64 @@ export default function ManagerOverview({ onReady }) {
     setLoading(true);
     setError('');
     try {
-      const [tlRes, mgrRes] = await Promise.all([
-        fetch(`${EMP_API}/forms/admin/tl-overview`),
-        fetch(`${EMP_API}/manager/approved-list`),
+      const [tlRes, empRes, mgrRes] = await Promise.all([
+        fetch(`${EMP_API}/tl/approved`),
+        fetch(`${EMP_API}/auth/all-employees`),
+        fetch(`${EMP_API}/manager/approved-list`)
       ]);
-      if (!tlRes.ok && tlRes.status !== 304)  throw new Error('Failed to load TL overview data');
-      if (!mgrRes.ok && mgrRes.status !== 304) throw new Error('Failed to load manager list');
-      const [tlJson, mgrJson] = await Promise.all([tlRes.json(), mgrRes.json()]);
+      const tlsList = tlRes.ok ? await tlRes.json() : [];
+      const usersList = empRes.ok ? await empRes.json() : [];
+      const mgrJson = mgrRes.ok ? await mgrRes.json() : [];
+
+      const loadFormsParallel = async (roleQuery) => {
+        const res1 = await fetch(`${EMP_API}/forms/admin/all?role=${roleQuery}&page=1&limit=200`);
+        if (!res1.ok) return [];
+        const data1 = await res1.json();
+        let allForms = data1.forms || (Array.isArray(data1) ? data1 : []);
+        const totalPages = data1.pagination?.pages || 1;
+        if (totalPages > 1 && totalPages <= 30) {
+          const pagePromises = [];
+          for (let p = 2; p <= totalPages; p++) {
+            pagePromises.push(
+              fetch(`${EMP_API}/forms/admin/all?role=${roleQuery}&page=${p}&limit=200`)
+                .then(r => r.ok ? r.json() : { forms: [] })
+                .then(d => d.forms || (Array.isArray(d) ? d : []))
+            );
+          }
+          const rest = await Promise.all(pagePromises);
+          rest.forEach(pForms => { allForms = allForms.concat(pForms); });
+        }
+        return allForms;
+      };
+
+      const [fseForms, tlForms] = await Promise.all([
+        loadFormsParallel('FSE'),
+        loadFormsParallel('TL')
+      ]);
+      const allForms = [...fseForms, ...tlForms];
+
+      const tlFSEs = tlsList.filter(t => t.role === 'fse');
+      const tlJson = tlsList
+        .filter(t => t.role !== 'fse')
+        .map(tl => {
+          const tlName = (tl.name || '').trim();
+          const tlEmail = (tl.email || '').trim();
+          const fsesFromUsers = usersList.filter(u => u.reportingManager && u.reportingManager.trim().toLowerCase() === tlName.toLowerCase());
+          const fsesFromTL = tlFSEs.filter(f => f.reportingManager && (f.reportingManager.trim().toLowerCase() === tlEmail.toLowerCase() || f.reportingManager.trim().toLowerCase() === tlName.toLowerCase()));
+          const fseNamesFromUsers = fsesFromUsers.map(u => u.newJoinerName).filter(Boolean);
+          const fseNamesFromTL = fsesFromTL.map(f => f.email || f.name).filter(Boolean);
+          const allFseNames = [...new Set([...fseNamesFromUsers, ...fseNamesFromTL])];
+          const allFses = [
+            ...fsesFromUsers,
+            ...fsesFromTL.map(f => ({
+              _id: f._id, newJoinerName: f.email, newJoinerPhone: String(f.phone || '').replace('.0', ''),
+              email: f.name, location: f.location, status: f.status, reportingManager: tlName
+            }))
+          ];
+          const matchedForms = allForms.filter(f => allFseNames.includes(f.employeeName) || f.employeeName === tlName);
+          return { tl, fses: allFses, forms: matchedForms };
+        });
+
       setTlData(tlJson);
       setManagers(mgrJson);
     } catch (err) {

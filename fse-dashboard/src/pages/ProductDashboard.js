@@ -784,20 +784,54 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
   const loadMongoData = async (force = false) => {
     const isForce = force === true;
     try {
-      let data;
       const cache = window.vv_cache || {};
       if (!isForce && cache.productMongo) {
-        data = cache.productMongo;
-      } else {
-        const res = await fetch(`${EMP_API}/forms/admin/overview`);
-        data = res.ok ? await res.json() : { forms: [], employees: [], tls: [] };
-        if (window.vv_cache) window.vv_cache.productMongo = data;
+        const data = cache.productMongo;
+        setMongoForms(data.forms || []);
+        setMongoEmployees(data.employees || []);
+        setMongoTls(data.tls || []);
+        return;
       }
-      
-      const forms = data.forms || [];
+
+      const [empRes, tlRes] = await Promise.all([
+        fetch(`${EMP_API}/auth/all-employees`),
+        fetch(`${EMP_API}/tl/approved`)
+      ]);
+      const empList = empRes.ok ? await empRes.json() : [];
+      const tlList = tlRes.ok ? await tlRes.json() : [];
+
+      const loadFormsParallel = async (roleQuery) => {
+        const res1 = await fetch(`${EMP_API}/forms/admin/all?role=${roleQuery}&page=1&limit=200`);
+        if (!res1.ok) return [];
+        const data1 = await res1.json();
+        let allForms = data1.forms || (Array.isArray(data1) ? data1 : []);
+        const totalPages = data1.pagination?.pages || 1;
+        if (totalPages > 1 && totalPages <= 30) {
+          const pagePromises = [];
+          for (let p = 2; p <= totalPages; p++) {
+            pagePromises.push(
+              fetch(`${EMP_API}/forms/admin/all?role=${roleQuery}&page=${p}&limit=200`)
+                .then(r => r.ok ? r.json() : { forms: [] })
+                .then(d => d.forms || (Array.isArray(d) ? d : []))
+            );
+          }
+          const rest = await Promise.all(pagePromises);
+          rest.forEach(pForms => { allForms = allForms.concat(pForms); });
+        }
+        return allForms;
+      };
+
+      const [fseForms, tlForms, mgrForms] = await Promise.all([
+        loadFormsParallel('FSE'),
+        loadFormsParallel('TL'),
+        loadFormsParallel('MANAGER')
+      ]);
+      const forms = [...fseForms, ...tlForms, ...mgrForms];
+
       setMongoForms(forms);
-      setMongoEmployees(data.employees || []);
-      setMongoTls(data.tls || []);
+      setMongoEmployees(empList);
+      setMongoTls(tlList);
+      if (window.vv_cache) window.vv_cache.productMongo = { forms, employees: empList, tls: tlList };
 
       // ── Auto-fetch verification for all forms in background ──────────
       // Build verification status instantly from loaded records (0 network calls, 0 timeouts)
