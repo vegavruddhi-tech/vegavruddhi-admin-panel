@@ -1,4 +1,4 @@
-const CACHE_NAME = 'vegavruddhi-admin-v1.0.2';
+const CACHE_NAME = 'vegavruddhi-admin-v1.0.3';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -30,8 +30,7 @@ self.addEventListener('fetch', (event) => {
     event.request.url.includes('localhost') ||
     event.request.url.includes('vercel.app/api')
   ) {
-    event.respondWith(fetch(event.request));
-    return;
+    return; // no respondWith() = browser handles it directly
   }
 
   // Use Network-First strategy for HTML navigation requests to ensure users get the latest updates
