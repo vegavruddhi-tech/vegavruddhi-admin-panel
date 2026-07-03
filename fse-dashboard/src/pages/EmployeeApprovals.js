@@ -7,16 +7,79 @@ import {
   Dialog, DialogTitle, DialogContent, DialogActions,
   TextField, MenuItem, Select, FormControl, InputLabel, Skeleton,
 } from '@mui/material';
-import CheckCircleIcon  from '@mui/icons-material/CheckCircle';
-import CancelIcon       from '@mui/icons-material/Cancel';
-import RefreshIcon      from '@mui/icons-material/Refresh';
-import PersonIcon       from '@mui/icons-material/Person';
-import EditIcon         from '@mui/icons-material/Edit';
-import { BRAND }        from '../theme';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import CancelIcon from '@mui/icons-material/Cancel';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import PersonIcon from '@mui/icons-material/Person';
+import EditIcon from '@mui/icons-material/Edit';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import { BRAND } from '../theme';
 
 const EMP_API = (process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api') + '/auth';
 const TL_API = (process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api') + '/tl';
 const MANAGER_API = (process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api') + '/manager';
+
+async function openFseDashboard(emp) {
+  const email = emp?.newJoinerEmailId || emp?.email;
+  if (!email) {
+    alert('No registered email found for this employee.');
+    return;
+  }
+  const savedAuth = localStorage.getItem('vv_auth');
+  const adminObj = savedAuth ? JSON.parse(savedAuth) : {};
+  const adminEmail = adminObj?.email || 'data.analyst@vegavruddhi.com';
+
+  try {
+    const res = await fetch(`${EMP_API.replace('/auth', '')}/auth/generate-impersonation-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminEmail, targetEmail: email })
+    });
+    const data = await res.json();
+    if (data.success && data.token) {
+      const employeeAppUrl = process.env.REACT_APP_EMPLOYEE_APP_URL
+        || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+          ? 'http://localhost:3000'
+          : 'https://vegavruddhi-employee-panel-ke56.vercel.app');
+      window.open(`${employeeAppUrl}/dashboard?viewAs=${encodeURIComponent(email)}&token=${encodeURIComponent(data.token)}`, '_blank');
+    } else {
+      alert(data.error || 'Failed to generate impersonation token');
+    }
+  } catch (err) {
+    alert('Error connecting to server for impersonation token');
+  }
+}
+
+async function openTlDashboard(tl) {
+  const email = tl?.email || tl?.emailId;
+  if (!email) {
+    alert('No registered email found for this TL.');
+    return;
+  }
+  const savedAuth = localStorage.getItem('vv_auth');
+  const adminObj = savedAuth ? JSON.parse(savedAuth) : {};
+  const adminEmail = adminObj?.email || 'data.analyst@vegavruddhi.com';
+
+  try {
+    const res = await fetch(`${EMP_API.replace('/auth', '')}/auth/generate-tl-impersonation-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminEmail, targetEmail: email })
+    });
+    const data = await res.json();
+    if (data.success && data.token) {
+      const tlAppUrl = process.env.REACT_APP_TL_APP_URL
+        || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+          ? 'http://localhost:3001'
+          : 'https://team-leader-gamma.vercel.app');
+      window.open(`${tlAppUrl}/dashboard?viewAs=${encodeURIComponent(email)}&token=${encodeURIComponent(data.token)}`, '_blank');
+    } else {
+      alert(data.error || 'Failed to generate TL impersonation token');
+    }
+  } catch (err) {
+    alert('Error connecting to server for TL impersonation token');
+  }
+}
 
 function initials(name) {
   return (name || '?').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
@@ -24,7 +87,7 @@ function initials(name) {
 
 function StatusChip({ status }) {
   const map = {
-    pending:  { label: 'Pending',  color: '#e65100', bg: '#fff3e0' },
+    pending: { label: 'Pending', color: '#e65100', bg: '#fff3e0' },
     approved: { label: 'Approved', color: '#2e7d32', bg: '#e6f4ea' },
     rejected: { label: 'Rejected', color: '#c62828', bg: '#fdecea' },
   };
@@ -69,12 +132,25 @@ function EmployeeRow({ emp, onApprove, onReject, showActions, onEdit }) {
       <TableCell><StatusChip status={emp.approvalStatus} /></TableCell>
       <TableCell>
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+          {/* Eye button to view FSE dashboard directly */}
+          <Tooltip title="Directly open & view live FSE dashboard">
+            <Button size="small" variant="contained" startIcon={<VisibilityIcon />}
+              onClick={() => openFseDashboard(emp)}
+              sx={{
+                bgcolor: '#1976d2', color: '#fff', fontWeight: 700, fontSize: 11,
+                '&:hover': { bgcolor: '#115293' }
+              }}>
+              View
+            </Button>
+          </Tooltip>
           {/* Edit button always visible */}
           <Tooltip title="Edit employee details">
             <Button size="small" variant="outlined" startIcon={<EditIcon />}
               onClick={() => onEdit(emp)}
-              sx={{ color: BRAND.primary, borderColor: BRAND.primary, fontWeight: 700, fontSize: 11,
-                '&:hover': { bgcolor: BRAND.primaryLight } }}>
+              sx={{
+                color: BRAND.primary, borderColor: BRAND.primary, fontWeight: 700, fontSize: 11,
+                '&:hover': { bgcolor: BRAND.primaryLight }
+              }}>
               Edit
             </Button>
           </Tooltip>
@@ -85,8 +161,10 @@ function EmployeeRow({ emp, onApprove, onReject, showActions, onEdit }) {
                   <Button size="small" variant="contained" disabled={loading}
                     startIcon={loading ? <CircularProgress size={12} /> : <CheckCircleIcon />}
                     onClick={() => handle(onApprove)}
-                    sx={{ bgcolor: BRAND.primary, fontWeight: 700, fontSize: 11,
-                      '&:hover': { bgcolor: BRAND.primaryMid }, minWidth: 90 }}>
+                    sx={{
+                      bgcolor: BRAND.primary, fontWeight: 700, fontSize: 11,
+                      '&:hover': { bgcolor: BRAND.primaryMid }, minWidth: 90
+                    }}>
                     Approve
                   </Button>
                 </span>
@@ -96,8 +174,10 @@ function EmployeeRow({ emp, onApprove, onReject, showActions, onEdit }) {
                   <Button size="small" variant="outlined" disabled={loading}
                     startIcon={<CancelIcon />}
                     onClick={() => handle(onReject)}
-                    sx={{ color: '#c62828', borderColor: '#c62828', fontWeight: 700, fontSize: 11,
-                      '&:hover': { bgcolor: '#fdecea', borderColor: '#c62828' }, minWidth: 80 }}>
+                    sx={{
+                      color: '#c62828', borderColor: '#c62828', fontWeight: 700, fontSize: 11,
+                      '&:hover': { bgcolor: '#fdecea', borderColor: '#c62828' }, minWidth: 80
+                    }}>
                     Reject
                   </Button>
                 </span>
@@ -112,22 +192,22 @@ function EmployeeRow({ emp, onApprove, onReject, showActions, onEdit }) {
 
 export default function EmployeeApprovals({ onReady }) {
   const [employees, setEmployees] = useState([]);
-  const [loading,   setLoading]   = useState(true);
-  const [error,     setError]     = useState('');
-  const [tab,       setTab]       = useState('pending');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [tab, setTab] = useState('pending');
   const [approvedSubTab, setApprovedSubTab] = useState('all');
   const [approvedSearch, setApprovedSearch] = useState('');
-  const [pendingSubTab,  setPendingSubTab]  = useState('fse');
-  const [changeSubTab,   setChangeSubTab]   = useState('fse');
+  const [pendingSubTab, setPendingSubTab] = useState('fse');
+  const [changeSubTab, setChangeSubTab] = useState('fse');
   const [changeStatusFilter, setChangeStatusFilter] = useState('all');
   const [changeSearch, setChangeSearch] = useState('');
   const [rejectedSubTab, setRejectedSubTab] = useState('fse');
-  const [snack,     setSnack]     = useState({ open: false, msg: '', sev: 'success' });
-  const [posRequests,    setPosRequests]    = useState([]);
-  const [posReqLoading,  setPosReqLoading]  = useState(false);
-  const [changeRequests,     setChangeRequests]     = useState([]);
-  const [changeReqLoading,   setChangeReqLoading]   = useState(false);
-  const [tlPending,    setTlPending]    = useState([]);
+  const [snack, setSnack] = useState({ open: false, msg: '', sev: 'success' });
+  const [posRequests, setPosRequests] = useState([]);
+  const [posReqLoading, setPosReqLoading] = useState(false);
+  const [changeRequests, setChangeRequests] = useState([]);
+  const [changeReqLoading, setChangeReqLoading] = useState(false);
+  const [tlPending, setTlPending] = useState([]);
   const [tlApprovedList, setTlApprovedList] = useState([]);
   const [tlRejectedList, setTlRejectedList] = useState([]);
   const [tlReqLoading, setTlReqLoading] = useState(false);
@@ -142,15 +222,15 @@ export default function EmployeeApprovals({ onReady }) {
 
 
   // Edit modal state
-  const [editOpen,   setEditOpen]   = useState(false);
-  const [editEmp,    setEditEmp]    = useState(null);
-  const [editForm,   setEditForm]   = useState({});
+  const [editOpen, setEditOpen] = useState(false);
+  const [editEmp, setEditEmp] = useState(null);
+  const [editForm, setEditForm] = useState({});
   const [editSaving, setEditSaving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const res  = await fetch(`${EMP_API}/all-employees-admin`);
+      const res = await fetch(`${EMP_API}/all-employees-admin`);
       if (!res.ok && res.status !== 304) {
         // fallback: fetch pending + approved + rejected separately
         const [pendingRes, approvedRes, rejectedRes] = await Promise.all([
@@ -158,7 +238,7 @@ export default function EmployeeApprovals({ onReady }) {
           fetch(`${EMP_API}/approved`),
           fetch(`${EMP_API}/rejected`).catch(() => ({ ok: false })),
         ]);
-        const pendingData  = pendingRes.ok  ? await pendingRes.json()  : [];
+        const pendingData = pendingRes.ok ? await pendingRes.json() : [];
         const approvedData = approvedRes.ok ? await approvedRes.json() : [];
         const rejectedData = rejectedRes.ok ? await rejectedRes.json() : [];
         const combined = [
@@ -174,7 +254,7 @@ export default function EmployeeApprovals({ onReady }) {
     } catch (err) {
       // Final fallback — just load pending so at least those show
       try {
-        const res  = await fetch(`${EMP_API}/pending`);
+        const res = await fetch(`${EMP_API}/pending`);
         if (!res.ok) throw new Error('Failed to load — is the employee server running?');
         const data = await res.json();
         setEmployees(data.map(e => ({ ...e, approvalStatus: 'pending' })));
@@ -214,104 +294,104 @@ export default function EmployeeApprovals({ onReady }) {
     } catch { } finally { setChangeReqLoading(false); }
   };
   const loadTlPending = async () => {
-  setTlReqLoading(true);
-  try {
-    const [pendingRes, approvedRes, rejectedRes] = await Promise.all([
-      fetch(`${TL_API}/pending`),
-      fetch(`${TL_API}/approved-list`),
-      fetch(`${TL_API}/rejected-list`),
-    ]);
-    const pendingData  = await pendingRes.json();
-    const approvedData = await approvedRes.json();
-    const rejectedData = await rejectedRes.json();
-    setTlPending(Array.isArray(pendingData) ? pendingData : []);
-    setTlApprovedList(Array.isArray(approvedData) ? approvedData : []);
-    setTlRejectedList(Array.isArray(rejectedData) ? rejectedData : []);
-  } catch { } finally { setTlReqLoading(false); }
-};
+    setTlReqLoading(true);
+    try {
+      const [pendingRes, approvedRes, rejectedRes] = await Promise.all([
+        fetch(`${TL_API}/pending`),
+        fetch(`${TL_API}/approved-list`),
+        fetch(`${TL_API}/rejected-list`),
+      ]);
+      const pendingData = await pendingRes.json();
+      const approvedData = await approvedRes.json();
+      const rejectedData = await rejectedRes.json();
+      setTlPending(Array.isArray(pendingData) ? pendingData : []);
+      setTlApprovedList(Array.isArray(approvedData) ? approvedData : []);
+      setTlRejectedList(Array.isArray(rejectedData) ? rejectedData : []);
+    } catch { } finally { setTlReqLoading(false); }
+  };
 
-const approveTL = async (id) => {
-  const res = await fetch(`${TL_API}/approve/${id}`, { method: 'PUT' });
-  if (res.ok) { setSnack({ open: true, msg: 'TL approved!', sev: 'success' }); loadTlPending(); }
-  else setSnack({ open: true, msg: 'Failed', sev: 'error' });
-};
+  const approveTL = async (id) => {
+    const res = await fetch(`${TL_API}/approve/${id}`, { method: 'PUT' });
+    if (res.ok) { setSnack({ open: true, msg: 'TL approved!', sev: 'success' }); loadTlPending(); }
+    else setSnack({ open: true, msg: 'Failed', sev: 'error' });
+  };
 
-const rejectTL = async (id) => {
-  const res = await fetch(`${TL_API}/reject/${id}`, { method: 'PUT' });
-  if (res.ok) { setSnack({ open: true, msg: 'TL rejected', sev: 'warning' }); loadTlPending(); }
-  else setSnack({ open: true, msg: 'Failed', sev: 'error' });
-};
+  const rejectTL = async (id) => {
+    const res = await fetch(`${TL_API}/reject/${id}`, { method: 'PUT' });
+    if (res.ok) { setSnack({ open: true, msg: 'TL rejected', sev: 'warning' }); loadTlPending(); }
+    else setSnack({ open: true, msg: 'Failed', sev: 'error' });
+  };
 
-const loadTlChangeRequests = async () => {
-  setTlChangeReqLoading(true);
-  try {
-    const res = await fetch(`${TL_API}/change-requests`);
-    const data = await res.json();
-    setTlChangeRequests(Array.isArray(data) ? data : []);
-  } catch { } finally { setTlChangeReqLoading(false); }
-};
+  const loadTlChangeRequests = async () => {
+    setTlChangeReqLoading(true);
+    try {
+      const res = await fetch(`${TL_API}/change-requests`);
+      const data = await res.json();
+      setTlChangeRequests(Array.isArray(data) ? data : []);
+    } catch { } finally { setTlChangeReqLoading(false); }
+  };
 
-const approveTlChangeReq = async (id) => {
-  const res = await fetch(`${TL_API}/change-requests/${id}/approve`, { method: 'PUT' });
-  if (res.ok) { setSnack({ open: true, msg: 'TL profile updated!', sev: 'success' }); loadTlChangeRequests(); }
-  else setSnack({ open: true, msg: 'Failed', sev: 'error' });
-};
+  const approveTlChangeReq = async (id) => {
+    const res = await fetch(`${TL_API}/change-requests/${id}/approve`, { method: 'PUT' });
+    if (res.ok) { setSnack({ open: true, msg: 'TL profile updated!', sev: 'success' }); loadTlChangeRequests(); }
+    else setSnack({ open: true, msg: 'Failed', sev: 'error' });
+  };
 
-const rejectTlChangeReq = async (id) => {
-  const res = await fetch(`${TL_API}/change-requests/${id}/reject`, { method: 'PUT' });
-  if (res.ok) { setSnack({ open: true, msg: 'Request rejected', sev: 'warning' }); loadTlChangeRequests(); }
-  else setSnack({ open: true, msg: 'Failed', sev: 'error' });
-};
+  const rejectTlChangeReq = async (id) => {
+    const res = await fetch(`${TL_API}/change-requests/${id}/reject`, { method: 'PUT' });
+    if (res.ok) { setSnack({ open: true, msg: 'Request rejected', sev: 'warning' }); loadTlChangeRequests(); }
+    else setSnack({ open: true, msg: 'Failed', sev: 'error' });
+  };
 
-const loadManagerChangeRequests = async () => {
-  setManagerChangeReqLoading(true);
-  try {
-    const [changeRes, rejectedRes, approvedRes] = await Promise.all([
-      fetch(`${MANAGER_API}/change-requests`),
-      fetch(`${MANAGER_API}/rejected-list`),
-      fetch(`${MANAGER_API}/approved-list`),
-    ]);
-    const data = await changeRes.json();
-    const rejectedData = await rejectedRes.json();
-    const approvedData = await approvedRes.json();
-    setManagerChangeRequests(Array.isArray(data) ? data : []);
-    setManagerRejectedList(Array.isArray(rejectedData) ? rejectedData : []);
-    setManagerApprovedList(Array.isArray(approvedData) ? approvedData : []);
-  } catch { } finally { setManagerChangeReqLoading(false); }
-};
+  const loadManagerChangeRequests = async () => {
+    setManagerChangeReqLoading(true);
+    try {
+      const [changeRes, rejectedRes, approvedRes] = await Promise.all([
+        fetch(`${MANAGER_API}/change-requests`),
+        fetch(`${MANAGER_API}/rejected-list`),
+        fetch(`${MANAGER_API}/approved-list`),
+      ]);
+      const data = await changeRes.json();
+      const rejectedData = await rejectedRes.json();
+      const approvedData = await approvedRes.json();
+      setManagerChangeRequests(Array.isArray(data) ? data : []);
+      setManagerRejectedList(Array.isArray(rejectedData) ? rejectedData : []);
+      setManagerApprovedList(Array.isArray(approvedData) ? approvedData : []);
+    } catch { } finally { setManagerChangeReqLoading(false); }
+  };
 
-const loadManagerPending = async () => {
-  setManagerPendingLoading(true);
-  try {
-    const res = await fetch(`${MANAGER_API}/pending`);
-    const data = await res.json();
-    setManagerPending(Array.isArray(data) ? data : []);
-  } catch { } finally { setManagerPendingLoading(false); }
-};
+  const loadManagerPending = async () => {
+    setManagerPendingLoading(true);
+    try {
+      const res = await fetch(`${MANAGER_API}/pending`);
+      const data = await res.json();
+      setManagerPending(Array.isArray(data) ? data : []);
+    } catch { } finally { setManagerPendingLoading(false); }
+  };
 
-const approveManager = async (id) => {
-  const res = await fetch(`${MANAGER_API}/approve/${id}`, { method: 'PUT' });
-  if (res.ok) { setSnack({ open: true, msg: 'Manager approved!', sev: 'success' }); loadManagerPending(); }
-  else setSnack({ open: true, msg: 'Failed', sev: 'error' });
-};
+  const approveManager = async (id) => {
+    const res = await fetch(`${MANAGER_API}/approve/${id}`, { method: 'PUT' });
+    if (res.ok) { setSnack({ open: true, msg: 'Manager approved!', sev: 'success' }); loadManagerPending(); }
+    else setSnack({ open: true, msg: 'Failed', sev: 'error' });
+  };
 
-const rejectManager = async (id) => {
-  const res = await fetch(`${MANAGER_API}/reject/${id}`, { method: 'PUT' });
-  if (res.ok) { setSnack({ open: true, msg: 'Manager rejected', sev: 'warning' }); loadManagerPending(); }
-  else setSnack({ open: true, msg: 'Failed', sev: 'error' });
-};
+  const rejectManager = async (id) => {
+    const res = await fetch(`${MANAGER_API}/reject/${id}`, { method: 'PUT' });
+    if (res.ok) { setSnack({ open: true, msg: 'Manager rejected', sev: 'warning' }); loadManagerPending(); }
+    else setSnack({ open: true, msg: 'Failed', sev: 'error' });
+  };
 
-const approveManagerChangeReq = async (id) => {
-  const res = await fetch(`${MANAGER_API}/change-requests/${id}/approve`, { method: 'PUT' });
-  if (res.ok) { setSnack({ open: true, msg: 'Manager profile updated!', sev: 'success' }); loadManagerChangeRequests(); }
-  else setSnack({ open: true, msg: 'Failed', sev: 'error' });
-};
+  const approveManagerChangeReq = async (id) => {
+    const res = await fetch(`${MANAGER_API}/change-requests/${id}/approve`, { method: 'PUT' });
+    if (res.ok) { setSnack({ open: true, msg: 'Manager profile updated!', sev: 'success' }); loadManagerChangeRequests(); }
+    else setSnack({ open: true, msg: 'Failed', sev: 'error' });
+  };
 
-const rejectManagerChangeReq = async (id) => {
-  const res = await fetch(`${MANAGER_API}/change-requests/${id}/reject`, { method: 'PUT' });
-  if (res.ok) { setSnack({ open: true, msg: 'Request rejected', sev: 'warning' }); loadManagerChangeRequests(); }
-  else setSnack({ open: true, msg: 'Failed', sev: 'error' });
-};
+  const rejectManagerChangeReq = async (id) => {
+    const res = await fetch(`${MANAGER_API}/change-requests/${id}/reject`, { method: 'PUT' });
+    if (res.ok) { setSnack({ open: true, msg: 'Request rejected', sev: 'warning' }); loadManagerChangeRequests(); }
+    else setSnack({ open: true, msg: 'Failed', sev: 'error' });
+  };
 
 
   const approveChangeReq = async (id) => {
@@ -331,7 +411,7 @@ const rejectManagerChangeReq = async (id) => {
   const loadPosRequests = async () => {
     setPosReqLoading(true);
     try {
-      const res  = await fetch(`${EMP_API}/position-requests`);
+      const res = await fetch(`${EMP_API}/position-requests`);
       const data = await res.json();
       setPosRequests(Array.isArray(data) ? data : []);
     } catch { /* ignore */ } finally {
@@ -375,11 +455,11 @@ const rejectManagerChangeReq = async (id) => {
   const openEdit = (emp) => {
     setEditEmp(emp);
     setEditForm({
-      newJoinerName:    emp.newJoinerName    || '',
-      position:         emp.position         || '',
-      location:         emp.location         || '',
+      newJoinerName: emp.newJoinerName || '',
+      position: emp.position || '',
+      location: emp.location || '',
       reportingManager: emp.reportingManager || '',
-      newJoinerPhone:   emp.newJoinerPhone   || '',
+      newJoinerPhone: emp.newJoinerPhone || '',
       newJoinerEmailId: emp.newJoinerEmailId || '',
     });
     setEditOpen(true);
@@ -392,7 +472,7 @@ const rejectManagerChangeReq = async (id) => {
     }
     setEditSaving(true);
     try {
-      const res  = await fetch(`${EMP_API.replace('/auth', '')}/auth/admin/update-employee/${editEmp._id}`, {
+      const res = await fetch(`${EMP_API.replace('/auth', '')}/auth/admin/update-employee/${editEmp._id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(editForm)
@@ -412,7 +492,7 @@ const rejectManagerChangeReq = async (id) => {
     }
   };
 
-  const pending  = employees.filter(e => e.approvalStatus === 'pending');
+  const pending = employees.filter(e => e.approvalStatus === 'pending');
   const approved = employees.filter(e => e.approvalStatus === 'approved');
   const rejected = employees.filter(e => e.approvalStatus === 'rejected');
 
@@ -495,9 +575,9 @@ const rejectManagerChangeReq = async (id) => {
       {/* Summary cards */}
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 2, mb: 3 }}>
         {[
-          { label: 'Pending Approval', count: pending.length,  color: '#e65100', bg: '#fff3e0' },
-          { label: 'Approved',         count: approved.filter(e => !['tl','team lead','team leader'].includes((e.position||'').toLowerCase())).length + tlApprovedList.length, color: '#2e7d32', bg: '#e6f4ea' },
-          { label: 'Rejected',         count: rejected.length, color: '#c62828', bg: '#fdecea' },
+          { label: 'Pending Approval', count: pending.length, color: '#e65100', bg: '#fff3e0' },
+          { label: 'Approved', count: approved.filter(e => !['tl', 'team lead', 'team leader'].includes((e.position || '').toLowerCase())).length + tlApprovedList.length, color: '#2e7d32', bg: '#e6f4ea' },
+          { label: 'Rejected', count: rejected.length, color: '#c62828', bg: '#fdecea' },
         ].map(s => (
           <Card key={s.label} sx={{ borderRadius: 3, border: `1.5px solid ${s.color}20` }}>
             <CardContent sx={{ py: 2 }}>
@@ -524,7 +604,7 @@ const rejectManagerChangeReq = async (id) => {
                 <Box sx={{ pr: 2 }}>Pending</Box>
               </Badge>
             } />
-            <Tab value="approved" label={`Approved (${approved.filter(e => !['tl','team lead','team leader'].includes((e.position||'').toLowerCase())).length + tlApprovedList.length})`} />
+            <Tab value="approved" label={`Approved (${approved.filter(e => !['tl', 'team lead', 'team leader'].includes((e.position || '').toLowerCase())).length + tlApprovedList.length})`} />
             <Tab value="rejected" label={`Rejected (${rejected.length})`} />
             <Tab value="posreq" label={
               <Badge badgeContent={posRequests.filter(r => r.status === 'pending').length} color="error" max={99} sx={{ '& .MuiBadge-badge': { right: -8, top: -2 } }}>
@@ -598,8 +678,8 @@ const rejectManagerChangeReq = async (id) => {
                     {/* Sub-tabs */}
                     <Box sx={{ display: 'flex', gap: 1, px: 3, pt: 2, pb: 1, flexWrap: 'wrap' }}>
                       {[
-                        { key: 'fse',     label: 'FSE',     count: pending.length },
-                        { key: 'tl',      label: 'TL',      count: tlPending.length },
+                        { key: 'fse', label: 'FSE', count: pending.length },
+                        { key: 'tl', label: 'TL', count: tlPending.length },
                         { key: 'manager', label: 'Manager', count: managerPending.length },
                       ].map(s => (
                         <Badge key={s.key} badgeContent={s.count} color="warning" max={99}
@@ -749,25 +829,25 @@ const rejectManagerChangeReq = async (id) => {
               })()}
               {tab === 'approved' && (() => {
                 const q = approvedSearch.toLowerCase().trim();
-                const matchFSE = (e) => !q || (e.newJoinerName||'').toLowerCase().includes(q) || (e.email||'').toLowerCase().includes(q) || (e.location||'').toLowerCase().includes(q) || (e.reportingManager||'').toLowerCase().includes(q);
-                const matchTL  = (e) => !q || (e.name||'').toLowerCase().includes(q) || (e.email||'').toLowerCase().includes(q) || (e.location||'').toLowerCase().includes(q) || (e.reportingManager||'').toLowerCase().includes(q);
-                const fseApproved      = approved.filter(e => (e.position || '').toLowerCase() === 'fse').filter(matchFSE);
-                const tlApproved       = tlApprovedList.filter(matchTL);
-                const managerApproved  = managerApprovedList.filter(m => !q || (m.name||'').toLowerCase().includes(q) || (m.email||'').toLowerCase().includes(q) || (m.location||'').toLowerCase().includes(q));
-                const approvedNonTL    = approved.filter(e => !['tl', 'team lead', 'team leader', 'manager'].includes((e.position || '').toLowerCase())).filter(matchFSE);
-                const allApproved      = [...approvedNonTL, ...tlApprovedList.filter(matchTL)];
+                const matchFSE = (e) => !q || (e.newJoinerName || '').toLowerCase().includes(q) || (e.email || '').toLowerCase().includes(q) || (e.location || '').toLowerCase().includes(q) || (e.reportingManager || '').toLowerCase().includes(q);
+                const matchTL = (e) => !q || (e.name || '').toLowerCase().includes(q) || (e.email || '').toLowerCase().includes(q) || (e.location || '').toLowerCase().includes(q) || (e.reportingManager || '').toLowerCase().includes(q);
+                const fseApproved = approved.filter(e => (e.position || '').toLowerCase() === 'fse').filter(matchFSE);
+                const tlApproved = tlApprovedList.filter(matchTL);
+                const managerApproved = managerApprovedList.filter(m => !q || (m.name || '').toLowerCase().includes(q) || (m.email || '').toLowerCase().includes(q) || (m.location || '').toLowerCase().includes(q));
+                const approvedNonTL = approved.filter(e => !['tl', 'team lead', 'team leader', 'manager'].includes((e.position || '').toLowerCase())).filter(matchFSE);
+                const allApproved = [...approvedNonTL, ...tlApprovedList.filter(matchTL)];
                 const subList =
-                  approvedSubTab === 'fse'     ? fseApproved :
-                  approvedSubTab === 'tl'      ? tlApproved  :
-                  approvedSubTab === 'manager' ? managerApproved : allApproved;
+                  approvedSubTab === 'fse' ? fseApproved :
+                    approvedSubTab === 'tl' ? tlApproved :
+                      approvedSubTab === 'manager' ? managerApproved : allApproved;
                 return (
                   <Box>
                     {/* Sub-tabs + Search */}
                     <Box sx={{ display: 'flex', gap: 1, px: 3, pt: 2, pb: 1, flexWrap: 'wrap', alignItems: 'center' }}>
                       {[
-                        { key: 'all',     label: 'All',     count: allApproved.length },
-                        { key: 'fse',     label: 'FSE',     count: fseApproved.length },
-                        { key: 'tl',      label: 'TL',      count: tlApproved.length },
+                        { key: 'all', label: 'All', count: allApproved.length },
+                        { key: 'fse', label: 'FSE', count: fseApproved.length },
+                        { key: 'tl', label: 'TL', count: tlApproved.length },
                         { key: 'manager', label: 'Manager', count: managerApproved.length },
                       ].map(s => (
                         <Button key={s.key} size="small"
@@ -789,56 +869,64 @@ const rejectManagerChangeReq = async (id) => {
                         InputProps={{ startAdornment: <span style={{ marginRight: 6, color: '#aaa' }}>🔍</span> }} />
                     </Box>
                     {/* TL approved uses a simpler table since TL data shape differs */}
-                    {approvedSubTab === 'tl' ? (                      <Box>
-                        <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <Typography variant="subtitle1" fontWeight={700} sx={{ color: BRAND.primary }}>✓ TL Approved Employees</Typography>
-                          <Typography variant="caption" color="text.secondary">{tlApproved.length} record{tlApproved.length !== 1 ? 's' : ''}</Typography>
+                    {approvedSubTab === 'tl' ? (<Box>
+                      <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Typography variant="subtitle1" fontWeight={700} sx={{ color: BRAND.primary }}>✓ TL Approved Employees</Typography>
+                        <Typography variant="caption" color="text.secondary">{tlApproved.length} record{tlApproved.length !== 1 ? 's' : ''}</Typography>
+                      </Box>
+                      {tlApproved.length === 0 ? (
+                        <Box sx={{ textAlign: 'center', py: 5, color: 'text.secondary' }}>
+                          <PersonIcon sx={{ fontSize: 40, opacity: 0.3, mb: 1 }} />
+                          <Typography variant="body2">No approved TLs found</Typography>
                         </Box>
-                        {tlApproved.length === 0 ? (
-                          <Box sx={{ textAlign: 'center', py: 5, color: 'text.secondary' }}>
-                            <PersonIcon sx={{ fontSize: 40, opacity: 0.3, mb: 1 }} />
-                            <Typography variant="body2">No approved TLs found</Typography>
-                          </Box>
-                        ) : (
-                          <TableContainer sx={{ overflowX: 'auto' }}>
-                            <Table size="small">
-                              <TableHead>
-                                <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider', py: 1.5 } }}>
-                                  <TableCell>Employee</TableCell>
-                                  <TableCell>Position</TableCell>
-                                  <TableCell>Location</TableCell>
-                                  <TableCell>Reporting Manager</TableCell>
-                                  <TableCell>Phone</TableCell>
-                                  <TableCell>Registered On</TableCell>
-                                  <TableCell>Status</TableCell>
-                                  <TableCell>Actions</TableCell>
-                                </TableRow>
-                              </TableHead>
-                              <TableBody>
-                                {tlApproved.map(tl => (
-                                  <TableRow key={tl._id} hover sx={{ '&:last-child td': { border: 0 } }}>
-                                    <TableCell>
-                                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                                        <Avatar sx={{ bgcolor: BRAND.primary, width: 36, height: 36, fontSize: 13, fontWeight: 700 }}>
-                                          {initials(tl.name)}
-                                        </Avatar>
-                                        <Box>
-                                          <Typography variant="body2" fontWeight={700} sx={{ color: 'text.primary' }}>{tl.name}</Typography>
-                                          <Typography variant="caption" sx={{ color: 'text.secondary' }}>{tl.email}</Typography>
-                                        </Box>
+                      ) : (
+                        <TableContainer sx={{ overflowX: 'auto' }}>
+                          <Table size="small">
+                            <TableHead>
+                              <TableRow sx={{ '& th': { fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8, color: 'text.secondary', borderBottom: '2px solid', borderColor: 'divider', py: 1.5 } }}>
+                                <TableCell>Employee</TableCell>
+                                <TableCell>Position</TableCell>
+                                <TableCell>Location</TableCell>
+                                <TableCell>Reporting Manager</TableCell>
+                                <TableCell>Phone</TableCell>
+                                <TableCell>Registered On</TableCell>
+                                <TableCell>Status</TableCell>
+                                <TableCell>Actions</TableCell>
+                              </TableRow>
+                            </TableHead>
+                            <TableBody>
+                              {tlApproved.map(tl => (
+                                <TableRow key={tl._id} hover sx={{ '&:last-child td': { border: 0 } }}>
+                                  <TableCell>
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                                      <Avatar sx={{ bgcolor: BRAND.primary, width: 36, height: 36, fontSize: 13, fontWeight: 700 }}>
+                                        {initials(tl.name)}
+                                      </Avatar>
+                                      <Box>
+                                        <Typography variant="body2" fontWeight={700} sx={{ color: 'text.primary' }}>{tl.name}</Typography>
+                                        <Typography variant="caption" sx={{ color: 'text.secondary' }}>{tl.email}</Typography>
                                       </Box>
-                                    </TableCell>
-                                    <TableCell><Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 500 }}>{tl.position || 'Team Lead'}</Typography></TableCell>
-                                    <TableCell><Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 500 }}>{tl.location || '–'}</Typography></TableCell>
-                                    <TableCell><Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 500 }}>{tl.reportingManager || '–'}</Typography></TableCell>
-                                    <TableCell><Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 500 }}>{tl.phone}</Typography></TableCell>
-                                    <TableCell>
-                                      <Typography variant="caption" sx={{ color: 'text.primary', fontWeight: 500 }}>
-                                        {tl.createdAt ? new Date(tl.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '–'}
-                                      </Typography>
-                                    </TableCell>
-                                    <TableCell><StatusChip status="approved" /></TableCell>
-                                    <TableCell>
+                                    </Box>
+                                  </TableCell>
+                                  <TableCell><Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 500 }}>{tl.position || 'Team Lead'}</Typography></TableCell>
+                                  <TableCell><Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 500 }}>{tl.location || '–'}</Typography></TableCell>
+                                  <TableCell><Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 500 }}>{tl.reportingManager || '–'}</Typography></TableCell>
+                                  <TableCell><Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 500 }}>{tl.phone}</Typography></TableCell>
+                                  <TableCell>
+                                    <Typography variant="caption" sx={{ color: 'text.primary', fontWeight: 500 }}>
+                                      {tl.createdAt ? new Date(tl.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '–'}
+                                    </Typography>
+                                  </TableCell>
+                                  <TableCell><StatusChip status="approved" /></TableCell>
+                                  <TableCell>
+                                    <Box sx={{ display: 'flex', gap: 1 }}>
+                                      <Tooltip title="Directly open & view live TL dashboard">
+                                        <Button size="small" variant="contained" startIcon={<VisibilityIcon />}
+                                          onClick={() => openTlDashboard(tl)}
+                                          sx={{ bgcolor: '#1976d2', color: '#fff', fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: '#115293' } }}>
+                                          View
+                                        </Button>
+                                      </Tooltip>
                                       <Tooltip title="Edit TL details">
                                         <Button size="small" variant="outlined" startIcon={<EditIcon />}
                                           onClick={() => openEdit({ ...tl, newJoinerName: tl.name, newJoinerPhone: tl.phone, newJoinerEmailId: tl.email })}
@@ -846,14 +934,15 @@ const rejectManagerChangeReq = async (id) => {
                                           Edit
                                         </Button>
                                       </Tooltip>
-                                    </TableCell>
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </Table>
-                          </TableContainer>
-                        )}
-                      </Box>
+                                    </Box>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </TableContainer>
+                      )}
+                    </Box>
                     ) : approvedSubTab === 'manager' ? (
                       <Box>
                         <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -913,16 +1002,16 @@ const rejectManagerChangeReq = async (id) => {
                 );
               })()}
               {tab === 'rejected' && (() => {
-                const fseRejected     = rejected;
-                const tlRejected      = tlRejectedList;
+                const fseRejected = rejected;
+                const tlRejected = tlRejectedList;
                 const managerRejected = managerRejectedList;
                 return (
                   <Box>
                     {/* Sub-tabs */}
                     <Box sx={{ display: 'flex', gap: 1, px: 3, pt: 2, pb: 1, flexWrap: 'wrap' }}>
                       {[
-                        { key: 'fse',     label: 'FSE',     count: fseRejected.length },
-                        { key: 'tl',      label: 'TL',      count: tlRejected.length },
+                        { key: 'fse', label: 'FSE', count: fseRejected.length },
+                        { key: 'tl', label: 'TL', count: tlRejected.length },
                         { key: 'manager', label: 'Manager', count: managerRejected.length },
                       ].map(s => (
                         <Button key={s.key} size="small"
@@ -1044,7 +1133,7 @@ const rejectManagerChangeReq = async (id) => {
                   </Box>
                 );
               })()}
-              {tab === 'posreq'   && (
+              {tab === 'posreq' && (
                 <Box>
                   <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <Typography variant="subtitle1" fontWeight={700} sx={{ color: BRAND.primary }}>🔔 Employee Position Requests</Typography>
@@ -1112,8 +1201,8 @@ const rejectManagerChangeReq = async (id) => {
                   {/* Sub-tabs + Status Filter */}
                   <Box sx={{ display: 'flex', gap: 1, px: 3, pt: 2, pb: 1, flexWrap: 'wrap', alignItems: 'center' }}>
                     {[
-                      { key: 'fse',     label: 'FSE',     count: changeRequests.filter(r => r.status === 'pending' && (r.type === 'profile_change' || r.type === 'merchant_edit' || r.type === 'merchant_delete')).length },
-                      { key: 'tl',      label: 'TL',      count: tlChangeRequests.filter(r => r.status === 'pending').length },
+                      { key: 'fse', label: 'FSE', count: changeRequests.filter(r => r.status === 'pending' && (r.type === 'profile_change' || r.type === 'merchant_edit' || r.type === 'merchant_delete')).length },
+                      { key: 'tl', label: 'TL', count: tlChangeRequests.filter(r => r.status === 'pending').length },
                       { key: 'manager', label: 'Manager', count: managerChangeRequests.filter(r => r.status === 'pending').length },
                     ].map(s => (
                       <Badge key={s.key} badgeContent={s.count} color="error" max={99}
@@ -1169,9 +1258,9 @@ const rejectManagerChangeReq = async (id) => {
                               </TableRow>
                             </TableHead>
                             <TableBody>
-                              {changeRequests.filter(r => (r.type === 'profile_change' || r.type === 'merchant_edit' || r.type === 'merchant_delete') && (changeStatusFilter === 'all' || r.status === changeStatusFilter) && (!changeSearch || (r.employeeName||'').toLowerCase().includes(changeSearch.toLowerCase()) || (r.reason||'').toLowerCase().includes(changeSearch.toLowerCase()))).map(r => {
+                              {changeRequests.filter(r => (r.type === 'profile_change' || r.type === 'merchant_edit' || r.type === 'merchant_delete') && (changeStatusFilter === 'all' || r.status === changeStatusFilter) && (!changeSearch || (r.employeeName || '').toLowerCase().includes(changeSearch.toLowerCase()) || (r.reason || '').toLowerCase().includes(changeSearch.toLowerCase()))).map(r => {
                                 const typeLabel = r.type === 'profile_change' ? '👤 Profile Change' : r.type === 'merchant_edit' ? '✏ Merchant Edit' : '🗑 Merchant Delete';
-                                const details   = r.type === 'profile_change' ? Object.entries(r.profileChanges || {}).map(([k,v]) => `${k}: ${v}`).slice(0,3).join(', ') : (r.merchantName || '–');
+                                const details = r.type === 'profile_change' ? Object.entries(r.profileChanges || {}).map(([k, v]) => `${k}: ${v}`).slice(0, 3).join(', ') : (r.merchantName || '–');
                                 return (
                                   <TableRow key={r._id} hover sx={{ '&:last-child td': { border: 0 } }}>
                                     <TableCell><Typography variant="body2" fontWeight={700} sx={{ color: 'text.primary' }}>{r.employeeName}</Typography></TableCell>
@@ -1221,7 +1310,7 @@ const rejectManagerChangeReq = async (id) => {
                               </TableRow>
                             </TableHead>
                             <TableBody>
-                              {tlChangeRequests.filter(r => (changeStatusFilter === 'all' || r.status === changeStatusFilter) && (!changeSearch || (r.tlName||'').toLowerCase().includes(changeSearch.toLowerCase()) || (r.reason||'').toLowerCase().includes(changeSearch.toLowerCase()))).map(r => {
+                              {tlChangeRequests.filter(r => (changeStatusFilter === 'all' || r.status === changeStatusFilter) && (!changeSearch || (r.tlName || '').toLowerCase().includes(changeSearch.toLowerCase()) || (r.reason || '').toLowerCase().includes(changeSearch.toLowerCase()))).map(r => {
                                 const changes = Object.entries(r.changes || {}).map(([key, value]) => `${key}: ${value}`).join(', ');
                                 return (
                                   <TableRow key={r._id} hover sx={{ '&:last-child td': { border: 0 } }}>
@@ -1271,7 +1360,7 @@ const rejectManagerChangeReq = async (id) => {
                               </TableRow>
                             </TableHead>
                             <TableBody>
-                              {managerChangeRequests.filter(r => (changeStatusFilter === 'all' || r.status === changeStatusFilter) && (!changeSearch || (r.managerName||'').toLowerCase().includes(changeSearch.toLowerCase()) || (r.reason||'').toLowerCase().includes(changeSearch.toLowerCase()))).map(r => {
+                              {managerChangeRequests.filter(r => (changeStatusFilter === 'all' || r.status === changeStatusFilter) && (!changeSearch || (r.managerName || '').toLowerCase().includes(changeSearch.toLowerCase()) || (r.reason || '').toLowerCase().includes(changeSearch.toLowerCase()))).map(r => {
                                 const changes = Object.entries(r.changes || {}).map(([key, value]) => `${key}: ${value}`).join(', ');
                                 return (
                                   <TableRow key={r._id} hover sx={{ '&:last-child td': { border: 0 } }}>
