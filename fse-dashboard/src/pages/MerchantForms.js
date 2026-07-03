@@ -186,6 +186,20 @@ function flattenForm(f, empMap = {}, tlMap = {}, managerMap = {}, verifyMap = {}
   if (f.formType === 'TL') designation = 'Team Lead';
   else if (f.formType === 'Manager') designation = 'Manager';
   
+  const vObj = verifyMap[vKey] || {};
+  const vRec = vObj.record || {};
+  const getVal = (...keys) => {
+    for (const k of keys) {
+      if (f[k] !== undefined && f[k] !== null && f[k] !== '') return f[k];
+      if (vRec[k] !== undefined && vRec[k] !== null && vRec[k] !== '') return vRec[k];
+      if (vObj.checks && Array.isArray(vObj.checks)) {
+        const c = vObj.checks.find(x => (x.field || x.label || x.rule || '').toLowerCase() === k.toLowerCase());
+        if (c && (c.actual || c.sheetValue)) return c.actual || c.sheetValue;
+      }
+    }
+    return '';
+  };
+
   return {
     'Employee Name':   f.employeeName   || '',
     'Employee Email':  empEmail, // 🔥 FIXED: Use empEmail from correct collection
@@ -200,15 +214,15 @@ function flattenForm(f, empMap = {}, tlMap = {}, managerMap = {}, verifyMap = {}
     'Visit Status':      f.status         || '',
     'Product':           product,
     'Verification Status': verification,
-    'Tide QR Posted':    f.tide_qrPosted    || '',
-    'Tide UPI Txn Done': f.tide_upiTxnDone  || '',
-    'Insurance Vehicle No':   f.ins_vehicleNumber  || '',
-    'Insurance Vehicle Type': f.ins_vehicleType    || '',
-    'Insurance Type':         f.ins_insuranceType  || '',
-    'PineLab Card Txn':       f.pine_cardTxn       || '',
-    'PineLab WiFi Connected': f.pine_wifiConnected || '',
-    'Credit Card Name':       f.cc_cardName        || '',
-    'Tide Insurance Type':    f.tideIns_type        || '',
+    'Tide QR Posted':    getVal('tide_qrPosted', 'qrPosted', 'qr_posted'),
+    'Tide UPI Txn Done': getVal('tide_upiTxnDone', 'upiTxnDone', 'upi_txn_done'),
+    'Insurance Vehicle No':   getVal('ins_vehicleNumber', 'vehicleNumber', 'vehicle_number', 'vehicleNo'),
+    'Insurance Vehicle Type': getVal('ins_vehicleType', 'vehicleType', 'vehicle_type'),
+    'Insurance Type':         getVal('ins_insuranceType', 'insuranceType', 'insurance_type'),
+    'PineLab Card Txn':       getVal('pine_cardTxn', 'cardTxn', 'card_txn'),
+    'PineLab WiFi Connected': getVal('pine_wifiConnected', 'wifiConnected', 'wifi_connected'),
+    'Credit Card Name':       getVal('cc_cardName', 'cardName', 'card_name'),
+    'Tide Insurance Type':    getVal('tideIns_type', 'tideInsType', 'insurance_plan'),
     'Submitted On':      f.createdAt ? new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '',
     'Points':            points, // NEW: Points column at the end
   };
