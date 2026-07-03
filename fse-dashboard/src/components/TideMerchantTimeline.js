@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import ReactDOM from 'react-dom';
 import {
   Box, Typography, Card, CardContent, CircularProgress, Chip,
-  Tooltip, IconButton, Button, Alert
+  Tooltip, IconButton, Button, Alert, Popover
 } from '@mui/material';
 import TimelineIcon from '@mui/icons-material/Timeline';
 import { BRAND } from '../theme';
@@ -23,6 +23,7 @@ const STATUS_COLORS = {
  */
 function TideMerchantTimeline({ phone, customerName }) {
   const [expanded, setExpanded] = useState(false);
+  const [anchorEl, setAnchorEl] = useState(null);
   const [loading, setLoading] = useState(false);
   const [timeline, setTimeline] = useState(null);
   const [error, setError] = useState(null);
@@ -64,229 +65,195 @@ function TideMerchantTimeline({ phone, customerName }) {
     }
   };
 
-  const toggleTimeline = () => {
+  const toggleTimeline = (e) => {
     const newExpanded = !expanded;
-    console.log('🔄 Toggling timeline. Current:', expanded, '→ New:', newExpanded);
     setExpanded(newExpanded);
+    if (newExpanded && e && e.currentTarget) {
+      setAnchorEl(e.currentTarget);
+    } else {
+      setAnchorEl(null);
+    }
     
     if (newExpanded && !timeline) {
-      console.log('📡 Fetching timeline data...');
       fetchTimeline();
-    } else if (newExpanded && timeline) {
-      console.log('✅ Timeline already loaded, showing modal');
     }
   };
 
   const currentMonthIndex = new Date().getMonth();
   const selectedMonthData = timeline?.timeline?.find(m => m.month === selectedMonth);
 
-  console.log('🎨 Rendering TideMerchantTimeline. Expanded:', expanded, 'Loading:', loading, 'Timeline:', !!timeline);
-
-  const modalContent = expanded && (
+  return (
     <>
-      <Box
-        onClick={toggleTimeline}
-        sx={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          bgcolor: 'rgba(0, 0, 0, 0.7)',
-          zIndex: 999998,
-          backdropFilter: 'blur(2px)',
-          pointerEvents: 'all'
-        }}
-      />
-
-      <Card 
-        onClick={(e) => e.stopPropagation()}
-        sx={{
-          position: 'fixed',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          width: '90%',
-          maxWidth: 900,
-          maxHeight: '90vh',
-          overflow: 'auto',
-          border: `3px solid ${BRAND.primary}`,
-          borderRadius: 3,
-          bgcolor: '#ffffff',
-          boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
-          zIndex: 999999
-        }}>
+      <Tooltip title="Show Month-by-Month Timeline" placement="left">
         <IconButton
-          onClick={toggleTimeline}
+          size="small"
+          onClick={(e) => {
+            e.stopPropagation();
+            toggleTimeline(e);
+          }}
           sx={{
-            position: 'absolute',
-            top: 8,
-            right: 8,
-            color: '#fff',
-            bgcolor: 'rgba(0,0,0,0.2)',
-            zIndex: 10,
-            '&:hover': { bgcolor: 'rgba(0,0,0,0.3)' }
+            color: '#1565c0',
+            bgcolor: '#e3f2fd',
+            border: `1.5px solid #1565c0`,
+            '&:hover': {
+              bgcolor: '#bbdefb',
+              transform: 'scale(1.05)'
+            },
+            transition: 'all 0.2s'
           }}
         >
-          ✕
+          <TimelineIcon fontSize="small" />
         </IconButton>
-        
-        <Box sx={{
-          background: `linear-gradient(135deg, ${BRAND.primary}dd, ${BRAND.primary}88)`,
-          px: 2.5,
-          py: 1.5,
-          color: '#fff'
-        }}>
-          <Typography variant="subtitle1" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1, color: '#fff' }}>
-            📅 Merchant Timeline — {customerName}
-          </Typography>
-          <Typography variant="caption" sx={{ opacity: 0.9, color: '#fff' }}>
-            Phone: {phone} · Verification & Priority Pass Pro Status (2026)
-          </Typography>
-        </Box>
+      </Tooltip>
 
-        <CardContent sx={{ p: 2.5 }}>
-          {loading ? (
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', py: 4, gap: 2 }}>
-              <CircularProgress size={24} sx={{ color: BRAND.primary }} />
-              <Typography variant="body2" color="text.secondary">Loading timeline data...</Typography>
-            </Box>
-          ) : error ? (
-            <Box sx={{ textAlign: 'center', py: 3 }}>
-              <Typography variant="body2" color="error" sx={{ mb: 1 }}>⚠️ {error}</Typography>
-              <Typography variant="caption" color="text.secondary">
-                Unable to load timeline. Please try again later.
-              </Typography>
-            </Box>
-          ) : !timeline ? (
-            <Typography variant="body2" color="text.secondary" sx={{ textAlign: 'center', py: 3 }}>
-              No timeline data available
+      <Popover
+        open={Boolean(expanded && anchorEl)}
+        anchorEl={anchorEl}
+        onClose={(e) => {
+          if (e) e.stopPropagation();
+          setExpanded(false);
+          setAnchorEl(null);
+        }}
+        anchorOrigin={{
+          vertical: 'bottom',
+          horizontal: 'right',
+        }}
+        transformOrigin={{
+          vertical: 'top',
+          horizontal: 'right',
+        }}
+        slotProps={{
+          paper: {
+            onClick: (e) => e.stopPropagation(),
+            sx: {
+              width: { xs: '92vw', sm: 680 },
+              maxHeight: '82vh',
+              overflow: 'auto',
+              border: `2.5px solid ${BRAND.primary}`,
+              borderRadius: 3,
+              bgcolor: '#ffffff',
+              boxShadow: '0 12px 40px rgba(0,0,0,0.3)',
+              zIndex: 100000
+            }
+          }
+        }}
+      >
+        <Box sx={{ position: 'relative' }}>
+          <IconButton
+            onClick={(e) => {
+              if (e) e.stopPropagation();
+              setExpanded(false);
+              setAnchorEl(null);
+            }}
+            sx={{
+              position: 'absolute',
+              top: 8,
+              right: 8,
+              color: '#fff',
+              bgcolor: 'rgba(0,0,0,0.2)',
+              zIndex: 10,
+              '&:hover': { bgcolor: 'rgba(0,0,0,0.3)' }
+            }}
+          >
+            ✕
+          </IconButton>
+          
+          <Box sx={{
+            background: `linear-gradient(135deg, ${BRAND.primary}dd, ${BRAND.primary}88)`,
+            px: 2.5,
+            py: 1.5,
+            color: '#fff'
+          }}>
+            <Typography variant="subtitle1" sx={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: 1, color: '#fff' }}>
+              🌊 Tide Month-by-Month Status
             </Typography>
-          ) : (
-            <Box>
-              <Box sx={{ mb: 3 }}>
-                <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', mb: 1.5, display: 'block', textTransform: 'uppercase', letterSpacing: 1 }}>
-                  📆 Select Month to View Details
+            <Typography variant="caption" sx={{ opacity: 0.9, display: 'block' }}>
+              Merchant: <strong>{customerName || phone}</strong> ({phone})
+            </Typography>
+          </Box>
+
+          <Box sx={{ p: 2 }}>
+            {loading ? (
+              <Box sx={{ py: 6, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                <CircularProgress size={36} sx={{ color: BRAND.primary }} />
+                <Typography variant="body2" color="text.secondary" fontWeight={600}>
+                  Scanning 12 months of Tide verifications...
                 </Typography>
-                <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(12, 1fr)', gap: 0.8 }}>
+              </Box>
+            ) : error ? (
+              <Alert severity="error" sx={{ mb: 2 }}>
+                {error}
+                <Box sx={{ mt: 1 }}>
+                  <Button size="small" variant="outlined" color="error" onClick={fetchTimeline}>
+                    Retry
+                  </Button>
+                </Box>
+              </Alert>
+            ) : !timeline ? null : (
+              <Box>
+                {/* Month Selector Pills */}
+                <Box sx={{ 
+                  display: 'flex', 
+                  gap: 0.8, 
+                  overflowX: 'auto', 
+                  pb: 1.5, 
+                  mb: 2,
+                  borderBottom: '1.5px solid #eaeaea',
+                  '::-webkit-scrollbar': { height: 4 }
+                }}>
                   {timeline.timeline.map((month, idx) => {
                     const isCurrentMonth = idx === currentMonthIndex;
                     const isSelected = selectedMonth === month.month;
-                    
-                    let buttonColor, buttonBg;
-                    if (month.status === 'Fully Verified') {
-                      buttonColor = '#2e7d32';
-                      buttonBg = '#e6f4ea';
-                    } else if (month.status === 'Partially Done') {
-                      buttonColor = '#f57f17';
-                      buttonBg = '#fff8e1';
-                    } else if (month.status === 'Not Verified') {
-                      buttonColor = '#c62828';
-                      buttonBg = '#fdecea';
-                    } else {
-                      buttonColor = '#888';
-                      buttonBg = '#f5f5f5';
-                    }
-                    
+                    const status = month.status || 'Not Found';
+                    const sCol = STATUS_COLORS[status] || STATUS_COLORS['Not Found'];
+
                     return (
-                      <Button
-                        key={month.monthKey}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedMonth(month.month);
-                        }}
-                        variant={isSelected ? 'contained' : 'outlined'}
+                      <Chip
+                        key={month.monthKey || month.month}
+                        label={month.month.slice(0, 3)}
+                        onClick={() => setSelectedMonth(month.month)}
                         sx={{
-                          minWidth: 0,
-                          p: 1.5,
-                          borderRadius: 2,
-                          border: `2px solid ${isSelected ? BRAND.primary : buttonColor}`,
-                          bgcolor: isSelected ? BRAND.primary : buttonBg,
-                          color: isSelected ? '#fff' : buttonColor,
-                          fontWeight: 800,
-                          fontSize: 11,
-                          textTransform: 'uppercase',
-                          outline: isCurrentMonth ? `3px solid ${BRAND.primary}40` : 'none',
-                          outlineOffset: 2,
-                          transition: 'all 0.2s',
+                          fontWeight: isSelected ? 800 : 600,
+                          bgcolor: isSelected ? BRAND.primary : sCol.bg,
+                          color: isSelected ? '#ffffff' : sCol.color,
+                          border: isSelected ? `2px solid ${BRAND.primary}` : `1px solid ${sCol.color}44`,
+                          cursor: 'pointer',
                           '&:hover': {
-                            bgcolor: isSelected ? '#0f3320' : buttonBg,
-                            transform: 'scale(1.05)',
-                            boxShadow: `0 4px 12px ${isSelected ? BRAND.primary : buttonColor}40`,
-                            borderColor: isSelected ? BRAND.primary : buttonColor,
-                          },
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: 0.3
+                            bgcolor: isSelected ? BRAND.primary : `${sCol.bg}cc`,
+                            transform: 'translateY(-1px)'
+                          }
                         }}
-                      >
-                        <Typography variant="caption" sx={{ 
-                          fontWeight: 800, 
-                          fontSize: 10,
-                          lineHeight: 1,
-                          color: 'inherit'
-                        }}>
-                          {month.month.slice(0, 3)}
-                        </Typography>
-                        {isCurrentMonth && (
-                          <Typography variant="caption" sx={{ 
-                            fontSize: 7, 
-                            opacity: 0.8,
-                            lineHeight: 1,
-                            color: 'inherit'
-                          }}>
-                            NOW
-                          </Typography>
-                        )}
-                      </Button>
+                      />
                     );
                   })}
                 </Box>
-              </Box>
 
-              {selectedMonthData && (
-                <Box sx={{ 
-                  p: 2.5, 
-                  bgcolor: '#f9fffe', 
-                  borderRadius: 2, 
-                  border: `2px solid ${BRAND.primary}`,
-                  boxShadow: '0 2px 8px rgba(26,71,49,0.1)'
-                }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, pb: 1.5, borderBottom: '2px solid #e0e0e0' }}>
-                    <Typography variant="h6" sx={{ fontWeight: 800, color: BRAND.primary, display: 'flex', alignItems: 'center', gap: 1 }}>
-                      📊 {selectedMonthData.month} 2026
-                    </Typography>
-                    <Box sx={{ display: 'flex', gap: 1 }}>
-                      <Chip
+                {/* Selected Month Details */}
+                {selectedMonthData && (
+                  <Box sx={{ 
+                    p: 2, 
+                    borderRadius: 2, 
+                    bgcolor: '#fafafa', 
+                    border: '1px solid #eaeaea' 
+                  }}>
+                    <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1.5 }}>
+                      <Typography variant="h6" sx={{ fontWeight: 800, color: BRAND.primary }}>
+                        {selectedMonthData.month} 2026
+                      </Typography>
+                      <Chip 
                         label={selectedMonthData.status}
                         size="small"
-                        sx={{
-                          bgcolor: STATUS_COLORS[selectedMonthData.status]?.bg || '#f5f5f5',
-                          color: STATUS_COLORS[selectedMonthData.status]?.color || '#888',
+                        sx={{ 
                           fontWeight: 700,
-                          fontSize: 11,
-                          border: `1.5px solid ${STATUS_COLORS[selectedMonthData.status]?.color || '#888'}`,
+                          bgcolor: (STATUS_COLORS[selectedMonthData.status] || STATUS_COLORS['Not Found']).bg,
+                          color: (STATUS_COLORS[selectedMonthData.status] || STATUS_COLORS['Not Found']).color
                         }}
                       />
-                      {selectedMonthData.hasData && (
-                        <Chip
-                          label={selectedMonthData.priorityPass === 'Active' ? '✅ Priority Pass' : '❌ No Pass'}
-                          size="small"
-                          sx={{
-                            bgcolor: selectedMonthData.priorityPass === 'Active' ? '#e3f2fd' : '#fdecea',
-                            color: selectedMonthData.priorityPass === 'Active' ? '#1565c0' : '#c62828',
-                            fontWeight: 700,
-                            fontSize: 11,
-                            border: `1.5px solid ${selectedMonthData.priorityPass === 'Active' ? '#1565c0' : '#c62828'}`,
-                          }}
-                        />
-                      )}
                     </Box>
-                  </Box>
 
-                  {selectedMonthData.hasData ? (
-                    <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-                      {selectedMonthData.merchantName && (
+                    {selectedMonthData.hasData ? (
+                      <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 2, mb: 2 }}>
+                        {selectedMonthData.merchantName && (
                         <Box>
                           <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, display: 'block', mb: 0.5 }}>
                             Merchant Name
@@ -392,45 +359,13 @@ function TideMerchantTimeline({ phone, customerName }) {
                       📂 Data source: {selectedMonthData.verification.collection} ({selectedMonthData.verification.matchType || 'exact'} match)
                     </Typography>
                   )}
-                </Box>
-              )}
-            </Box>
-          )}
-        </CardContent>
-      </Card>
-    </>
-  );
-
-  return (
-    <>
-      {!expanded && (
-        <Tooltip title="Show Month-by-Month Timeline" placement="left">
-          <IconButton
-            size="small"
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleTimeline();
-            }}
-            sx={{
-              color: '#1565c0',
-              bgcolor: '#e3f2fd',
-              border: `1.5px solid #1565c0`,
-              '&:hover': {
-                bgcolor: '#bbdefb',
-                transform: 'scale(1.05)'
-              },
-              transition: 'all 0.2s'
-            }}
-          >
-            <TimelineIcon fontSize="small" />
-          </IconButton>
-        </Tooltip>
-      )}
-
-      {modalContent && ReactDOM.createPortal(
-        modalContent,
-        document.body
-      )}
+                  </Box>
+                )}
+              </Box>
+            )}
+          </Box>
+        </Box>
+      </Popover>
     </>
   );
 }

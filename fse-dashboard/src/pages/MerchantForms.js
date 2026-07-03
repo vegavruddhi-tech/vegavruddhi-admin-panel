@@ -840,22 +840,34 @@ function DuplicatePanel({ duplicates, allForms = [], open, onClose, onNotify, no
   useEffect(() => { if (open && settling === null && tab === 'settled') loadSettlements(); }, [settling]);
 
   // Fetch forms for a specific employee and merchant
-  const handleEmployeeClick = async (employeeName, customerNumber, product) => {
+  const handleEmployeeClick = async (employeeName, customerNumber, product, dupRecords = null) => {
     setLoadingDrillDown(true);
     setEmployeeDrillDown({ employeeName, customerNumber, product, forms: [] });
     
     try {
-      // 1. Check in-memory dashboard forms first (instant speed & 0 network calls)
-      let formsList = Array.isArray(allForms) ? allForms : [];
+      let employeeForms = [];
+
+      // 1. Check records passed directly from duplicate object
+      if (Array.isArray(dupRecords) && dupRecords.length > 0) {
+        employeeForms = dupRecords.filter(f => 
+          (f.employeeName || '').trim().toLowerCase() === (employeeName || '').trim().toLowerCase()
+        );
+      }
+
+      // 2. Check in-memory dashboard forms
+      if (employeeForms.length === 0 && Array.isArray(allForms) && allForms.length > 0) {
+        employeeForms = allForms.filter(f => 
+          (f.employeeName || '').trim().toLowerCase() === (employeeName || '').trim().toLowerCase() && 
+          String(f.customerNumber || '').trim() === String(customerNumber || '').trim()
+        );
+      }
       
-      // 2. If memory forms empty, fetch lightweight paginated batch
-      if (formsList.length === 0) {
-        const mP = selectedMonth ? `&month=${encodeURIComponent(selectedMonth)}` : '';
-        const yP = selectedYear ? `&year=${encodeURIComponent(selectedYear)}` : '';
+      // 3. If still empty, fetch larger batch from API without date restrictions
+      if (employeeForms.length === 0) {
         const [fseRes, tlRes, mgrRes] = await Promise.all([
-          fetch(`${EMP_API}/forms/admin/all?role=FSE${mP}${yP}&limit=200`),
-          fetch(`${EMP_API}/forms/admin/all?role=TL${mP}${yP}&limit=200`),
-          fetch(`${EMP_API}/forms/admin/all?role=MANAGER${mP}${yP}&limit=200`)
+          fetch(`${EMP_API}/forms/admin/all?role=FSE&limit=500`),
+          fetch(`${EMP_API}/forms/admin/all?role=TL&limit=500`),
+          fetch(`${EMP_API}/forms/admin/all?role=MANAGER&limit=500`)
         ]);
         
         const [fseData, tlData, mgrData] = await Promise.all([
@@ -867,15 +879,13 @@ function DuplicatePanel({ duplicates, allForms = [], open, onClose, onNotify, no
         const fseForms = fseData.forms || (Array.isArray(fseData) ? fseData : []);
         const tlForms = tlData.forms || (Array.isArray(tlData) ? tlData : []);
         const mgrForms = mgrData.forms || (Array.isArray(mgrData) ? mgrData : []);
-        formsList = [...fseForms, ...tlForms, ...mgrForms];
+        const formsList = [...fseForms, ...tlForms, ...mgrForms];
+        
+        employeeForms = formsList.filter(f => 
+          (f.employeeName || '').trim().toLowerCase() === (employeeName || '').trim().toLowerCase() && 
+          String(f.customerNumber || '').trim() === String(customerNumber || '').trim()
+        );
       }
-      
-      // Filter forms by employee name and customer number
-      const employeeForms = formsList.filter(f => 
-        f.employeeName === employeeName && 
-        f.customerNumber === customerNumber &&
-        (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim() === (product || '').toLowerCase().trim()
-      );
       
       // Sort by date (newest first)
       employeeForms.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
@@ -967,7 +977,7 @@ function DuplicatePanel({ duplicates, allForms = [], open, onClose, onNotify, no
                         avatar={<Avatar sx={{ bgcolor: dup.settled ? '#888' : BRAND.primary, fontSize: 11 }}>{initials(emp)}</Avatar>}
                         label={emp} 
                         size="small" 
-                        onClick={() => handleEmployeeClick(emp, dup._id.customerNumber, dup._id.formFillingFor)}
+                        onClick={() => handleEmployeeClick(emp, dup._id.customerNumber, dup._id.formFillingFor, dup.records)}
                         sx={{ 
                           fontWeight: 600,
                           cursor: 'pointer',
@@ -1014,7 +1024,7 @@ function DuplicatePanel({ duplicates, allForms = [], open, onClose, onNotify, no
                     <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 0.5 }}>
                       {(s.employees || []).map((emp, j) => (
                         <Chip key={j} avatar={<Avatar sx={{ bgcolor: '#888', fontSize: 11 }}>{initials(emp)}</Avatar>}
-                          label={emp} size="small" sx={{ fontWeight: 600 }} />
+                          label={emp} size="small" onClick={() => handleEmployeeClick(emp, s.customerNumber, s.product, s.records)} sx={{ fontWeight: 600, cursor: 'pointer' }} />
                       ))}
                     </Box>
                     <Typography variant="caption" color="text.secondary">
