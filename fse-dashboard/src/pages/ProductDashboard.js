@@ -745,11 +745,29 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
     );
 
   const load = async (force = false) => {
-    const isForce = force === true;
-    const cache = window.vv_cache || {};
-    if (!isForce && cache.productData) {
-      const result = cache.productData;
-      const safeRaw = Array.isArray(result) ? result : result.raw || [];
+    try {
+      const isForce = force === true;
+      const cache = window.vv_cache || {};
+      if (!isForce && cache.productData) {
+        const result = cache.productData;
+        const safeRaw = Array.isArray(result) ? result : result?.raw || [];
+        setRaw(safeRaw);
+        if (result && !Array.isArray(result)) {
+          setProductMeta({
+            product_columns: result.product_columns || [],
+            product_totals: result.product_totals || {},
+            product_groups: result.product_groups || {}
+          });
+          setOnboardColMap({
+            byMonth: result.onboard_column_by_month || {},
+            default: result.default_onboard_column || "Tide OB with PP",
+          });
+        }
+        return;
+      }
+      const result = await fetchData();
+      if (window.vv_cache) window.vv_cache.productData = result;
+      const safeRaw = Array.isArray(result) ? result : result?.raw || [];
       setRaw(safeRaw);
       if (result && !Array.isArray(result)) {
         setProductMeta({
@@ -762,22 +780,8 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
           default: result.default_onboard_column || "Tide OB with PP",
         });
       }
-      return;
-    }
-    const result = await fetchData();
-    if (window.vv_cache) window.vv_cache.productData = result;
-    const safeRaw = Array.isArray(result) ? result : result.raw || [];
-    setRaw(safeRaw);
-    if (result && !Array.isArray(result)) {
-      setProductMeta({
-        product_columns: result.product_columns || [],
-        product_totals: result.product_totals || {},
-        product_groups: result.product_groups || {}
-      });
-      setOnboardColMap({
-        byMonth: result.onboard_column_by_month || {},
-        default: result.default_onboard_column || "Tide OB with PP",
-      });
+    } catch (err) {
+      console.warn("ProductDashboard load error:", err);
     }
   };
 
@@ -980,8 +984,7 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
   // ── Per-product daily trend data (Ready / Fully Verified / Partially Done) ─
   const getVerifyKey = (f) => {
     const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
-    const month = f?.createdAt ? new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }) : '';
-    return p ? `${f.customerNumber}__${p}__${month}` : `${f.customerNumber}__${month}`;
+    return p ? `${f.customerNumber}__${p}` : f.customerNumber;
   };
 
   const productDailyData = useMemo(() => {
@@ -1360,8 +1363,7 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
       totalProcessed++;
       
       const product = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
-      const month = f?.createdAt ? new Date(f.createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }) : '';
-      const verifyKey = product ? `${f.customerNumber}__${product}__${month}` : `${f.customerNumber}__${month}`;
+      const verifyKey = product ? `${f.customerNumber}__${product}` : f.customerNumber;
       
       // Only count if "Fully Verified"
       const verifyStatus = globalVerifyMap[verifyKey]?.status;
@@ -2173,8 +2175,7 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
         // Get verification key helper
         const getVerifyKey = (phone, product, createdAt) => {
           const p = product.toLowerCase().trim();
-          const month = createdAt ? new Date(createdAt).toLocaleString('en-US', { month: 'long', year: 'numeric' }) : '';
-          return p ? `${phone}__${p}__${month}` : `${phone}__${month}`;
+          return p ? `${phone}__${p}` : phone;
         };
 
         // Build TL summary data
