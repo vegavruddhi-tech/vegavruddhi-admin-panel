@@ -305,7 +305,7 @@ const loadData = async (isForce = false) => {
       const data1 = await res1.json().catch(() => ({ forms: [] }));
       let allForms = data1.forms || (Array.isArray(data1) ? data1 : []);
       const totalPages = data1.pagination?.pages || 1;
-      if (totalPages > 1 && totalPages <= 50) {
+      if (totalPages > 1 && totalPages <= 1000) {
         const pagePromises = [];
         for (let p = 2; p <= totalPages; p++) {
           pagePromises.push(
