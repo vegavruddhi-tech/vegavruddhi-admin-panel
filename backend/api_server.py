@@ -380,6 +380,10 @@ def get_clean_data():
             df, numeric_cols, date_cols
         )
 
+        if isinstance(df, pd.DataFrame) and not df.empty:
+            df = df.loc[:, ~df.columns.duplicated()]
+            df = df.loc[:, [c for c in df.columns if not str(c).startswith("unnamed_column") and str(c).strip() != ""]]
+
         return (
             df,
             daily_trend,
@@ -409,6 +413,9 @@ def _refresh_cache():
     df, daily_trend, monthly_meetings, tl_performance, total_meetings, product_columns, product_totals, product_groups = get_clean_data()
     if isinstance(df, pd.DataFrame) and df.empty:
         return
+    if isinstance(df, pd.DataFrame):
+        df = df.loc[:, ~df.columns.duplicated()]
+        df = df.loc[:, [c for c in df.columns if not str(c).startswith("unnamed_column") and str(c).strip() != ""]]
     with _refresh_lock:
         cached_data = {
             "raw": df.to_dict(orient="records"),

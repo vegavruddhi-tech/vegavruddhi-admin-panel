@@ -235,8 +235,16 @@ def process_sheet(sheet_id, label):
             while len(row) < len(unique_headers):
                 row.append('')
             
-            # Create record dictionary
-            record = dict(zip(unique_headers, row))
+            # Create record dictionary and sanitize values / skip blank unnamed columns
+            record = {}
+            for h, val in zip(unique_headers, row):
+                if str(h).startswith('unnamed_column') and str(val).strip() == '':
+                    continue
+                val_str = str(val).strip()
+                if val_str.startswith('#') and any(err in val_str for err in ['ERROR', 'REF', 'VALUE', 'N/A']):
+                    record[h] = ''
+                else:
+                    record[h] = val
             rows.append(record)
         
         if not rows:
