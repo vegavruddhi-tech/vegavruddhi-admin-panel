@@ -459,6 +459,10 @@ export default function VerificationRules({ token: propToken, onReady }) {
   const [error,   setError]   = useState("");
   const [addOpen, setAddOpen] = useState(false);
 
+  // 🔥 NEW: State for background precomputation toaster
+  const [recomputing, setRecomputing] = useState(false);
+  const [recomputeMsg, setRecomputeMsg] = useState("");
+
   // Allow admin to paste a JWT token from the employee app
   const [token, setToken] = useState(propToken || localStorage.getItem("emp_token") || "");
   const [tokenInput, setTokenInput] = useState("");
@@ -480,6 +484,41 @@ export default function VerificationRules({ token: propToken, onReady }) {
   }, [token]);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleRuleSaved = useCallback(async () => {
+    // 1. First reload the rules list immediately
+    load();
+    // 2. Trigger background precomputation and toaster
+    setRecomputing(true);
+    setRecomputeMsg("⚡ Rule updated! Re-calculating all employee verifications in background...");
+    try {
+      await fetch(`${EMPLOYEE_API}/verify/precompute-all?force=true`, { method: 'POST' });
+      const interval = setInterval(async () => {
+        try {
+          const res = await fetch(`${EMPLOYEE_API}/verify/status`);
+          const data = await res.json();
+          if (!data.isCalculating) {
+            clearInterval(interval);
+            setRecomputing(false);
+            setRecomputeMsg(`✅ ${data.message || "All employee verifications re-calculated successfully!"}`);
+            // Reload rules and trigger parent callback again after calculation finishes
+            load();
+            if (onReady) onReady();
+            // Hide snackbar after 6 seconds
+            setTimeout(() => setRecomputeMsg(""), 6000);
+          } else if (data.message) {
+            setRecomputeMsg(`⚡ ${data.message}`);
+          }
+        } catch (e) {
+          // ignore network hiccups while polling
+        }
+      }, 3000);
+    } catch (err) {
+      setRecomputing(false);
+      setRecomputeMsg("❌ Failed to trigger background recalculation: " + err.message);
+      setTimeout(() => setRecomputeMsg(""), 6000);
+    }
+  }, [load, onReady]);
 
   useEffect(() => {
     if (!loading && onReady) {
@@ -611,10 +650,25 @@ export default function VerificationRules({ token: propToken, onReady }) {
       )}
 
       {!loading && rules.map(rule => (
-        <RuleCard key={rule._id} rule={rule} token={token} onSaved={load} />
+        <RuleCard key={rule._id} rule={rule} token={token} onSaved={handleRuleSaved} />
       ))}
 
-      <AddRuleDialog open={addOpen} onClose={() => setAddOpen(false)} token={token} onSaved={load} />
+      <AddRuleDialog open={addOpen} onClose={() => setAddOpen(false)} token={token} onSaved={handleRuleSaved} />
+
+      {/* 🔥 NEW: Persistent Background Pre-computation Toaster */}
+      <Snackbar
+        open={Boolean(recomputeMsg)}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+      >
+        <Alert
+          severity={recomputing ? "info" : recomputeMsg.startsWith("❌") ? "error" : "success"}
+          variant="filled"
+          icon={recomputing ? <CircularProgress size={20} color="inherit" /> : undefined}
+          sx={{ fontWeight: 700, boxShadow: 6, display: 'flex', alignItems: 'center', gap: 1.5, py: 1.5, px: 2.5, borderRadius: 2 }}
+        >
+          {recomputeMsg}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }
