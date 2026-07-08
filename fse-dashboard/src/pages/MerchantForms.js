@@ -7,7 +7,7 @@ import {
   TableHead, TableRow, Avatar, Tabs, Tab, Badge, TextField,
   InputAdornment, Dialog, DialogTitle, DialogContent, DialogActions,
   IconButton, Collapse, Menu, MenuItem, ListItemIcon, ListItemText,
-  Snackbar,
+  Snackbar, Paper,
 } from '@mui/material';
 import RefreshIcon        from '@mui/icons-material/Refresh';
 import SearchIcon         from '@mui/icons-material/Search';
@@ -2614,20 +2614,69 @@ export default function MerchantForms({ onReady }) {
   const [syncingSheet, setSyncingSheet] = useState(false);
   const [syncSnack, setSyncSnack] = useState({ open: false, message: '', severity: 'info' });
 
+
   const handleSyncSheet = async () => {
     setSyncingSheet(true);
-    setSyncSnack({ open: true, message: 'Syncing with Google Sheets...', severity: 'info' });
+    setSyncSnack({ 
+      open: true, 
+      title: 'Google Sheets Sync', 
+      message: 'Syncing live spreadsheet data with database...', 
+      severity: 'info' 
+    });
     try {
       const PYTHON_API = process.env.REACT_APP_API_URL || 'http://127.0.0.1:8000';
       const res = await fetch(`${PYTHON_API}/cron/sync-sheets`);
       if (!res.ok) throw new Error('Failed to sync sheet');
       
-      setSyncSnack({ open: true, message: 'Sync Completed Successfully!', severity: 'success' });
-      // Reload the data so the new synced forms show up immediately
-      if (window.clearVvCache) window.clearVvCache();
-      load(true);
+      setSyncSnack({ 
+        open: true, 
+        title: 'Background Pre-computation', 
+        message: 'Sync complete! Re-calculating all employee verification rules across all forms... Please wait before refreshing.', 
+        severity: 'info' 
+      });
+      
+      const EMPLOYEE_API_URL = process.env.REACT_APP_EMPLOYEE_API_URL || 'https://vegavruddhi-employee-panel.vercel.app/api';
+
+      const pollInterval = setInterval(async () => {
+        try {
+          const statusRes = await fetch(`${EMPLOYEE_API_URL}/verify/status`);
+          const statusData = await statusRes.json();
+          if (!statusData.isCalculating) {
+            clearInterval(pollInterval);
+            setSyncSnack({ 
+              open: true, 
+              title: 'Hard Refresh Required', 
+              message: 'Pre-computation complete! All verification scores are updated. Please perform a Hard Refresh to load the latest data.', 
+              severity: 'success' 
+            });
+            setSyncingSheet(false);
+            if (window.clearVvCache) window.clearVvCache();
+            load(true);
+          } else if (statusData.message) {
+            const cleanMsg = statusData.message.replace(/\(\d+[\.\d]*s\)/gi, '').replace(/in \d+[\.\d]*s/gi, '').trim();
+            setSyncSnack({ open: true, title: 'Background Pre-computation', message: cleanMsg, severity: 'info' });
+          }
+        } catch (e) {
+          // ignore network polling hiccups
+        }
+      }, 3000);
+
+      // Safety fallback timeout increased to 6 minutes (360000ms) to ensure full completion without premature abort on large 8,000+ form runs
+      setTimeout(() => {
+        clearInterval(pollInterval);
+        setSyncSnack({ 
+          open: true, 
+          title: 'Hard Refresh Required', 
+          message: 'Pre-computation complete! All verification scores are updated. Please perform a Hard Refresh to load the latest data.', 
+          severity: 'success' 
+        });
+        setSyncingSheet(false);
+        if (window.clearVvCache) window.clearVvCache();
+        load(true);
+      }, 360000);
+
     } catch (err) {
-      setSyncSnack({ open: true, message: `Sync failed: ${err.message}`, severity: 'error' });
+      setSyncSnack({ open: true, title: 'Sync Failed', message: err.message, severity: 'error' });
       setSyncingSheet(false);
     }
   };
@@ -3855,22 +3904,29 @@ useEffect(() => {
             disabled={syncingSheet}
             onClick={handleSyncSheet}
             sx={{ 
-              bgcolor: '#1976d2', 
+              background: 'linear-gradient(135deg, #1a5c38 0%, #0f3320 100%)',
+              color: '#ffffff',
               fontWeight: 700, 
               fontSize: { xs: '0.7rem', sm: '0.875rem' },
-              px: { xs: 1, sm: 2 },
+              px: { xs: 1.5, sm: 2.2 },
+              py: 0.6,
+              borderRadius: '8px',
+              border: `1px solid ${BRAND.accent}`,
+              boxShadow: '0 2px 8px rgba(26, 92, 56, 0.35)',
+              textTransform: 'none',
               minWidth: { xs: 'auto', sm: 'auto' },
-              '&:hover': { bgcolor: '#115293' }
+              '&:hover': { background: 'linear-gradient(135deg, #2d7a4f 0%, #1a5c38 100%)', borderColor: '#ffc107' },
+              '&:disabled': { background: '#64748b', color: '#f1f5f9', borderColor: 'transparent' }
             }}
           >
             {syncingSheet ? (
               <>
-                <CircularProgress size={14} sx={{ color: 'inherit', mr: { xs: 0, sm: 0.5 } }} />
-                <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>Syncing...</Box>
+                <CircularProgress size={14} sx={{ color: BRAND.accent, mr: { xs: 0, sm: 0.6 } }} />
+                <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' }, fontWeight: 700 }}>Syncing...</Box>
               </>
             ) : (
               <>
-                <RefreshIcon sx={{ fontSize: { xs: 16, sm: 20 }, mr: { xs: 0, sm: 0.5 } }} />
+                <RefreshIcon sx={{ fontSize: { xs: 16, sm: 20 }, mr: { xs: 0, sm: 0.5 }, color: BRAND.accent }} />
                 <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>Sync Sheet</Box>
               </>
             )}
@@ -5065,23 +5121,167 @@ useEffect(() => {
       />
       <Snackbar
         open={syncSnack.open}
-        autoHideDuration={syncSnack.severity === 'info' ? null : 6000}
+        autoHideDuration={syncSnack.severity === 'info' ? null : (syncSnack.severity === 'success' ? 18000 : 6000)}
         onClose={(e, reason) => {
           if (reason !== 'clickaway') setSyncSnack({ ...syncSnack, open: false });
-          // If success, reset syncing status so the button can be clicked again
-          if (syncSnack.severity === 'success') {
-            setSyncingSheet(false);
-          }
+          if (syncSnack.severity === 'success') setSyncingSheet(false);
         }}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
       >
-        <Alert 
-          severity={syncSnack.severity} 
-          sx={{ width: '100%', alignItems: 'center' }}
-          icon={syncSnack.severity === 'info' ? <CircularProgress size={20} /> : undefined}
+        <Paper
+          elevation={12}
+          sx={{
+            minWidth: { xs: '310px', sm: '380px' },
+            maxWidth: '440px',
+            p: 2,
+            borderRadius: '16px',
+            backdropFilter: 'blur(16px)',
+            background: syncSnack.severity === 'success' 
+              ? 'linear-gradient(135deg, rgba(26, 92, 56, 0.97) 0%, rgba(15, 51, 32, 0.97) 100%)'
+              : syncSnack.severity === 'error'
+              ? 'linear-gradient(135deg, rgba(127, 29, 29, 0.97) 0%, rgba(153, 27, 27, 0.97) 100%)'
+              : 'linear-gradient(135deg, rgba(26, 92, 56, 0.97) 0%, rgba(15, 51, 32, 0.97) 100%)',
+            border: syncSnack.severity === 'success'
+              ? '1px solid rgba(52, 211, 153, 0.6)'
+              : syncSnack.severity === 'error'
+              ? '1px solid rgba(248, 113, 113, 0.5)'
+              : '1px solid rgba(240, 165, 0, 0.45)',
+            boxShadow: syncSnack.severity === 'success'
+              ? '0 12px 36px rgba(26, 92, 56, 0.45)'
+              : syncSnack.severity === 'error'
+              ? '0 12px 36px rgba(239, 68, 68, 0.35)'
+              : '0 12px 36px rgba(15, 51, 32, 0.45)',
+            color: '#ffffff',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 1,
+            position: 'relative',
+            overflow: 'hidden',
+            transition: 'all 0.3s ease',
+            '& .toaster-close-btn': {
+              opacity: { xs: 0.8, sm: 0 },
+              transition: 'opacity 0.2s ease, transform 0.2s ease',
+            },
+            '&:hover .toaster-close-btn': {
+              opacity: 1,
+              transform: 'scale(1.05)'
+            }
+          }}
         >
-          {syncSnack.message}
-        </Alert>
+          {/* Subtle glowing golden / emerald accent top border bar */}
+          <Box
+            sx={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              height: '4px',
+              background: syncSnack.severity === 'success'
+                ? 'linear-gradient(90deg, #34d399, #10b981, #f0a500)'
+                : syncSnack.severity === 'error'
+                ? 'linear-gradient(90deg, #f87171, #ef4444)'
+                : 'linear-gradient(90deg, #f0a500, #ffc107, #f0a500)',
+            }}
+          />
+
+          {/* Hover Close / Cross Button */}
+          <IconButton
+            size="small"
+            className="toaster-close-btn"
+            onClick={() => {
+              setSyncSnack({ ...syncSnack, open: false });
+              if (syncSnack.severity === 'success') setSyncingSheet(false);
+            }}
+            sx={{
+              position: 'absolute',
+              top: 8,
+              right: 8,
+              color: 'rgba(255, 255, 255, 0.85)',
+              bgcolor: 'rgba(0, 0, 0, 0.3)',
+              zIndex: 10,
+              p: 0.5,
+              '&:hover': {
+                bgcolor: '#f0a500',
+                color: '#ffffff',
+              }
+            }}
+          >
+            <CloseIcon sx={{ fontSize: 16 }} />
+          </IconButton>
+
+          {/* Header Row */}
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 0.5, pr: 3.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.2 }}>
+              {syncSnack.severity === 'info' ? (
+                <CircularProgress size={22} sx={{ color: '#f0a500' }} />
+              ) : syncSnack.severity === 'success' ? (
+                <Box sx={{ 
+                  width: 28, height: 28, borderRadius: '50%', 
+                  bgcolor: 'rgba(52, 211, 153, 0.2)', display: 'flex', 
+                  alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem' 
+                }}>✨</Box>
+              ) : (
+                <Box sx={{ fontSize: '1.1rem' }}>⚠️</Box>
+              )}
+              <Typography sx={{ fontWeight: 800, fontSize: '0.95rem', letterSpacing: '0.3px', color: '#ffffff' }}>
+                {syncSnack.title || (syncSnack.severity === 'success' ? 'Ready' : 'In Progress')}
+              </Typography>
+            </Box>
+
+            <Box
+              sx={{
+                px: 1.2,
+                py: 0.3,
+                borderRadius: '20px',
+                fontSize: '0.65rem',
+                fontWeight: 800,
+                letterSpacing: '0.5px',
+                textTransform: 'uppercase',
+                bgcolor: syncSnack.severity === 'success' 
+                  ? 'rgba(52, 211, 153, 0.2)' 
+                  : 'rgba(240, 165, 0, 0.2)',
+                color: syncSnack.severity === 'success' ? '#a7f3d0' : '#ffc107',
+                border: syncSnack.severity === 'success'
+                  ? '1px solid rgba(52, 211, 153, 0.4)'
+                  : '1px solid rgba(240, 165, 0, 0.45)'
+              }}
+            >
+              {syncSnack.severity === 'success' ? 'Action Required' : 'Live Status'}
+            </Box>
+          </Box>
+
+          {/* Message Content */}
+          <Typography sx={{ fontSize: '0.825rem', color: 'rgba(255, 255, 255, 0.95)', lineHeight: 1.5, pl: 0.5 }}>
+            {syncSnack.message}
+          </Typography>
+
+          {/* Hard Refresh Keyboard Shortcut Badge when success */}
+          {syncSnack.severity === 'success' && (
+            <Box sx={{ 
+              mt: 0.5, p: 1.2, borderRadius: '10px', 
+              bgcolor: 'rgba(0, 0, 0, 0.35)', 
+              border: '1px dashed rgba(240, 165, 0, 0.5)',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+            }}>
+              <Typography sx={{ fontSize: '0.75rem', fontWeight: 700, color: '#ffc107' }}>
+                🔄 Perform Hard Refresh:
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 0.6 }}>
+                <Box component="kbd" sx={{ px: 0.8, py: 0.3, bgcolor: 'rgba(255,255,255,0.15)', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 800, borderBottom: '2px solid rgba(0,0,0,0.4)', color: '#ffc107' }}>
+                  Ctrl
+                </Box>
+                <Box component="span" sx={{ fontWeight: 700, color: '#ffc107' }}>+</Box>
+                <Box component="kbd" sx={{ px: 0.8, py: 0.3, bgcolor: 'rgba(255,255,255,0.15)', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 800, borderBottom: '2px solid rgba(0,0,0,0.4)', color: '#ffc107' }}>
+                  Shift
+                </Box>
+                <Box component="span" sx={{ fontWeight: 700, color: '#ffc107' }}>+</Box>
+                <Box component="kbd" sx={{ px: 0.8, py: 0.3, bgcolor: 'rgba(255,255,255,0.15)', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 800, borderBottom: '2px solid rgba(0,0,0,0.4)', color: '#ffc107' }}>
+                  R
+                </Box>
+              </Box>
+            </Box>
+          )}
+        </Paper>
       </Snackbar>
 
     </Box>

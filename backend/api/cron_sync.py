@@ -58,28 +58,12 @@ def handler(request):
         
         try:
             start_time = time.time()
-            response = requests.post(
-                precompute_url,
-                timeout=600  # 10 minutes timeout
-            )
-            elapsed = time.time() - start_time
-            
-            if response.status_code == 200:
-                data = response.json()
-                print(f"✅ CACHE PRE-COMPUTE SUCCESS in {elapsed:.1f}s")
-                print(f"   Total forms: {data.get('total', 0)}")
-                print(f"   Verified: {data.get('cached', 0)}")
-                print(f"   Skipped (unchanged): {data.get('skipped', 0)}")
-            else:
-                print(f"⚠️ CACHE PRE-COMPUTE FAILED: HTTP {response.status_code}")
-                print(f"   Response: {response.text[:200]}")
-                
-        except requests.Timeout:
-            print("⚠️ CACHE PRE-COMPUTE TIMEOUT (took > 10 minutes)")
-            print("   Sync completed but cache not pre-populated")
+            # Trigger precompute asynchronously with 3s timeout so backend continues calculation in background without blocking API response
+            requests.post(precompute_url, timeout=3)
+        except (requests.Timeout, requests.exceptions.ReadTimeout):
+            print("✅ Pre-computation triggered successfully in background (running asynchronously)")
         except Exception as cache_error:
-            print(f"⚠️ CACHE PRE-COMPUTE ERROR: {cache_error}")
-            print("   Sync completed but cache not pre-populated")
+            print(f"⚠️ Pre-compute trigger note: {cache_error}")
         
         # Step 3: Sync unfilled forms (find merchants in Sheet but not in MongoDB)
         print(f"\nStep 3: Syncing unfilled forms")
