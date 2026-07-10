@@ -30,7 +30,8 @@ self.addEventListener('fetch', (event) => {
     event.request.url.includes('localhost') ||
     event.request.url.includes('vercel.app/api')
   ) {
-    return; // no respondWith() = browser handles it directly
+    event.respondWith(fetch(event.request));
+    return;     
   }
 
   // Use Network-First strategy for HTML navigation requests to ensure users get the latest updates

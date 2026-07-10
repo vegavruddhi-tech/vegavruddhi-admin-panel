@@ -267,6 +267,40 @@ function NavbarContent({ page, setPage, pendingCount, mode, setMode, user, handl
           )}
 
           {/* Theme toggle */}
+          <Tooltip title="Switch to BT Admin Panel">
+            <Button
+              size="small"
+              onClick={() => {
+                const auth = localStorage.getItem("vv_auth") || localStorage.getItem("vv_tidebt_auth");
+                const tidebtUrl = process.env.REACT_APP_TIDEBT_ADMIN_URL
+                  || (window.location.hostname === 'localhost'
+                      ? 'http://localhost:3006'
+                      : 'https://vegavruddhi-admin-tide-bt-cyej.vercel.app');
+                const url = auth
+                  ? `${tidebtUrl}?auth=${encodeURIComponent(auth)}`
+                  : tidebtUrl;
+                window.open(url, '_blank');
+              }}
+              sx={{
+                color: "#fff",
+                background: "rgba(255,255,255,0.1)",
+                border: "1px solid rgba(255,255,255,0.25)",
+                fontSize: "0.7rem",
+                fontWeight: 700,
+                px: 1.2,
+                py: 0.5,
+                minWidth: 'auto',
+                textTransform: 'none',
+                letterSpacing: 0.3,
+                "&:hover": { background: "rgba(255,255,255,0.2)", borderColor: "rgba(255,255,255,0.5)" },
+                transition: "all 0.2s ease",
+                whiteSpace: 'nowrap',
+              }}
+            >
+              🔁 BT Panel
+            </Button>
+          </Tooltip>
+
           <Tooltip title={mode === "dark" ? "Light Mode" : "Dark Mode"}>
             <IconButton
               onClick={() => setMode((p) => (p === "light" ? "dark" : "light"))}
@@ -646,7 +680,21 @@ function App() {
   }, []);
 
   const savedAuth = localStorage.getItem("vv_auth");
-  const [user, setUser] = useState(savedAuth ? JSON.parse(savedAuth) : null);
+  // Also handle ?auth= param from BT Admin redirect
+  const [user, setUser] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const authFromURL = params.get('auth');
+    if (authFromURL) {
+      try {
+        const decoded = JSON.parse(decodeURIComponent(authFromURL));
+        localStorage.setItem("vv_auth", JSON.stringify(decoded));
+        // Clean URL
+        window.history.replaceState({}, document.title, window.location.pathname);
+        return decoded;
+      } catch (e) {}
+    }
+    return savedAuth ? JSON.parse(savedAuth) : null;
+  });
 
   const handleLogin  = (authObj) => {
     setUser(authObj);
