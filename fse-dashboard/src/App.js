@@ -679,21 +679,22 @@ function App() {
     return () => clearInterval(interval);
   }, []);
 
-  const savedAuth = localStorage.getItem("vv_auth");
-  // Also handle ?auth= param from BT Admin redirect
+  // Handle ?auth= param from BT Admin redirect + normal localStorage auth
   const [user, setUser] = useState(() => {
-    const params = new URLSearchParams(window.location.search);
-    const authFromURL = params.get('auth');
-    if (authFromURL) {
-      try {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const authFromURL = params.get('auth');
+      if (authFromURL) {
         const decoded = JSON.parse(decodeURIComponent(authFromURL));
         localStorage.setItem("vv_auth", JSON.stringify(decoded));
-        // Clean URL
         window.history.replaceState({}, document.title, window.location.pathname);
         return decoded;
-      } catch (e) {}
-    }
-    return savedAuth ? JSON.parse(savedAuth) : null;
+      }
+    } catch (e) {}
+    try {
+      const saved = localStorage.getItem("vv_auth");
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) { return null; }
   });
 
   const handleLogin  = (authObj) => {
