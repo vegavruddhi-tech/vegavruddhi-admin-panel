@@ -97,6 +97,45 @@ async function openTlDashboard(tl, dashboardType = 'normal') {
   }
 }
 
+async function openManagerDashboard(manager, dashboardType = 'normal') {
+  const email = manager?.email;
+  if (!email) {
+    alert('No registered email found for this Manager.');
+    return;
+  }
+  const savedAuth = localStorage.getItem('vv_auth');
+  const adminObj = savedAuth ? JSON.parse(savedAuth) : {};
+  const adminEmail = adminObj?.email || 'data.analyst@vegavruddhi.com';
+
+  try {
+    const res = await fetch(`${EMP_API.replace('/auth', '')}/auth/generate-manager-impersonation-token`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ adminEmail, targetEmail: email })
+    });
+    const data = await res.json();
+    if (data.success && data.token) {
+      if (dashboardType === 'bt') {
+        const mgrBtUrl = process.env.REACT_APP_MANAGER_BT_APP_URL
+          || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? 'http://localhost:3006'
+            : 'https://vegavruddhi-manager-panel.vercel.app');
+        window.open(`${mgrBtUrl}/?viewAs=${encodeURIComponent(email)}&token=${encodeURIComponent(data.token)}`, '_blank');
+      } else {
+        const mgrAppUrl = process.env.REACT_APP_MANAGER_APP_URL
+          || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? 'http://localhost:3003'
+            : 'https://vegavruddhi-manager-panel.vercel.app');
+        window.open(`${mgrAppUrl}/dashboard?viewAs=${encodeURIComponent(email)}&token=${encodeURIComponent(data.token)}`, '_blank');
+      }
+    } else {
+      alert(data.error || 'Failed to generate Manager impersonation token');
+    }
+  } catch (err) {
+    alert('Error connecting to server for Manager impersonation token');
+  }
+}
+
 function initials(name) {
   return (name || '?').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
 }
@@ -982,6 +1021,7 @@ export default function EmployeeApprovals({ onReady }) {
                                   <TableCell>Phone</TableCell>
                                   <TableCell>Registered On</TableCell>
                                   <TableCell>Status</TableCell>
+                                  <TableCell>Actions</TableCell>
                                 </TableRow>
                               </TableHead>
                               <TableBody>
@@ -1006,6 +1046,15 @@ export default function EmployeeApprovals({ onReady }) {
                                       </Typography>
                                     </TableCell>
                                     <TableCell><StatusChip status="approved" /></TableCell>
+                                    <TableCell>
+                                      <Tooltip title="Directly open & view live Manager dashboard">
+                                        <Button size="small" variant="contained" startIcon={<VisibilityIcon />}
+                                          onClick={() => setViewModal({ open: true, target: m, type: 'manager' })}
+                                          sx={{ bgcolor: '#1976d2', color: '#fff', fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: '#115293' } }}>
+                                          View
+                                        </Button>
+                                      </Tooltip>
+                                    </TableCell>
                                   </TableRow>
                                 ))}
                               </TableBody>
@@ -1497,6 +1546,7 @@ export default function EmployeeApprovals({ onReady }) {
                 const type = viewModal.type;
                 setViewModal({ open: false, target: null, type: null });
                 if (type === 'fse') openFseDashboard(target, 'normal');
+                else if (type === 'manager') openManagerDashboard(target, 'normal');
                 else openTlDashboard(target, 'normal');
               }}
               elevation={0}
@@ -1525,6 +1575,7 @@ export default function EmployeeApprovals({ onReady }) {
                 const type = viewModal.type;
                 setViewModal({ open: false, target: null, type: null });
                 if (type === 'fse') openFseDashboard(target, 'bt');
+                else if (type === 'manager') openManagerDashboard(target, 'bt');
                 else openTlDashboard(target, 'bt');
               }}
               elevation={0}
