@@ -19,7 +19,7 @@ const EMP_API = (process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:400
 const TL_API = (process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api') + '/tl';
 const MANAGER_API = (process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api') + '/manager';
 
-async function openFseDashboard(emp) {
+async function openFseDashboard(emp, dashboardType = 'normal') {
   const email = emp?.newJoinerEmailId || emp?.email;
   if (!email) {
     alert('No registered email found for this employee.');
@@ -37,11 +37,19 @@ async function openFseDashboard(emp) {
     });
     const data = await res.json();
     if (data.success && data.token) {
-      const employeeAppUrl = process.env.REACT_APP_EMPLOYEE_APP_URL
-        || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-          ? 'http://localhost:3000'
-          : 'https://vegavruddhi-employee-panel-ke56.vercel.app');
-      window.open(`${employeeAppUrl}/dashboard?viewAs=${encodeURIComponent(email)}&token=${encodeURIComponent(data.token)}`, '_blank');
+      if (dashboardType === 'bt') {
+        const employeeBtUrl = process.env.REACT_APP_EMPLOYEE_BT_APP_URL
+          || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? 'http://localhost:3004'
+            : 'https://vegavruddhi-employee-tide-bt-4obl.vercel.app');
+        window.open(`${employeeBtUrl}/?viewAs=${encodeURIComponent(email)}&token=${encodeURIComponent(data.token)}`, '_blank');
+      } else {
+        const employeeAppUrl = process.env.REACT_APP_EMPLOYEE_APP_URL
+          || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? 'http://localhost:3000'
+            : 'https://vegavruddhi-employee-panel-ke56.vercel.app');
+        window.open(`${employeeAppUrl}/dashboard?viewAs=${encodeURIComponent(email)}&token=${encodeURIComponent(data.token)}`, '_blank');
+      }
     } else {
       alert(data.error || 'Failed to generate impersonation token');
     }
@@ -50,7 +58,7 @@ async function openFseDashboard(emp) {
   }
 }
 
-async function openTlDashboard(tl) {
+async function openTlDashboard(tl, dashboardType = 'normal') {
   const email = tl?.email || tl?.emailId;
   if (!email) {
     alert('No registered email found for this TL.');
@@ -68,11 +76,19 @@ async function openTlDashboard(tl) {
     });
     const data = await res.json();
     if (data.success && data.token) {
-      const tlAppUrl = process.env.REACT_APP_TL_APP_URL
-        || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
-          ? 'http://localhost:3001'
-          : 'https://team-leader-gamma.vercel.app');
-      window.open(`${tlAppUrl}/dashboard?viewAs=${encodeURIComponent(email)}&token=${encodeURIComponent(data.token)}`, '_blank');
+      if (dashboardType === 'bt') {
+        const tlBtUrl = process.env.REACT_APP_TL_BT_APP_URL
+          || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? 'http://localhost:3005'
+            : 'https://vegavruddhi-tl-tide-bt.vercel.app');
+        window.open(`${tlBtUrl}/?viewAs=${encodeURIComponent(email)}&token=${encodeURIComponent(data.token)}`, '_blank');
+      } else {
+        const tlAppUrl = process.env.REACT_APP_TL_APP_URL
+          || (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+            ? 'http://localhost:3001'
+            : 'https://team-leader-gamma.vercel.app');
+        window.open(`${tlAppUrl}/dashboard?viewAs=${encodeURIComponent(email)}&token=${encodeURIComponent(data.token)}`, '_blank');
+      }
     } else {
       alert(data.error || 'Failed to generate TL impersonation token');
     }
@@ -98,7 +114,7 @@ function StatusChip({ status }) {
   );
 }
 
-function EmployeeRow({ emp, onApprove, onReject, showActions, onEdit }) {
+function EmployeeRow({ emp, onApprove, onReject, showActions, onEdit, onView }) {
   const [loading, setLoading] = useState(false);
 
   const handle = async (action) => {
@@ -135,7 +151,7 @@ function EmployeeRow({ emp, onApprove, onReject, showActions, onEdit }) {
           {/* Eye button to view FSE dashboard directly */}
           <Tooltip title="Directly open & view live FSE dashboard">
             <Button size="small" variant="contained" startIcon={<VisibilityIcon />}
-              onClick={() => openFseDashboard(emp)}
+              onClick={() => onView ? onView(emp) : openFseDashboard(emp)}
               sx={{
                 bgcolor: '#1976d2', color: '#fff', fontWeight: 700, fontSize: 11,
                 '&:hover': { bgcolor: '#115293' }
@@ -203,6 +219,7 @@ export default function EmployeeApprovals({ onReady }) {
   const [changeSearch, setChangeSearch] = useState('');
   const [rejectedSubTab, setRejectedSubTab] = useState('fse');
   const [snack, setSnack] = useState({ open: false, msg: '', sev: 'success' });
+  const [viewModal, setViewModal] = useState({ open: false, target: null, type: null });
   const [posRequests, setPosRequests] = useState([]);
   const [posReqLoading, setPosReqLoading] = useState(false);
   const [changeRequests, setChangeRequests] = useState([]);
@@ -540,6 +557,7 @@ export default function EmployeeApprovals({ onReady }) {
               {list.map(emp => (
                 <EmployeeRow key={emp._id} emp={emp} showActions={showActions}
                   onEdit={openEdit}
+                  onView={(emp) => setViewModal({ open: true, target: emp, type: 'fse' })}
                   onApprove={() => approve(emp._id)}
                   onReject={() => reject(emp._id)} />
               ))}
@@ -922,7 +940,7 @@ export default function EmployeeApprovals({ onReady }) {
                                     <Box sx={{ display: 'flex', gap: 1 }}>
                                       <Tooltip title="Directly open & view live TL dashboard">
                                         <Button size="small" variant="contained" startIcon={<VisibilityIcon />}
-                                          onClick={() => openTlDashboard(tl)}
+                                          onClick={() => setViewModal({ open: true, target: tl, type: 'tl' })}
                                           sx={{ bgcolor: '#1976d2', color: '#fff', fontWeight: 700, fontSize: 11, '&:hover': { bgcolor: '#115293' } }}>
                                           View
                                         </Button>
@@ -1456,6 +1474,82 @@ export default function EmployeeApprovals({ onReady }) {
             startIcon={editSaving ? <CircularProgress size={14} /> : null}
             sx={{ bgcolor: BRAND.primary, fontWeight: 700, '&:hover': { bgcolor: BRAND.primaryMid } }}>
             {editSaving ? 'Saving…' : 'Save Changes'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dashboard Selection Modal for Impersonation */}
+      <Dialog open={!!viewModal.open} onClose={() => setViewModal({ open: false, target: null, type: null })} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 800, color: BRAND.primary, pb: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <VisibilityIcon sx={{ color: '#1976d2' }} />
+          Select Dashboard to View
+        </DialogTitle>
+        <DialogContent sx={{ pt: 1 }}>
+          <Typography variant="body2" sx={{ color: 'text.secondary', mb: 2.5 }}>
+            Where would you like to navigate and view as <b>{viewModal.target?.newJoinerName || viewModal.target?.name || viewModal.target?.newJoinerEmailId || viewModal.target?.email}</b>?
+          </Typography>
+
+          <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+            {/* Option 1: Tide Normal Dashboard */}
+            <Paper
+              onClick={() => {
+                const target = viewModal.target;
+                const type = viewModal.type;
+                setViewModal({ open: false, target: null, type: null });
+                if (type === 'fse') openFseDashboard(target, 'normal');
+                else openTlDashboard(target, 'normal');
+              }}
+              elevation={0}
+              sx={{
+                p: 2, border: '2px solid #e0e0e0', borderRadius: 2.5, cursor: 'pointer',
+                transition: 'all 0.2s ease', display: 'flex', alignItems: 'center', gap: 2,
+                '&:hover': { borderColor: '#1976d2', bgcolor: '#f5f9ff', transform: 'translateY(-2px)' }
+              }}>
+              <Box sx={{ width: 44, height: 44, borderRadius: 2, bgcolor: '#e3f2fd', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1976d2', fontWeight: 800 }}>
+                TN
+              </Box>
+              <Box sx={{ flex: 1 }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#1a202c' }}>
+                  Tide Normal Dashboard
+                </Typography>
+                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.2 }}>
+                  Regular Onboarding, QR & PPI Overview Panel
+                </Typography>
+              </Box>
+            </Paper>
+
+            {/* Option 2: Tide BT Dashboard */}
+            <Paper
+              onClick={() => {
+                const target = viewModal.target;
+                const type = viewModal.type;
+                setViewModal({ open: false, target: null, type: null });
+                if (type === 'fse') openFseDashboard(target, 'bt');
+                else openTlDashboard(target, 'bt');
+              }}
+              elevation={0}
+              sx={{
+                p: 2, border: '2px solid #e0e0e0', borderRadius: 2.5, cursor: 'pointer',
+                transition: 'all 0.2s ease', display: 'flex', alignItems: 'center', gap: 2,
+                '&:hover': { borderColor: '#7b1fa2', bgcolor: '#fbf5ff', transform: 'translateY(-2px)' }
+              }}>
+              <Box sx={{ width: 44, height: 44, borderRadius: 2, bgcolor: '#f3e5f5', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7b1fa2', fontWeight: 800 }}>
+                BT
+              </Box>
+              <Box sx={{ flex: 1 }}>
+                <Typography variant="subtitle2" sx={{ fontWeight: 800, color: '#1a202c' }}>
+                  Tide BT Dashboard
+                </Typography>
+                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.2 }}>
+                  Balance Transfer (BT) Specialized Panel
+                </Typography>
+              </Box>
+            </Paper>
+          </Box>
+        </DialogContent>
+        <DialogActions sx={{ p: 2, pt: 1 }}>
+          <Button onClick={() => setViewModal({ open: false, target: null, type: null })} sx={{ color: 'text.secondary', fontWeight: 700 }}>
+            Cancel
           </Button>
         </DialogActions>
       </Dialog>

@@ -263,94 +263,10 @@ def home():
 
 @app.get("/cron/sync-sheets")
 def cron_sync():
-    import requests
-    import time
-    from datetime import datetime
-    
     try:
-        print("===== CRON TRIGGERED =====")
-        print(f"Timestamp: {datetime.now().isoformat()}")
-        
-        # Step 1: Sync Google Sheet → MongoDB
-        from sync_sheet import process_sheet
-        sheet_id = os.environ.get("GOOGLE_SHEET_ID", "")
-        if not sheet_id:
-            return {"status": "Error", "error": "GOOGLE_SHEET_ID not set"}
-        
-        print(f"Step 1: Syncing sheet {sheet_id} (Option 3: Clean slate sync)")
-        print("  - Delete old documents from MongoDB")
-        print("  - Insert fresh data from Google Sheet")
-        print("  - Result: MongoDB = exact mirror of Google Sheet")
-        process_sheet(sheet_id, "Tide Onboarding")
-        print("✅ SYNC SUCCESS (Option 3 completed - no duplicates)")
-        
-        # Step 2: Pre-compute verification cache
-        # ✅ FIXED: Use environment variable instead of hardcoded localhost
-        api_url = os.environ.get('API_URL', 'https://vegavruddhi-employee-panel.vercel.app')
-        precompute_url = f'{api_url}/api/verify/precompute-all?force=true'  # Force full refresh
-        
-        print(f"\nStep 2: Pre-computing verification cache (FORCE REFRESH)")
-        print(f"Calling: {precompute_url}")
-        
-        try:
-            start_time = time.time()
-            response = requests.post(
-                precompute_url,
-                timeout=600  # 10 minutes timeout
-            )
-            elapsed = time.time() - start_time
-            
-            if response.status_code == 200:
-                data = response.json()
-                print(f"✅ CACHE PRE-COMPUTE SUCCESS in {elapsed:.1f}s")
-                print(f"   Total forms: {data.get('total', 0)}")
-                print(f"   Verified: {data.get('cached', 0)}")
-                print(f"   Skipped (unchanged): {data.get('skipped', 0)}")
-            else:
-                print(f"⚠️ CACHE PRE-COMPUTE FAILED: HTTP {response.status_code}")
-                print(f"   Response: {response.text[:200]}")
-                
-        except requests.Timeout:
-            print("⚠️ CACHE PRE-COMPUTE TIMEOUT (took > 10 minutes)")
-            print("   Sync completed but cache not pre-populated")
-        except Exception as cache_error:
-            print(f"⚠️ CACHE PRE-COMPUTE ERROR: {cache_error}")
-            print("   Sync completed but cache not pre-populated")
-        
-        # Step 3: Sync unfilled forms (find merchants in Sheet but not in MongoDB)
-        print(f"\nStep 3: Syncing unfilled forms")
-        try:
-            from sync_unfilled_forms import sync_unfilled_forms
-            
-            # Get current month and year
-            now = datetime.now()
-            current_month = now.strftime("%B")
-            current_year = now.year
-            
-            print(f"Syncing unfilled forms for {current_month} {current_year}")
-            
-            result = sync_unfilled_forms(current_month, current_year)
-            
-            if result['success']:
-                print(f"✅ UNFILLED FORMS SYNC SUCCESS")
-                print(f"   Sheet entries: {result['sheetEntries']}")
-                print(f"   MongoDB forms: {result['mongodbForms']}")
-                print(f"   Unfilled forms: {result['unfilledForms']}")
-                print(f"   Saved to DB: {result['savedCount']}")
-            else:
-                print(f"⚠️ UNFILLED FORMS SYNC FAILED: {result.get('error')}")
-                
-        except Exception as unfilled_error:
-            print(f"⚠️ UNFILLED FORMS SYNC ERROR: {unfilled_error}")
-            print("   Main sync completed but unfilled forms not synced")
-        
-        return {
-            "status": "Sync, cache pre-computation, and unfilled forms sync completed",
-            "timestamp": datetime.now().isoformat()
-        }
-        
+        from api.cron_sync import handler
+        return handler({})
     except Exception as e:
-        print(f"❌ SYNC ERROR: {str(e)}")
         import traceback
         traceback.print_exc()
         return {"status": "Error", "error": str(e)}
