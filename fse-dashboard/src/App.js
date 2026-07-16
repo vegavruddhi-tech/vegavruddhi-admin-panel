@@ -34,13 +34,17 @@ import Divider from "@mui/material/Divider";
 import Collapse from "@mui/material/Collapse";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
+import Snackbar from "@mui/material/Snackbar";
+import Paper from "@mui/material/Paper";
+import CircularProgress from "@mui/material/CircularProgress";
 
 import LightModeIcon from "@mui/icons-material/LightMode";
 import DarkModeIcon from "@mui/icons-material/DarkMode";
 import LogoutIcon from "@mui/icons-material/Logout";
 import MenuIcon from "@mui/icons-material/Menu";
-import ExpandMoreIcon     from '@mui/icons-material/ExpandMore';
-import ExpandLessIcon     from '@mui/icons-material/ExpandLess';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
+import CloseIcon from '@mui/icons-material/Close';
 
 // Dropdown Icons
 import AssignmentIndIcon from "@mui/icons-material/AssignmentInd";
@@ -629,6 +633,186 @@ function AutoUpdateChecker() {
   return null;
 }
 
+function GlobalSyncMonitor() {
+  const [syncSnack, setSyncSnack] = useState({ open: false, title: '', message: '', severity: 'info' });
+  const [closedCalculating, setClosedCalculating] = useState(false);
+  const [lastFinishedAt, setLastFinishedAt] = useState(() => localStorage.getItem('vv_last_sync_finish') || '');
+
+  useEffect(() => {
+    const EMPLOYEE_API_URL = process.env.REACT_APP_EMPLOYEE_API_URL || 'https://vegavruddhi-employee-panel.vercel.app/api';
+
+    const checkStatus = async () => {
+      try {
+        const res = await fetch(`${EMPLOYEE_API_URL}/verify/status`);
+        const statusData = await res.json();
+
+        if (statusData.isCalculating) {
+          const cleanMsg = statusData.message
+            ? statusData.message.replace(/\(\d+[\.\d]*s\)/gi, '').replace(/in \d+[\.\d]*s/gi, '').trim()
+            : 'Syncing live spreadsheet data and computing verifications...';
+          
+          if (!closedCalculating || syncSnack.message !== cleanMsg) {
+            setSyncSnack({
+              open: true,
+              title: 'Background Pre-computation',
+              message: cleanMsg,
+              severity: 'info'
+            });
+            setClosedCalculating(false);
+          }
+        } else if (statusData.finishedAt && statusData.finishedAt !== lastFinishedAt) {
+          const finishTime = new Date(statusData.finishedAt).getTime();
+          const nowTime = Date.now();
+          if (nowTime - finishTime < 10 * 60 * 1000) {
+            setSyncSnack({
+              open: true,
+              title: 'Sync & Report Sent! 📊 ✉️',
+              message: 'Pre-computation complete & Daily Manager Report email automatically sent! Please perform a Hard Refresh to load the latest data.',
+              severity: 'success'
+            });
+          }
+          localStorage.setItem('vv_last_sync_finish', statusData.finishedAt);
+          setLastFinishedAt(statusData.finishedAt);
+          setClosedCalculating(false);
+        }
+      } catch (e) {}
+    };
+
+    checkStatus();
+    const interval = setInterval(checkStatus, 3000);
+    return () => clearInterval(interval);
+  }, [lastFinishedAt, closedCalculating, syncSnack.message]);
+
+  if (!syncSnack.open) return null;
+
+  return (
+    <Snackbar
+      open={syncSnack.open}
+      autoHideDuration={syncSnack.severity === 'info' ? null : (syncSnack.severity === 'success' ? 18000 : 6000)}
+      onClose={(e, reason) => {
+        if (reason !== 'clickaway') {
+          setSyncSnack(prev => ({ ...prev, open: false }));
+          if (syncSnack.severity === 'info') setClosedCalculating(true);
+        }
+      }}
+      anchorOrigin={{ vertical: 'top', horizontal: 'right' }}
+    >
+      <Paper
+        elevation={12}
+        sx={{
+          minWidth: { xs: '260px', sm: '300px' },
+          maxWidth: '340px',
+          p: 1.25,
+          borderRadius: '12px',
+          backdropFilter: 'blur(16px)',
+          background: syncSnack.severity === 'success'
+            ? 'linear-gradient(135deg, rgba(26, 92, 56, 0.97) 0%, rgba(15, 51, 32, 0.97) 100%)'
+            : 'linear-gradient(135deg, rgba(26, 92, 56, 0.97) 0%, rgba(15, 51, 32, 0.97) 100%)',
+          border: syncSnack.severity === 'success'
+            ? '1px solid rgba(52, 211, 153, 0.6)'
+            : '1px solid rgba(240, 165, 0, 0.45)',
+          boxShadow: syncSnack.severity === 'success'
+            ? '0 8px 24px rgba(26, 92, 56, 0.45)'
+            : '0 8px 24px rgba(15, 51, 32, 0.45)',
+          color: '#ffffff',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 0.6,
+          position: 'relative',
+          overflow: 'hidden',
+          transition: 'all 0.3s ease',
+          zIndex: 99999
+        }}
+      >
+        <Box
+          sx={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            height: '3px',
+            background: syncSnack.severity === 'success'
+              ? 'linear-gradient(90deg, #34d399, #10b981, #f0a500)'
+              : 'linear-gradient(90deg, #f0a500, #ffc107, #f0a500)',
+          }}
+        />
+
+        <IconButton
+          size="small"
+          onClick={() => {
+            setSyncSnack(prev => ({ ...prev, open: false }));
+            if (syncSnack.severity === 'info') setClosedCalculating(true);
+          }}
+          sx={{
+            position: 'absolute',
+            top: 5,
+            right: 5,
+            color: 'rgba(255, 255, 255, 0.85)',
+            bgcolor: 'rgba(0, 0, 0, 0.3)',
+            zIndex: 10,
+            p: 0.3,
+            '&:hover': {
+              bgcolor: '#f0a500',
+              color: '#ffffff',
+            }
+          }}
+        >
+          <CloseIcon sx={{ fontSize: 14 }} />
+        </IconButton>
+
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mt: 0.2, pr: 3 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.8 }}>
+            {syncSnack.severity === 'info' ? (
+              <CircularProgress size={18} sx={{ color: '#f0a500' }} />
+            ) : (
+              <Box sx={{ width: 22, height: 22, borderRadius: '50%', bgcolor: 'rgba(52, 211, 153, 0.2)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.9rem' }}>✨</Box>
+            )}
+            <Typography sx={{ fontWeight: 800, fontSize: '0.84rem', letterSpacing: '0.2px', color: '#ffffff' }}>
+              {syncSnack.title}
+            </Typography>
+          </Box>
+
+          <Box
+            sx={{
+              px: 0.8,
+              py: 0.15,
+              borderRadius: '12px',
+              fontSize: '0.6rem',
+              fontWeight: 800,
+              letterSpacing: '0.4px',
+              textTransform: 'uppercase',
+              bgcolor: syncSnack.severity === 'success' ? 'rgba(52, 211, 153, 0.2)' : 'rgba(240, 165, 0, 0.2)',
+              color: syncSnack.severity === 'success' ? '#a7f3d0' : '#ffc107',
+              border: syncSnack.severity === 'success' ? '1px solid rgba(52, 211, 153, 0.4)' : '1px solid rgba(240, 165, 0, 0.45)'
+            }}
+          >
+            {syncSnack.severity === 'success' ? 'Completed' : 'Live'}
+          </Box>
+        </Box>
+
+        <Typography sx={{ fontSize: '0.74rem', color: 'rgba(255, 255, 255, 0.95)', lineHeight: 1.35, pl: 0.3 }}>
+          {syncSnack.message}
+        </Typography>
+
+        {syncSnack.severity === 'success' && (
+          <Box sx={{ mt: 0.3, p: 0.7, borderRadius: '8px', bgcolor: 'rgba(0, 0, 0, 0.35)', border: '1px dashed rgba(240, 165, 0, 0.5)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Typography sx={{ fontSize: '0.68rem', fontWeight: 700, color: '#ffc107' }}>
+              🔄 Hard Refresh:
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 0.4 }}>
+              <Box component="kbd" sx={{ px: 0.5, py: 0.15, bgcolor: 'rgba(255,255,255,0.15)', borderRadius: '4px', fontSize: '0.62rem', fontWeight: 800, color: '#ffc107' }}>Ctrl</Box>
+              <Box component="span" sx={{ fontWeight: 700, fontSize: '0.65rem', color: '#ffc107' }}>+</Box>
+              <Box component="kbd" sx={{ px: 0.5, py: 0.15, bgcolor: 'rgba(255,255,255,0.15)', borderRadius: '4px', fontSize: '0.62rem', fontWeight: 800, color: '#ffc107' }}>Shift</Box>
+              <Box component="span" sx={{ fontWeight: 700, fontSize: '0.65rem', color: '#ffc107' }}>+</Box>
+              <Box component="kbd" sx={{ px: 0.5, py: 0.15, bgcolor: 'rgba(255,255,255,0.15)', borderRadius: '4px', fontSize: '0.62rem', fontWeight: 800, color: '#ffc107' }}>R</Box>
+            </Box>
+          </Box>
+        )}
+      </Paper>
+    </Snackbar>
+  );
+}
+
 function App() {
   const [mode, setMode] = useState("light");
   const [page, setPage] = useState(() => localStorage.getItem("vv_page") || "overview");
@@ -787,6 +971,7 @@ function App() {
     <PullToRefresh onRefresh={() => window.location.reload(true)}>
       <ThemeProvider theme={theme}>
         <AutoUpdateChecker />
+        <GlobalSyncMonitor />
         <CssBaseline />
 
         {/* ── SPLASH SCREEN ─────────────────────────────────────── */}

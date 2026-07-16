@@ -2643,12 +2643,7 @@ export default function MerchantForms({ onReady }) {
           const statusData = await statusRes.json();
           if (!statusData.isCalculating) {
             clearInterval(pollInterval);
-            setSyncSnack({ 
-              open: true, 
-              title: 'Hard Refresh Required', 
-              message: 'Pre-computation complete! All verification scores are updated. Please perform a Hard Refresh to load the latest data.', 
-              severity: 'success' 
-            });
+            setSyncSnack(prev => ({ ...prev, open: false }));
             setSyncingSheet(false);
             if (window.clearVvCache) window.clearVvCache();
             load(true);
