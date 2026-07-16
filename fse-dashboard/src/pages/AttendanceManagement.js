@@ -12,6 +12,9 @@ import PersonOffIcon from '@mui/icons-material/PersonOff';
 import RepeatIcon from '@mui/icons-material/Repeat';
 import CloseIcon from '@mui/icons-material/Close';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import ToggleButton from '@mui/material/ToggleButton';
+import ToggleButtonGroup from '@mui/material/ToggleButtonGroup';
+import LinearProgress from '@mui/material/LinearProgress';
 
 const EMP_BASE = process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api';
 
@@ -30,6 +33,18 @@ function AttendanceManagement({ onReady }) {
   const [teamModal, setTeamModal]       = useState(null); // { tl: record }
   const [teamFilter, setTeamFilter]     = useState('all'); // 'all' | 'present' | 'absent'
 
+  // Monthly view state
+  const [viewMode, setViewMode]         = useState('daily'); // 'daily' | 'monthly'
+  const [monthRecords, setMonthRecords] = useState([]);
+  const [monthSummary, setMonthSummary] = useState({ workingDays: 0, totalDaysInMonth: 30, totalPeople: 0, fullAttendance: 0, neverPresent: 0, avgPresentDays: 0 });
+  const [selectedMonthYear, setSelectedMonthYear] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [monthLoading, setMonthLoading] = useState(false);
+  const [monthSearch, setMonthSearch]   = useState('');
+  const [monthRoleFilter, setMonthRoleFilter] = useState('all'); // 'all' | 'employee' | 'teamlead' | 'manager'
+
   // Tick every minute to update live durations
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 60000);
@@ -37,9 +52,42 @@ function AttendanceManagement({ onReady }) {
   }, []);
 
   useEffect(() => {
-    fetchFull();
-    fetchSummary();
-  }, [selectedDate]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (viewMode === 'daily') {
+      fetchFull();
+      fetchSummary();
+    }
+  }, [selectedDate, viewMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (viewMode === 'monthly') {
+      fetchMonthly();
+    }
+  }, [viewMode, selectedMonthYear]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const fetchMonthly = async () => {
+    setMonthLoading(true);
+    setError('');
+    try {
+      const [year, month] = selectedMonthYear.split('-');
+      const res = await fetch(`${EMP_BASE}/attendance/admin/monthly?year=${year}&month=${month}`);
+      if (!res.ok) throw new Error('Failed to fetch monthly attendance');
+      const data = await res.json();
+      setMonthRecords(data.records || []);
+      setMonthSummary({
+        workingDays: data.workingDays || 0,
+        totalDaysInMonth: data.totalDaysInMonth || 30,
+        totalPeople: data.totalPeople || 0,
+        fullAttendance: data.fullAttendance || 0,
+        neverPresent: data.neverPresent || 0,
+        avgPresentDays: data.avgPresentDays || 0
+      });
+    } catch (err) {
+      console.error(err);
+      setError('Failed to load monthly attendance data');
+    } finally {
+      setMonthLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!loading && onReady) {
@@ -69,7 +117,7 @@ function AttendanceManagement({ onReady }) {
       if (!res.ok && res.status !== 304) throw new Error();
       const data = await res.json();
       setSummary(data);
-    } catch {
+    } catch (e) {
       // silent
     }
   };
@@ -128,22 +176,79 @@ function AttendanceManagement({ onReady }) {
   const tlCount       = allRecords.filter(r => r.userType === 'teamlead').length;
   const managerCount  = allRecords.filter(r => r.userType === 'manager').length;
 
+  // Monthly filtered & sorted records
+  const filteredMonthRecords = monthRecords.filter(r => {
+    if (monthRoleFilter !== 'all' && r.userType !== monthRoleFilter) return false;
+    if (monthSearch) {
+      const q = monthSearch.toLowerCase();
+      return (
+        (r.userName || '').toLowerCase().includes(q) ||
+        (r.userEmail || '').toLowerCase().includes(q) ||
+        (r.phone || '').toLowerCase().includes(q) ||
+        (r.position || '').toLowerCase().includes(q)
+      );
+    }
+    return true;
+  });
+
   return (
     <Box sx={{ p: { xs: 2, md: 3 } }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 2, mb: 3 }}>
         <Typography variant="h4" sx={{ fontWeight: 700 }}>
           Attendance Management
         </Typography>
-        <Button
-          variant="outlined"
-          startIcon={loading ? <CircularProgress size={16} /> : <RefreshIcon />}
-          onClick={() => { fetchFull(); fetchSummary(); }}
-          disabled={loading}
-          sx={{ borderColor: '#2e7d32', color: '#2e7d32', fontWeight: 700, '&:hover': { bgcolor: '#e8f5e9', borderColor: '#2e7d32' } }}
-        >
-          Refresh
-        </Button>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <ToggleButtonGroup
+            value={viewMode}
+            exclusive
+            onChange={(e, val) => val && setViewMode(val)}
+            size="small"
+            sx={{
+              bgcolor: '#fff',
+              border: '1px solid #c8e6c9',
+              borderRadius: '8px',
+              '& .MuiToggleButton-root': {
+                px: 2.5,
+                py: 0.75,
+                fontWeight: 700,
+                fontSize: '13px',
+                textTransform: 'none',
+                color: '#555',
+                border: 'none',
+                '&.Mui-selected': {
+                  bgcolor: '#1b5e20',
+                  color: '#fff',
+                  '&:hover': { bgcolor: '#2e7d32' }
+                }
+              }
+            }}
+          >
+            <ToggleButton value="daily">Daily View</ToggleButton>
+            <ToggleButton value="monthly">Monthly View</ToggleButton>
+          </ToggleButtonGroup>
+
+          <Button
+            variant="outlined"
+            startIcon={(loading || monthLoading) ? <CircularProgress size={16} /> : <RefreshIcon />}
+            onClick={() => {
+              if (viewMode === 'monthly') {
+                fetchMonthly();
+              } else {
+                fetchFull();
+                fetchSummary();
+              }
+            }}
+            disabled={loading || monthLoading}
+            sx={{ borderColor: '#2e7d32', color: '#2e7d32', fontWeight: 700, '&:hover': { bgcolor: '#e8f5e9', borderColor: '#2e7d32' } }}
+          >
+            Refresh
+          </Button>
+        </Box>
       </Box>
+
+      {/* ── Daily View Content ──────────────────────────────────────── */}
+      {viewMode === 'daily' && (
+        <>
 
       {/* ── Summary Cards ─────────────────────────────────── */}
       <Grid container spacing={2} sx={{ mb: 3 }}>
@@ -624,6 +729,238 @@ function AttendanceManagement({ onReady }) {
           </Dialog>
         );
       })()}
+        </>
+      )}
+
+      {/* ── Monthly View Content ────────────────────────────────────── */}
+      {viewMode === 'monthly' && (
+        <>
+          {/* Monthly Summary Cards exactly matching reference UI */}
+          <Grid container spacing={2} sx={{ mb: 3 }}>
+            <Grid item xs={12} sm={6} md={2.4}>
+              <Card sx={{ bgcolor: '#e8f5e9', border: '1px solid #c8e6c9', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', height: '100%' }}>
+                <CardContent sx={{ p: '14px 18px !important' }}>
+                  <Typography variant="caption" sx={{ fontWeight: 700, color: '#2e7d32', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    {new Date(parseInt(selectedMonthYear.split('-')[0], 10), parseInt(selectedMonthYear.split('-')[1], 10) - 1).toLocaleString('default', { month: 'long', year: 'numeric' })}
+                  </Typography>
+                  <Typography variant="h4" sx={{ fontWeight: 800, color: '#1b5e20', mt: 0.5, lineHeight: 1.1 }}>
+                    {monthSummary.workingDays} <Typography component="span" sx={{ fontSize: '14px', fontWeight: 600, color: '#444' }}>working days</Typography>
+                  </Typography>
+                  <Typography variant="caption" sx={{ display: 'block', color: '#666', mt: 0.5 }}>
+                    Total {monthSummary.totalDaysInMonth} days in month
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+
+            <Grid item xs={12} sm={6} md={2.4}>
+              <Card sx={{ bgcolor: '#e3f2fd', border: '1px solid #bbdefb', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', height: '100%' }}>
+                <CardContent sx={{ p: '14px 18px !important' }}>
+                  <Typography variant="caption" sx={{ fontWeight: 700, color: '#1565c0', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    Total People
+                  </Typography>
+                  <Typography variant="h3" sx={{ fontWeight: 800, color: '#0d47a1', mt: 0.5, lineHeight: 1.1 }}>
+                    {monthSummary.totalPeople}
+                  </Typography>
+                  <Typography variant="caption" sx={{ display: 'block', color: '#555', mt: 0.5 }}>
+                    Active staff across roles
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+
+            <Grid item xs={12} sm={6} md={2.4}>
+              <Card sx={{ bgcolor: '#e8f5e9', border: '1px solid #c8e6c9', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', height: '100%' }}>
+                <CardContent sx={{ p: '14px 18px !important' }}>
+                  <Typography variant="caption" sx={{ fontWeight: 700, color: '#2e7d32', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    Full Attendance
+                  </Typography>
+                  <Typography variant="h3" sx={{ fontWeight: 800, color: '#1b5e20', mt: 0.5, lineHeight: 1.1 }}>
+                    {monthSummary.fullAttendance}
+                  </Typography>
+                  <Typography variant="caption" sx={{ display: 'block', color: '#555', mt: 0.5 }}>
+                    100% presence so far
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+
+            <Grid item xs={12} sm={6} md={2.4}>
+              <Card sx={{ bgcolor: '#ffebee', border: '1px solid #ffcdd2', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', height: '100%' }}>
+                <CardContent sx={{ p: '14px 18px !important' }}>
+                  <Typography variant="caption" sx={{ fontWeight: 700, color: '#c62828', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    Never Present
+                  </Typography>
+                  <Typography variant="h3" sx={{ fontWeight: 800, color: '#b71c1c', mt: 0.5, lineHeight: 1.1 }}>
+                    {monthSummary.neverPresent}
+                  </Typography>
+                  <Typography variant="caption" sx={{ display: 'block', color: '#555', mt: 0.5 }}>
+                    0 days present in month
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+
+            <Grid item xs={12} sm={6} md={2.4}>
+              <Card sx={{ bgcolor: '#fff8e1', border: '1px solid #ffecb3', borderRadius: '12px', boxShadow: '0 2px 8px rgba(0,0,0,0.04)', height: '100%' }}>
+                <CardContent sx={{ p: '14px 18px !important' }}>
+                  <Typography variant="caption" sx={{ fontWeight: 700, color: '#f57f17', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    Avg Present Days
+                  </Typography>
+                  <Typography variant="h3" sx={{ fontWeight: 800, color: '#e65100', mt: 0.5, lineHeight: 1.1 }}>
+                    {monthSummary.avgPresentDays}
+                  </Typography>
+                  <Typography variant="caption" sx={{ display: 'block', color: '#555', mt: 0.5 }}>
+                    Average per employee
+                  </Typography>
+                </CardContent>
+              </Card>
+            </Grid>
+          </Grid>
+
+          {/* Monthly Controls */}
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 2, mb: 2, alignItems: 'center' }}>
+            <TextField
+              type="month"
+              label="Select Month"
+              value={selectedMonthYear}
+              onChange={e => setSelectedMonthYear(e.target.value)}
+              InputLabelProps={{ shrink: true }}
+              size="small"
+              sx={{ minWidth: 180 }}
+            />
+
+            <TextField
+              placeholder="Search name, email, phone..."
+              value={monthSearch}
+              onChange={e => setMonthSearch(e.target.value)}
+              size="small"
+              sx={{ minWidth: 240 }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <SearchIcon fontSize="small" />
+                  </InputAdornment>
+                ),
+              }}
+            />
+
+            <FormControl size="small" sx={{ minWidth: 160 }}>
+              <InputLabel>Role Filter</InputLabel>
+              <Select
+                label="Role Filter"
+                value={monthRoleFilter}
+                onChange={e => setMonthRoleFilter(e.target.value)}
+              >
+                <MenuItem value="all">All Roles ({monthRecords.length})</MenuItem>
+                <MenuItem value="employee">FSE ({monthRecords.filter(r => r.userType === 'employee').length})</MenuItem>
+                <MenuItem value="teamlead">Team Lead ({monthRecords.filter(r => r.userType === 'teamlead').length})</MenuItem>
+                <MenuItem value="manager">Manager ({monthRecords.filter(r => r.userType === 'manager').length})</MenuItem>
+              </Select>
+            </FormControl>
+          </Box>
+
+          {/* Monthly Table */}
+          {monthLoading ? (
+            <Box sx={{ display: 'flex', justifyContent: 'center', my: 6 }}>
+              <CircularProgress color="success" />
+            </Box>
+          ) : filteredMonthRecords.length === 0 ? (
+            <Alert severity="info">No employees or attendance found for this month.</Alert>
+          ) : (
+            <TableContainer component={Paper} elevation={0} sx={{ border: '1px solid #e0e0e0', borderRadius: 2 }}>
+              <Table size="small" stickyHeader>
+                <TableHead>
+                  <TableRow sx={{ '& th': { bgcolor: '#f8f9fa', fontWeight: 700, fontSize: 13 } }}>
+                    <TableCell width="40">#</TableCell>
+                    <TableCell>Name</TableCell>
+                    <TableCell>Role</TableCell>
+                    <TableCell>TL / Manager</TableCell>
+                    <TableCell align="center">Days Present</TableCell>
+                    <TableCell align="center">Days Absent</TableCell>
+                    <TableCell align="center">Attendance %</TableCell>
+                    <TableCell width="320">Attendance Bar ({monthSummary.workingDays || monthSummary.totalDaysInMonth} Days)</TableCell>
+                  </TableRow>
+                </TableHead>
+                <TableBody>
+                  {filteredMonthRecords.map((row, index) => {
+                    const roleColor = row.userType === 'teamlead' ? 'warning' : row.userType === 'manager' ? 'info' : 'default';
+                    const roleLabel = row.userType === 'teamlead' ? 'TL' : row.userType === 'manager' ? 'Manager' : 'FSE';
+                    return (
+                      <TableRow key={row._id} hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
+                        <TableCell sx={{ color: '#888', fontSize: 12 }}>{index + 1}</TableCell>
+                        <TableCell>
+                          <Typography variant="body2" sx={{ fontWeight: 700, color: '#212121' }}>
+                            {row.userName}
+                          </Typography>
+                          {row.userEmail && (
+                            <Typography variant="caption" sx={{ display: 'block', color: '#777' }}>
+                              {row.userEmail}
+                            </Typography>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Chip
+                            label={roleLabel}
+                            size="small"
+                            color={roleColor}
+                            variant="outlined"
+                            sx={{ fontWeight: 700, fontSize: '11px', height: 22 }}
+                          />
+                        </TableCell>
+                        <TableCell sx={{ fontSize: 12, color: '#555' }}>
+                          {row.reportingManager || '—'}
+                        </TableCell>
+                        <TableCell align="center">
+                          <Typography variant="body2" sx={{ fontWeight: 800, color: row.daysPresent > 0 ? '#2e7d32' : '#c62828' }}>
+                            {row.daysPresent}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="center">
+                          <Typography variant="body2" sx={{ fontWeight: 700, color: '#c62828' }}>
+                            {row.daysAbsent}
+                          </Typography>
+                        </TableCell>
+                        <TableCell align="center">
+                          <Chip
+                            label={`${row.attendancePercent}%`}
+                            size="small"
+                            sx={{
+                              fontWeight: 800,
+                              fontSize: '11px',
+                              height: 24,
+                              bgcolor: row.attendancePercent >= 75 ? '#e8f5e9' : row.attendancePercent >= 40 ? '#fff8e1' : '#ffebee',
+                              color: row.attendancePercent >= 75 ? '#2e7d32' : row.attendancePercent >= 40 ? '#e65100' : '#c62828'
+                            }}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                            <Box sx={{ flexGrow: 1, height: 10, bgcolor: '#f5f5f5', borderRadius: 5, overflow: 'hidden', position: 'relative' }}>
+                              <Box
+                                sx={{
+                                  width: `${Math.min(100, Math.max(0, (row.daysPresent / Math.max(1, monthSummary.workingDays || monthSummary.totalDaysInMonth)) * 100))}%`,
+                                  height: '100%',
+                                  bgcolor: row.attendancePercent >= 75 ? '#2e7d32' : row.attendancePercent >= 40 ? '#f57f17' : row.daysPresent > 0 ? '#ef6c00' : '#e53935',
+                                  borderRadius: 5,
+                                  transition: 'width 0.4s ease'
+                                }}
+                              />
+                            </Box>
+                            <Typography variant="caption" sx={{ fontWeight: 700, color: '#444', minWidth: 46, textAlign: 'right', fontSize: '12px' }}>
+                              {row.daysPresent}/{monthSummary.workingDays || monthSummary.totalDaysInMonth}
+                            </Typography>
+                          </Box>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </TableContainer>
+          )}
+        </>
+      )}
     </Box>
   );
 }
