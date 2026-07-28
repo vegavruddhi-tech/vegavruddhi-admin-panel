@@ -4,7 +4,7 @@ import {
   Box, Card, CardContent, Typography, useTheme, Chip, IconButton, Tooltip as MuiTooltip,
   Collapse, Button, Divider, Dialog, DialogTitle, DialogContent, DialogActions,
   Table, TableHead, TableRow, TableCell, TableBody, TableContainer, Paper,
-  TextField, CircularProgress, Autocomplete
+  TextField, CircularProgress, Autocomplete, ToggleButton, ToggleButtonGroup
 } from "@mui/material";
 import TableChartIcon from "@mui/icons-material/TableChart";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
@@ -25,6 +25,7 @@ import FiltersBar from "../components/FiltersBar";
 import TideDrillTable from "../components/TideDrillTable";
 import MeetingTrend from "../components/MeetingTrend";
 import { BRAND } from "../theme";
+import { getProductDisplayLabel } from "./MerchantForms";
 
 const COLORS = ["#7c3aed", "#10b981", "#3b82f6", "#f59e0b", "#14b8a6", "#ec4899", "#0ea5e9", "#ef4444"];
 const PRODUCT_COLORS = ["#7c3aed","#10b981","#3b82f6","#f59e0b","#14b8a6","#ec4899","#0ea5e9","#ef4444","#f97316","#84cc16","#06b6d4","#8b5cf6"];
@@ -697,6 +698,7 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
 
   // Product KPI drill-down
   const [productKpiDrill, setProductKpiDrill] = useState(null); // { product, rows }
+  const [drillSubProduct, setDrillSubProduct] = useState('All'); // For sub-product toggle
 
   // employee profile popup state (custom chart bar click)
   const [empProfile, setEmpProfile] = useState(null); // { name, email, tl, status, employment, kpis: [{label, value, color}] }
@@ -1690,9 +1692,10 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
                         status: f.status || '–',
                         date: new Date(f.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }),
                         createdAt: f.createdAt,
+                        rawForm: f,
                       };
                     });
-                  setProductKpiDrill({ product: k.product, color: k.color, rows });
+                  setProductKpiDrill({ product: k.product, color: k.color, rows }); setDrillSubProduct('All');
                 }}
                 sx={{
                   transition: 'all 0.2s', cursor: 'pointer',
@@ -2178,9 +2181,35 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
           return p ? `${phone}__${p}` : phone;
         };
 
-        // Build TL summary data
-        const tlSummary = {};
+        // Build TL summary data & extract sub-products
+        const subProductsSet = new Set();
+        
         productKpiDrill.rows.forEach(row => {
+          if (row.rawForm) {
+            const rawFormForLabel = row.rawForm.formFillingFor || row.rawForm.tideProduct || row.rawForm.brand || '';
+            const verifyKey = getVerifyKey(row.phone, productKpiDrill.product, row.createdAt);
+            const verifyData = globalVerifyMap[verifyKey];
+            const { displayLabel } = getProductDisplayLabel(rawFormForLabel, row.rawForm, verifyData);
+            if (displayLabel) subProductsSet.add(displayLabel);
+          }
+        });
+        
+        const subProductsList = ['All', ...Array.from(subProductsSet).sort()];
+        
+        const filteredRows = productKpiDrill.rows.filter(row => {
+          if (drillSubProduct === 'All') return true;
+          if (!row.rawForm) return false;
+          
+          const rawFormForLabel = row.rawForm.formFillingFor || row.rawForm.tideProduct || row.rawForm.brand || '';
+          const verifyKey = getVerifyKey(row.phone, productKpiDrill.product, row.createdAt);
+          const verifyData = globalVerifyMap[verifyKey];
+          const { displayLabel } = getProductDisplayLabel(rawFormForLabel, row.rawForm, verifyData);
+          
+          return displayLabel === drillSubProduct;
+        });
+
+        const tlSummary = {};
+        filteredRows.forEach(row => {
           const tlName = row.tl || 'Unknown';
           const tlPhone = row.tlPhone || '–';
           const verifyKey = getVerifyKey(row.phone, productKpiDrill.product, row.createdAt);
@@ -2210,17 +2239,54 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
             PaperProps={{ sx: { borderRadius: 3, overflow: 'hidden', maxHeight: '90vh' } }}>
             {/* Header */}
             <Box sx={{ background: `linear-gradient(135deg, ${productKpiDrill.color}cc, ${productKpiDrill.color}66)`, px: 3, py: 2.5 }}>
-              <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+              <Box sx={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', mb: subProductsList.length > 1 ? 2 : 0 }}>
                 <Box>
                   <Typography variant="h6" sx={{ color: '#fff', fontWeight: 800 }}>📦 {productKpiDrill.product}</Typography>
                   <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.9)', mt: 0.5 }}>
-                    {productKpiDrill.rows.length} forms submitted · {tlSummaryArray.length} team leader{tlSummaryArray.length !== 1 ? 's' : ''}
+                    {filteredRows.length} forms submitted · {tlSummaryArray.length} team leader{tlSummaryArray.length !== 1 ? 's' : ''}
                   </Typography>
                 </Box>
                 <IconButton onClick={() => setProductKpiDrill(null)} sx={{ color: '#fff', bgcolor: 'rgba(255,255,255,0.15)', '&:hover': { bgcolor: 'rgba(255,255,255,0.25)' } }}>
                   <CloseIcon />
                 </IconButton>
               </Box>
+              
+              {subProductsList.length > 1 && (
+                <ToggleButtonGroup
+                  value={drillSubProduct}
+                  exclusive
+                  onChange={(e, newVal) => { if (newVal) setDrillSubProduct(newVal); }}
+                  size="small"
+                  sx={{
+                    bgcolor: 'rgba(255,255,255,0.15)',
+                    borderRadius: 2,
+                    p: 0.5,
+                    '.MuiToggleButton-root': {
+                      color: 'rgba(255,255,255,0.8)',
+                      border: 'none',
+                      textTransform: 'none',
+                      fontWeight: 600,
+                      px: 2,
+                      py: 0.5,
+                      borderRadius: 1.5,
+                      '&.Mui-selected': {
+                        bgcolor: '#fff',
+                        color: productKpiDrill.color,
+                        '&:hover': { bgcolor: 'rgba(255,255,255,0.9)' }
+                      },
+                      '&:hover': {
+                        bgcolor: 'rgba(255,255,255,0.25)'
+                      }
+                    }
+                  }}
+                >
+                  {subProductsList.map(sp => (
+                    <ToggleButton key={sp} value={sp}>
+                      {sp}
+                    </ToggleButton>
+                  ))}
+                </ToggleButtonGroup>
+              )}
             </Box>
 
             <DialogContent sx={{ p: 3 }}>
@@ -2295,7 +2361,7 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
                       </TableRow>
                     </TableHead>
                     <TableBody>
-                      {productKpiDrill.rows.map((row, i) => {
+                      {filteredRows.map((row, i) => {
                         const verifyKey = getVerifyKey(row.phone, productKpiDrill.product, row.createdAt);
                         const verifyStatus = globalVerifyMap[verifyKey]?.status || 'Not Found';
                         const verifyColor = verifyStatus === 'Fully Verified' ? '#2e7d32' : verifyStatus === 'Partially Done' ? '#f57f17' : '#757575';

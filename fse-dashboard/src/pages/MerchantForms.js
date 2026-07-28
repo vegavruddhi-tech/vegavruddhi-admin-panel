@@ -720,70 +720,39 @@ const PRODUCT_COLORS = {
   'Tide Credit Card':    { bg: '#e1f5fe', color: '#01579b' },
 };
 
-function ProductChip({ product, form, verifyData }) {
-  console.log("PRODUCT CHIP RENDER:", product, verifyData?.points, window.dynamicPointsMap?.[product.toLowerCase().trim()]);
-  // 🔥 GENERIC: Use window.dynamicPointsMap (loaded from Points Config API) to determine bracket
-  // Works automatically for ANY product added to Points Configuration — no hardcoding needed
+export function getProductDisplayLabel(product, form, verifyData) {
   let subType = '';
-
   if (product) {
     const productKey = product.toLowerCase().trim();
     const cfg = window.dynamicPointsMap?.[productKey];
-
     if (cfg && form) {
       if (cfg.type === 'mapped' && cfg.fieldMapping?.mappedColumn) {
-        // MAPPED product (e.g. Tide Insurance) — show the value of the mapped column in brackets
-        // The mapped column (e.g. "amount") lives in the verification collection, not FormResponse
-        // Priority: verifyData.record → verifyData.checks → form directly
-        const col = cfg.fieldMapping.mappedColumn; // e.g. "amount"
-
-        let val = '';
-
-        // 1. Try form field directly (in case it's stored on FormResponse)
-        val = String(form[col] || '').trim();
-
-        // 2. Try verifyData.record (the raw row from verification collection e.g. insurance_june)
+        const col = cfg.fieldMapping.mappedColumn;
+        let val = String(form[col] || '').trim();
         if (!val && verifyData?.record) {
           val = String(verifyData.record[col] || verifyData.record[col.toLowerCase()] || '').trim();
         }
-
-        // 3. Try verifyData.checks — find a check whose field matches the mappedColumn
         if (!val && verifyData?.checks && Array.isArray(verifyData.checks)) {
-          const match = verifyData.checks.find(c =>
-            c.field && c.field.toLowerCase() === col.toLowerCase()
-          );
+          const match = verifyData.checks.find(c => c.field && c.field.toLowerCase() === col.toLowerCase());
           if (match?.sheetValue) val = String(match.sheetValue).trim();
-          
-          // Broader fallback: field name contains the column name
           if (!val) {
-            const broader = verifyData.checks.find(c =>
-              c.field && c.field.toLowerCase().includes(col.toLowerCase())
-            );
+            const broader = verifyData.checks.find(c => c.field && c.field.toLowerCase().includes(col.toLowerCase()));
             if (broader?.sheetValue) val = String(broader.sheetValue).trim();
           }
         }
-
-        // 4. Reverse map from assigned points (Backend saves `points`, we can look up which value gave these points)
         if (!val && verifyData?.points !== undefined && Array.isArray(cfg.valueMapping)) {
           const mapped = cfg.valueMapping.find(m => Number(m.points) === Number(verifyData.points));
-          if (mapped && mapped.value) {
-             val = String(mapped.value).trim();
-          }
+          if (mapped && mapped.value) val = String(mapped.value).trim();
         }
-
-        // Show value with ₹ prefix if it looks like a number (amount), plain otherwise
         if (val) {
           const num = parseFloat(val);
           subType = !isNaN(num) ? `₹${num}` : val;
         }
-
       } else if (cfg.type === 'complex' && cfg.fieldMapping) {
-        // COMPLEX product — show plan + tier from fieldMapping
         const planField = cfg.fieldMapping.planField || 'planName';
         const tierField = cfg.fieldMapping.tierField || 'tierName';
         const planVal = String(form[planField] || '').trim();
         const tierVal = String(form[tierField] || '').trim();
-
         if (planVal && tierVal) subType = `${planVal} - ${tierVal}`;
         else if (planVal) subType = planVal;
         else if (tierVal) subType = tierVal;
@@ -799,18 +768,41 @@ function ProductChip({ product, form, verifyData }) {
   if (normalizedBase.toLowerCase() === 'tide insurance') matchKey = 'Tide Insurance';
   if (normalizedBase.toLowerCase() === 'tide credit card') matchKey = 'Tide Credit Card';
 
-  const c = PRODUCT_COLORS[matchKey] || PRODUCT_COLORS[product] || { bg: '#f5f5f5', color: '#555' };
-  
+  let insuranceType = '';
+  if (matchKey === 'Tide Insurance' || matchKey === 'Insurance' || matchKey.includes('Insurance')) {
+    const getVal = (...keys) => {
+      for (const k of keys) {
+        if (form?.[k]) return form[k];
+        if (verifyData?.record?.[k]) return verifyData.record[k];
+        if (verifyData?.checks && Array.isArray(verifyData.checks)) {
+          const check = verifyData.checks.find(c => c.field && c.field.toLowerCase() === k.toLowerCase());
+          if (check?.actual || check?.sheetValue) return check.actual || check.sheetValue;
+        }
+      }
+      return '';
+    };
+    insuranceType = getVal('tideIns_type', 'tideInsType', 'insurance_plan', 'ins_insuranceType', 'insuranceType', 'insurance_type');
+  }
+
   let displayLabel = product || '–';
   if (product) {
     const hasBracket = product.includes('(');
     const bracketPart = hasBracket ? '(' + product.split('(')[1] : '';
     displayLabel = matchKey + bracketPart;
-    // Add bracket with the points-determining value
     if (subType && !hasBracket) {
       displayLabel += ` (${subType})`;
     }
+    if (insuranceType) {
+      displayLabel += ` (${insuranceType})`;
+    }
   }
+  
+  return { displayLabel, matchKey };
+}
+
+function ProductChip({ product, form, verifyData }) {
+  const { displayLabel, matchKey } = getProductDisplayLabel(product, form, verifyData);
+  const c = PRODUCT_COLORS[matchKey] || PRODUCT_COLORS[product] || { bg: '#f5f5f5', color: '#555' };
 
   return (
     <Chip label={displayLabel} size="small"
@@ -2210,10 +2202,7 @@ const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmp
                 if (verificationStatus === 'Fully Verified') {
                   // ✅ FIXED: Use same priority order as backend
                   const rawProduct = form.formFillingFor || form.tideProduct || form.brand || '';
-                  // Normalize: trim and lowercase for grouping
-                  const normalized = rawProduct.trim().toLowerCase();
-                  const product = normalized === 'msme' ? 'Tide MSME' :
-                                 normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Other';
+                  const { displayLabel: product } = getProductDisplayLabel(rawProduct, form, verifyMap[formKey]);
                   
                   // Count every verified form (no deduplication)
                   if (!productBreakdown[product]) productBreakdown[product] = 0;
@@ -2259,13 +2248,10 @@ const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmp
               if (verificationStatus === 'Fully Verified') {
                 // ✅ FIXED: Use same priority order as backend
                 const rawProduct = form.formFillingFor || form.tideProduct || form.brand || '';
-                const normalized = rawProduct.trim().toLowerCase();
-                // Simple grouping by product name only (no brackets in summary chips)
-                const product = normalized === 'msme' ? 'Tide MSME' :
-                               normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Other';
+                const { displayLabel: product, matchKey: baseProduct } = getProductDisplayLabel(rawProduct, form, verifyMap[formKey]);
                 
                 // Count every verified form (no deduplication)
-                if (!productBreakdown[product]) productBreakdown[product] = { count: 0, baseProduct: product };
+                if (!productBreakdown[product]) productBreakdown[product] = { count: 0, baseProduct: baseProduct };
                 productBreakdown[product].count++;
               }
             });
@@ -2315,10 +2301,8 @@ const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmp
           const filteredList = forms.filter(f => {
             if (!filterProduct) return true;
             const rawProduct = f.formFillingFor || f.tideProduct || f.brand || '';
-            const normalized = rawProduct.trim().toLowerCase();
-            const product = normalized === 'msme' ? 'Tide MSME' :
-                           normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Other';
-            return product === filterProduct;
+            const { displayLabel: product, matchKey: baseProduct } = getProductDisplayLabel(rawProduct, f, verifyMap[getKey(f)]);
+            return product === filterProduct || baseProduct === filterProduct;
           });
           const pageSize = 10;
           const totalPages = Math.ceil(filteredList.length / pageSize) || 1;
