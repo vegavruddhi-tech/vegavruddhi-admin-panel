@@ -1923,20 +1923,43 @@ const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmp
   const [editSaving, setEditSaving] = useState(false);
   const [editSnack, setEditSnack]   = useState('');
 
+  // 🔥 FIX: Points fallback for sub-products (Tide Insurance Accidental/Cyber Security)
+  const EMPLOYEE_GROUP_FALLBACK_POINTS = {
+    'tide': 2, 'tide msme': 0.3, 'tide insurance': 1, 'tide credit card': 1, 'tide bt': 1
+  };
+  const normalizeProductForPoints = (raw) => {
+    const n = (raw || '').toLowerCase().trim();
+    if (n.includes('tide insurance')) return 'tide insurance';
+    if (n.includes('tide msme'))      return 'tide msme';
+    if (n.includes('tide credit card')) return 'tide credit card';
+    if (n.includes('tide bt'))        return 'tide bt';
+    if (n.includes('tide'))           return 'tide';
+    return n;
+  };
+
   // 🚀 WRITE-TIME ARCHITECTURE: Build verifyMap instantly from the pre-attached form data!
   const verifyMap = React.useMemo(() => {
     const map = {};
     forms.forEach(f => {
       const key = getKey(f);
       if (f.verificationStatus) {
+        const storedChecks = f.verificationChecks || {};
+        // 🔥 FIX: If points=0 but Fully Verified, compute correct points from product name
+        let pts = storedChecks.points ?? 0;
+        if (pts === 0 && f.verificationStatus === 'Fully Verified') {
+          const baseProduct = normalizeProductForPoints(f.formFillingFor || f.tideProduct || f.brand || '');
+          pts = EMPLOYEE_GROUP_FALLBACK_POINTS[baseProduct] || 0;
+        }
         map[key] = {
           status: f.verificationStatus,
-          ...f.verificationChecks
+          ...storedChecks,
+          points: pts
         };
       }
     });
     return map;
   }, [forms]);
+
 
   // ✅ FIXED: Check duplicates by phone+product combination, not just phone
   const dupCount = forms.filter(f => {
@@ -3601,6 +3624,24 @@ export default function MerchantForms({ onReady }) {
     console.log('✅ Generating globalVerifyMap instantly from precomputed forms & session cache');
     const universalCache = (window.vv_cache && window.vv_cache.universalVerify) || null;
     const vMap = { ...(universalCache || {}) };
+
+    // 🔥 FIX: Points map for sub-product normalization
+    const FALLBACK_POINTS = {
+      'tide': 2,
+      'tide msme': 0.3,
+      'tide insurance': 1,
+      'tide credit card': 1,
+      'tide bt': 1,
+    };
+    const normalizeForPoints = (rawProduct) => {
+      const n = (rawProduct || '').toLowerCase().trim();
+      if (n.includes('tide insurance')) return 'tide insurance';
+      if (n.includes('tide msme'))      return 'tide msme';
+      if (n.includes('tide credit card')) return 'tide credit card';
+      if (n.includes('tide bt'))        return 'tide bt';
+      if (n.includes('tide'))           return 'tide';
+      return n;
+    };
     
     forms.forEach(f => {
       const vKey = getFormKey(f);
@@ -3608,10 +3649,18 @@ export default function MerchantForms({ onReady }) {
       const shortKey = p ? `${f.customerNumber}__${p}` : f.customerNumber;
       
       const cachedEntry = vMap[vKey] || vMap[shortKey] || (universalCache && (universalCache[vKey] || universalCache[shortKey]));
+
+      // 🔥 FIX: If points is 0 but status is Fully Verified, compute correct points from product name
+      const rawStatus = cachedEntry?.status || f.verificationStatus || 'Not Found';
+      let rawPoints = cachedEntry?.points ?? (f.verificationChecks?.points || 0);
+      if (rawPoints === 0 && rawStatus === 'Fully Verified') {
+        const baseProduct = normalizeForPoints(f.formFillingFor || f.tideProduct || f.brand || '');
+        rawPoints = FALLBACK_POINTS[baseProduct] || 0;
+      }
       
       vMap[vKey] = {
-        status: cachedEntry?.status || f.verificationStatus || 'Not Found',
-        points: cachedEntry?.points ?? (f.verificationChecks?.points || 0),
+        status: rawStatus,
+        points: rawPoints,
         rulesCache: cachedEntry?.rulesCache || f.verificationChecks?.rulesCache || {},
         checks: cachedEntry?.checks || f.verificationChecks?.checks || [],
         phoneMatch: cachedEntry?.phoneMatch ?? (f.verificationChecks?.phoneMatch || false),
