@@ -105,6 +105,14 @@ const SlabTierRow = React.memo(function SlabTierRow({ tier, idx, onCommit, onDel
 });
 
 // ── Flatten a form record into a flat row for export ─────────
+export function getProductFieldWithSubType(f) {
+  let p = (f?.formFillingFor || f?.tideProduct || f?.brand || '').toLowerCase().trim();
+  if (p === 'tide insurance' && f?.tideIns_type) p += `__${f.tideIns_type.toLowerCase().trim()}`;
+  if ((p === 'tide credit card' || p === 'credit card') && f?.cc_cardName) p += `__${f.cc_cardName.toLowerCase().trim()}`;
+  if ((p === '2w insurance' || p === '4w insurance') && f?.ins_insuranceType) p += `__${f.ins_insuranceType.toLowerCase().trim()}`;
+  return p;
+}
+
 function flattenForm(f, empMap = {}, tlMap = {}, managerMap = {}, verifyMap = {}) {
   // 🔥 NEW: Get employee details from correct collection based on formType
   let empEmail = '';
@@ -170,7 +178,7 @@ function flattenForm(f, empMap = {}, tlMap = {}, managerMap = {}, verifyMap = {}
     ? `${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][mDate.getMonth()]} ${mDate.getFullYear()}`
     : '';
 
-  const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+  const p = getProductFieldWithSubType(f);
   const vKey = p ? `${f.customerNumber}__${p}__${month}` : `${f.customerNumber}__${month}`;
   
   const verification = verifyMap[vKey]?.status || 'Not Found';
@@ -332,6 +340,7 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
         'TL Email': tlEmail,
         'TL Phone': tlPhone,
         productCounts: {},
+        alreadyVerifiedCounts: {},
         autoPoints: 0,
         slabBonuses: {} // { "Tide - Slab 1": 5.0, "Tide - Slab 2": 5.0 }
       };
@@ -343,7 +352,7 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
     const month = (mDate && !isNaN(mDate.getTime())) 
       ? `${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][mDate.getMonth()]} ${mDate.getFullYear()}`
       : '';
-    const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+    const p = getProductFieldWithSubType(f);
     const vKey = p ? `${f.customerNumber}__${p}__${month}` : `${f.customerNumber}__${month}`;
     const verification = verifyMap[vKey]?.status || 'Not Found';
     
@@ -356,6 +365,11 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
       
       // Calculate auto points (from verified forms only)
       employeeData[empName].autoPoints += (verifyMap[vKey]?.points || 0);
+    } else if (verification === 'Already Verified') {
+      if (!employeeData[empName].alreadyVerifiedCounts[product]) {
+        employeeData[empName].alreadyVerifiedCounts[product] = 0;
+      }
+      employeeData[empName].alreadyVerifiedCounts[product]++;
     }
   });
   
@@ -389,6 +403,7 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
   const allSlabColumns = new Set();
   Object.values(employeeData).forEach(emp => {
     Object.keys(emp.productCounts).forEach(product => allProducts.add(product));
+    Object.keys(emp.alreadyVerifiedCounts).forEach(product => allProducts.add(product));
     Object.keys(emp.slabBonuses).forEach(slabName => allSlabColumns.add(slabName));
   });
   const productList = Array.from(allProducts).sort();
@@ -424,9 +439,14 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
       'Date Range': filterText,
     };
     
-    // Add product count columns
+    // Add product count columns (Fully Verified)
     productList.forEach(product => {
-      row[`${product} Count`] = emp.productCounts[product] || 0;
+      row[`${product} (Fully Verified)`] = emp.productCounts[product] || 0;
+    });
+
+    // Add Already Verified count columns
+    productList.forEach(product => {
+      row[`${product} (Already Verified)`] = emp.alreadyVerifiedCounts[product] || 0;
     });
     
     // Add Auto Points column (from verified forms only)
@@ -521,9 +541,12 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
     const month = (mDate && !isNaN(mDate.getTime())) 
       ? `${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][mDate.getMonth()]} ${mDate.getFullYear()}`
       : '';
-    const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+    const p = getProductFieldWithSubType(f);
     const vKey = p ? `${f.customerNumber}__${p}__${month}` : `${f.customerNumber}__${month}`;
     const verification = verifyMap[vKey] || {};
+    if (f.customerName === 'Rishu Raj') {
+      console.log('EXPORT RISHU RAJ:', { vKey, verification, checksLength: verification.checks?.length });
+    }
     
     // 🔥 NEW: Determine designation based on formType
     let designation = 'FSE'; // Default
@@ -1654,6 +1677,7 @@ function SettleDialog({ form, open, onClose, onSettle, settling, employees }) {
 function VerifyChip({ status, onClick }) {
   const map = {
     'Fully Verified':   { bg: '#e6f4ea', color: '#2e7d32', icon: '✓' },
+    'Already Verified': { bg: '#fff3e0', color: '#e65100', icon: '⧉' },
     'Critical Failure': { bg: '#ffebee', color: '#c62828', icon: '⚠' },
     'Partially Done':   { bg: '#fff8e1', color: '#f57f17', icon: '◑' },
     'Not Verified':     { bg: '#fdecea', color: '#c62828', icon: '✗' },
@@ -1768,10 +1792,12 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading, onD
             {/* Verification Status */}
             <Card sx={{ 
               bgcolor: verification.status === 'Fully Verified' ? '#e6f4ea' : 
+                       verification.status === 'Already Verified' ? '#fff3e0' :
                        verification.status === 'Critical Failure' ? '#ffebee' :
                        verification.status === 'Partially Done' ? '#fff8e1' : '#fdecea',
               border: `2px solid ${
                 verification.status === 'Fully Verified' ? '#2e7d32' : 
+                verification.status === 'Already Verified' ? '#e65100' :
                 verification.status === 'Critical Failure' ? '#c62828' :
                 verification.status === 'Partially Done' ? '#f57f17' : '#c62828'
               }`
@@ -1903,9 +1929,8 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading, onD
 // ── Employee Group Row ────────────────────────────────────────
 const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPointsData, empData, tlData, filterProduct, setFilterProduct, onEditPoints, onManualVerify, onRevertVerification, onReload, globalVerifyMap: parentVerifyMap, onUpdateVerifyMap, dynamicPointsMap }) {
 
-  // ✅ FIXED: Use same priority order as backend (formFillingFor first)
-  const getProduct = (f) =>
-    (f?.formFillingFor || f?.tideProduct || f?.brand || '').toLowerCase().trim();
+  // ✅ FIXED: Use exact product matching including sub-types
+  const getProduct = (f) => getProductFieldWithSubType(f);
 
   // ✅ FIXED: unique key
   const getKey = (f) => {
@@ -2123,7 +2148,8 @@ const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmp
   };
 
   const openVerifyDetail = async (f) => {
-    const product = getProduct(f);
+    // The backend /verify/details endpoint expects the BASE product to look up VerificationRules
+    const baseProduct = (f?.formFillingFor || f?.tideProduct || f?.brand || '').trim();
     
     // Optimistically open modal with loading state
     setVerifyDetail({ 
@@ -2134,7 +2160,7 @@ const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmp
 
     try {
       const month = formatFormMonth(f.createdAt);
-      const url = `${EMP_API}/verify/details?phone=${f.customerNumber}&product=${encodeURIComponent(product)}&name=${encodeURIComponent(f.customerName || '')}&month=${encodeURIComponent(month)}`;
+      const url = `${EMP_API}/verify/details?phone=${f.customerNumber}&product=${encodeURIComponent(baseProduct)}&name=${encodeURIComponent(f.customerName || '')}&month=${encodeURIComponent(month)}`;
       
       const res = await fetch(url);
       if (res.ok) {
@@ -2809,7 +2835,7 @@ export default function MerchantForms({ onReady }) {
   const [toDate, setToDate]         = useState('');
   const [fromDate, setFromDate]     = useState('');
   const [globalVerifyMap,  setGlobalVerifyMap]  = useState({});
-  const [verifyKpiOpen,    setVerifyKpiOpen]    = useState(null); // 'Fully Verified' | 'Critical Failure' | 'Partially Done' | 'Not Found'
+  const [verifyKpiOpen,    setVerifyKpiOpen]    = useState(null); // 'Fully Verified' | 'Already Verified' | 'Critical Failure' | 'Partially Done' | 'Not Found'
   const [drillProduct,     setDrillProduct]     = useState(null); // { product, status }
   const [filterProduct,    setFilterProduct]    = useState(''); // For product chip filtering
   const [selectedMonth,    setSelectedMonth]    = useState(new Date().toLocaleString('en-US', { month: 'long' })); // Default current month
@@ -3414,27 +3440,30 @@ export default function MerchantForms({ onReady }) {
   }, [load]);
 
   const handleRevertVerification = useCallback(async (form) => {
-    // This would delete the manual verification record
-    const product = form.formFillingFor || form.tideProduct || form.brand || '';
-    
     try {
-      const res = await fetch(`${EMP_API}/manual-verification/list?phone=${form.customerNumber}&product=${product}`);
-      if (res.ok) {
-        const data = await res.json();
+      // 1. Delete manual verification if it exists
+      const product = form.formFillingFor || form.tideProduct || form.brand || '';
+      const listRes = await fetch(`${EMP_API}/manual-verification/list?phone=${form.customerNumber}&product=${product}`);
+      if (listRes.ok) {
+        const data = await listRes.json();
         if (data.verifications && data.verifications.length > 0) {
-          const verification = data.verifications[0];
-          const deleteRes = await fetch(`${EMP_API}/manual-verification/${verification._id}`, {
-            method: 'DELETE'
-          });
-          
-          if (deleteRes.ok) {
-            setNotifySnack('✓ Verification reverted successfully');
-            if (window.clearVvCache) window.clearVvCache();
-            load();
-          } else {
-            setNotifySnack('Error reverting verification');
-          }
+          await fetch(`${EMP_API}/manual-verification/${data.verifications[0]._id}`, { method: 'DELETE' });
         }
+      }
+
+      // 2. Revert the actual form status in the database
+      const res = await fetch(`${EMP_API}/forms/admin/revert-verification/${form._id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      if (res.ok) {
+        setNotifySnack('✓ Verification reverted successfully');
+        if (window.clearVvCache) window.clearVvCache();
+        load();
+      } else {
+        const err = await res.json();
+        setNotifySnack(`Error reverting verification: ${err.message}`);
       }
     } catch (err) {
       setNotifySnack('Failed to revert verification');
@@ -3486,7 +3515,7 @@ export default function MerchantForms({ onReady }) {
     const s = new Set();
     duplicates.forEach(d => {
       const phone = d._id.customerNumber;
-      const product = (d._id.formFillingFor || '').toLowerCase().trim();
+      const product = getProductFieldWithSubType(d._id);
       // Store as "phone__product" to match the key format used elsewhere
       s.add(product ? `${phone}__${product}` : phone);
     });
@@ -3611,7 +3640,7 @@ export default function MerchantForms({ onReady }) {
 
   // Fetch global verification for all filtered forms
   // ✅ FIXED: Use same priority order as backend (formFillingFor first)
-  const getFormProduct = (f) => (f?.formFillingFor || f?.tideProduct || f?.brand || '').toLowerCase().trim();
+  const getFormProduct = (f) => getProductFieldWithSubType(f);
   const getFormKey     = (f) => {
     const p = getFormProduct(f);
     const month = f?.createdAt ? formatFormMonth(f.createdAt) : '';
@@ -3658,11 +3687,19 @@ export default function MerchantForms({ onReady }) {
         rawPoints = FALLBACK_POINTS[baseProduct] || 0;
       }
       
+      const bestChecks = (cachedEntry?.checks && cachedEntry.checks.length > 0) 
+        ? cachedEntry.checks 
+        : (f.verificationChecks?.checks || []);
+        
+      const bestRules = (cachedEntry?.rulesCache && Object.keys(cachedEntry.rulesCache).length > 0)
+        ? cachedEntry.rulesCache
+        : (f.verificationChecks?.rulesCache || {});
+      
       vMap[vKey] = {
         status: rawStatus,
         points: rawPoints,
-        rulesCache: cachedEntry?.rulesCache || f.verificationChecks?.rulesCache || {},
-        checks: cachedEntry?.checks || f.verificationChecks?.checks || [],
+        rulesCache: bestRules,
+        checks: bestChecks,
         phoneMatch: cachedEntry?.phoneMatch ?? (f.verificationChecks?.phoneMatch || false),
         inSheet: cachedEntry?.inSheet ?? (f.verificationChecks?.matched || f.verificationChecks?.inSheet || false)
       };
@@ -3767,10 +3804,11 @@ useEffect(() => {
 
   // Compute verification KPI counts from global map - Dynamic based on roleFilter
   const verifyKpiCounts = useMemo(() => {
-    const counts = { 'Fully Verified': 0, 'Critical Failure': 0, 'Partially Done': 0, 'Not Verified': 0, 'Not Found': 0 };
+    const counts = { 'Fully Verified': 0, 'Already Verified': 0, 'Critical Failure': 0, 'Partially Done': 0, 'Not Verified': 0, 'Not Found': 0 };
     filteredForms.forEach(f => {
       const status = globalVerifyMap[getFormKey(f)]?.status || 'Not Found';
       if (status === 'Fully Verified') counts['Fully Verified']++;
+      else if (status === 'Already Verified') counts['Already Verified']++;
       else if (status === 'Critical Failure') counts['Critical Failure']++;
       else if (status === 'Partially Done') counts['Partially Done']++;
       else if (status === 'Not Verified') counts['Not Verified']++;
@@ -4165,6 +4203,7 @@ useEffect(() => {
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)', md: 'repeat(5, 1fr)' }, gap: { xs: 1.5, sm: 2 }, mb: 3 }}>
         {[
           { label: 'Fully Verified',   key: 'Fully Verified',   color: '#2e7d32', bg: '#e6f4ea', icon: '✓' },
+          { label: 'Already Verified', key: 'Already Verified', color: '#e65100', bg: '#fff3e0', icon: '⧉' },
           { label: 'Critical Failure',  key: 'Critical Failure',  color: '#c62828', bg: '#ffebee', icon: '⚠' },
           { label: 'Partially Done',   key: 'Partially Done',   color: '#f57f17', bg: '#fff8e1', icon: '◑' },
           { label: 'Not Verified',     key: 'Not Verified',     color: '#c62828', bg: '#fdecea', icon: '✗' },
