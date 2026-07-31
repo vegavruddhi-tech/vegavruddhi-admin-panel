@@ -181,12 +181,12 @@ function flattenForm(f, empMap = {}, tlMap = {}, managerMap = {}, verifyMap = {}
   const p = getProductFieldWithSubType(f);
   const vKey = p ? `${f.customerNumber}__${p}__${month}` : `${f.customerNumber}__${month}`;
   
-  const verification = verifyMap[vKey]?.status || 'Not Found';
+  const verification = verifyMap[f._id]?.status || 'Not Found';
   
   // Calculate points for this form
   let points = 0;
   if (verification === 'Fully Verified') {
-    points = verifyMap[vKey]?.points || 0;
+    points = verifyMap[f._id]?.points || 0;
   }
   
   // 🔥 NEW: Determine designation based on formType
@@ -194,7 +194,7 @@ function flattenForm(f, empMap = {}, tlMap = {}, managerMap = {}, verifyMap = {}
   if (f.formType === 'TL') designation = 'Team Lead';
   else if (f.formType === 'Manager') designation = 'Manager';
   
-  const vObj = verifyMap[vKey] || {};
+  const vObj = verifyMap[f._id] || {};
   const vRec = vObj.record || {};
   const getVal = (...keys) => {
     for (const k of keys) {
@@ -354,7 +354,7 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
       : '';
     const p = getProductFieldWithSubType(f);
     const vKey = p ? `${f.customerNumber}__${p}__${month}` : `${f.customerNumber}__${month}`;
-    const verification = verifyMap[vKey]?.status || 'Not Found';
+    const verification = verifyMap[f._id]?.status || 'Not Found';
     
     if (verification === 'Fully Verified') {
       // Count by product
@@ -364,7 +364,7 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
       employeeData[empName].productCounts[product]++;
       
       // Calculate auto points (from verified forms only)
-      employeeData[empName].autoPoints += (verifyMap[vKey]?.points || 0);
+      employeeData[empName].autoPoints += (verifyMap[f._id]?.points || 0);
     } else if (verification === 'Already Verified') {
       if (!employeeData[empName].alreadyVerifiedCounts[product]) {
         employeeData[empName].alreadyVerifiedCounts[product] = 0;
@@ -543,7 +543,7 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
       : '';
     const p = getProductFieldWithSubType(f);
     const vKey = p ? `${f.customerNumber}__${p}__${month}` : `${f.customerNumber}__${month}`;
-    const verification = verifyMap[vKey] || {};
+    const verification = verifyMap[f._id] || {};
     if (f.customerName === 'Rishu Raj') {
       console.log('EXPORT RISHU RAJ:', { vKey, verification, checksLength: verification.checks?.length });
     }
