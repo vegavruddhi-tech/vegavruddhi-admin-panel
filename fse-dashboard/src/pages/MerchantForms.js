@@ -606,12 +606,55 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
   ws3['!cols'] = colWidths3;
 
   // ═══════════════════════════════════════════════════════════
-  // Create workbook with all three sheets
+  // Create additional sheets for FSE and TL Details
+  // ═══════════════════════════════════════════════════════════
+  const fseDetailsRows = empList.map(emp => {
+    const tlName = emp.reportingManager || 'Not Assigned';
+    const tl = tlMap[(emp.reportingManager || '').toLowerCase().trim()] || {};
+    return {
+      'Employee ID': emp.employeeId || emp._id,
+      'Name': emp.newJoinerName || emp.name || '',
+      'Email': emp.newJoinerEmailId || emp.email || '',
+      'Phone': emp.newJoinerPhone || emp.phone || '',
+      'Registered Date': emp.createdAt ? new Date(emp.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Unknown',
+      'TL Name': tlName,
+      'TL Email': tl.email || '',
+      'TL Phone': tl.phone || ''
+    };
+  });
+  const ws4 = XLSX.utils.json_to_sheet(fseDetailsRows);
+  ws4['!cols'] = Object.keys(fseDetailsRows[0] || {}).map(key => ({
+    wch: Math.max(key.length, ...fseDetailsRows.map(r => String(r[key] || '').length), 15)
+  }));
+
+  const tlDetailsRows = tlList.map(tl => {
+    const mgrName = tl.reportingManager || 'Not Assigned';
+    const mgr = managerMap[(tl.reportingManager || '').toLowerCase().trim()] || {};
+    return {
+      'Employee ID': tl.employeeId || tl._id,
+      'Name': tl.name || '',
+      'Email': tl.email || '',
+      'Phone': tl.phone || '',
+      'Registered Date': tl.createdAt ? new Date(tl.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Unknown',
+      'Manager Name': mgrName,
+      'Manager Email': mgr.email || '',
+      'Manager Phone': mgr.phone || ''
+    };
+  });
+  const ws5 = XLSX.utils.json_to_sheet(tlDetailsRows);
+  ws5['!cols'] = Object.keys(tlDetailsRows[0] || {}).map(key => ({
+    wch: Math.max(key.length, ...tlDetailsRows.map(r => String(r[key] || '').length), 15)
+  }));
+
+  // ═══════════════════════════════════════════════════════════
+  // Create workbook with all five sheets
   // ═══════════════════════════════════════════════════════════
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws1, 'Merchant Forms');
   XLSX.utils.book_append_sheet(wb, ws2, 'FSE Summary');
   XLSX.utils.book_append_sheet(wb, ws3, 'Verification Details');
+  XLSX.utils.book_append_sheet(wb, ws4, 'FSE Details');
+  XLSX.utils.book_append_sheet(wb, ws5, 'TL Details');
   
   XLSX.writeFile(wb, `Merchant_Forms_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
@@ -3934,7 +3977,7 @@ useEffect(() => {
           <Button
             variant="contained"
             size="small"
-            disabled={exporting || forms.length === 0}
+            disabled={exporting}
             onClick={e => setExportAnchor(e.currentTarget)}
             sx={{ 
               bgcolor: BRAND.primary, 
