@@ -1,3 +1,4 @@
+// commented by vaasu
 import React, { useState } from "react";
 import { Box, Card, CardContent, Typography, Alert } from "@mui/material";
 import { GoogleLogin } from "@react-oauth/google";
@@ -20,7 +21,7 @@ export default function Login({ onLogin }) {
     setError("");
     try {
       const decoded = jwtDecode(credentialResponse.credential);
-      const email   = (decoded.email || "").toLowerCase();
+      const email = (decoded.email || "").toLowerCase();
 
       if (!ALLOWED_EMAILS.includes(email)) {
         setError(`Access denied. "${decoded.email}" is not authorized to access this dashboard. Contact your administrator.`);
@@ -30,9 +31,9 @@ export default function Login({ onLogin }) {
       const authObj = {
         email,
         username: decoded.name || email,
-        picture:  decoded.picture || "",
+        picture: decoded.picture || "",
       };
-      
+
       // Admin always has Tide BT access, show popup
       setPendingAuth(authObj);
       setShowTidePopup(true);
@@ -58,8 +59,8 @@ export default function Login({ onLogin }) {
       // Redirect to Tide BT Admin panel — uses env var, then auto-detects prod vs dev
       const tidebtUrl = process.env.REACT_APP_TIDEBT_ADMIN_URL
         || (window.location.hostname === 'localhost'
-            ? 'http://localhost:3006'
-            : 'https://vegavruddhi-admin-tide-bt-cyej.vercel.app');
+          ? 'http://localhost:3006'
+          : 'https://vegavruddhi-admin-tide-bt-cyej.vercel.app');
       window.location.href = `${tidebtUrl}?auth=${encodeURIComponent(authData)}`;
     }
   };
@@ -129,7 +130,7 @@ export default function Login({ onLogin }) {
           </Typography>
         </CardContent>
       </Card>
-      
+
       {/* Tide Selection Popup */}
       <TideSelectionPopup
         open={showTidePopup}

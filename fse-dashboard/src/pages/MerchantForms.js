@@ -105,6 +105,14 @@ const SlabTierRow = React.memo(function SlabTierRow({ tier, idx, onCommit, onDel
 });
 
 // ── Flatten a form record into a flat row for export ─────────
+export function getProductFieldWithSubType(f) {
+  let p = (f?.formFillingFor || f?.tideProduct || f?.brand || '').toLowerCase().trim();
+  if (p === 'tide insurance' && f?.tideIns_type) p += `__${f.tideIns_type.toLowerCase().trim()}`;
+  if ((p === 'tide credit card' || p === 'credit card') && f?.cc_cardName) p += `__${f.cc_cardName.toLowerCase().trim()}`;
+  if ((p === '2w insurance' || p === '4w insurance') && f?.ins_insuranceType) p += `__${f.ins_insuranceType.toLowerCase().trim()}`;
+  return p;
+}
+
 function flattenForm(f, empMap = {}, tlMap = {}, managerMap = {}, verifyMap = {}) {
   // 🔥 NEW: Get employee details from correct collection based on formType
   let empEmail = '';
@@ -170,15 +178,15 @@ function flattenForm(f, empMap = {}, tlMap = {}, managerMap = {}, verifyMap = {}
     ? `${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][mDate.getMonth()]} ${mDate.getFullYear()}`
     : '';
 
-  const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+  const p = getProductFieldWithSubType(f);
   const vKey = p ? `${f.customerNumber}__${p}__${month}` : `${f.customerNumber}__${month}`;
   
-  const verification = verifyMap[vKey]?.status || 'Not Found';
+  const verification = verifyMap[f._id]?.status || 'Not Found';
   
   // Calculate points for this form
   let points = 0;
   if (verification === 'Fully Verified') {
-    points = verifyMap[vKey]?.points || 0;
+    points = verifyMap[f._id]?.points || 0;
   }
   
   // 🔥 NEW: Determine designation based on formType
@@ -186,7 +194,7 @@ function flattenForm(f, empMap = {}, tlMap = {}, managerMap = {}, verifyMap = {}
   if (f.formType === 'TL') designation = 'Team Lead';
   else if (f.formType === 'Manager') designation = 'Manager';
   
-  const vObj = verifyMap[vKey] || {};
+  const vObj = verifyMap[f._id] || {};
   const vRec = vObj.record || {};
   const getVal = (...keys) => {
     for (const k of keys) {
@@ -332,6 +340,7 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
         'TL Email': tlEmail,
         'TL Phone': tlPhone,
         productCounts: {},
+        alreadyVerifiedCounts: {},
         autoPoints: 0,
         slabBonuses: {} // { "Tide - Slab 1": 5.0, "Tide - Slab 2": 5.0 }
       };
@@ -343,9 +352,9 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
     const month = (mDate && !isNaN(mDate.getTime())) 
       ? `${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][mDate.getMonth()]} ${mDate.getFullYear()}`
       : '';
-    const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+    const p = getProductFieldWithSubType(f);
     const vKey = p ? `${f.customerNumber}__${p}__${month}` : `${f.customerNumber}__${month}`;
-    const verification = verifyMap[vKey]?.status || 'Not Found';
+    const verification = verifyMap[f._id]?.status || 'Not Found';
     
     if (verification === 'Fully Verified') {
       // Count by product
@@ -355,7 +364,12 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
       employeeData[empName].productCounts[product]++;
       
       // Calculate auto points (from verified forms only)
-      employeeData[empName].autoPoints += (verifyMap[vKey]?.points || 0);
+      employeeData[empName].autoPoints += (verifyMap[f._id]?.points || 0);
+    } else if (verification === 'Already Verified') {
+      if (!employeeData[empName].alreadyVerifiedCounts[product]) {
+        employeeData[empName].alreadyVerifiedCounts[product] = 0;
+      }
+      employeeData[empName].alreadyVerifiedCounts[product]++;
     }
   });
   
@@ -389,6 +403,7 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
   const allSlabColumns = new Set();
   Object.values(employeeData).forEach(emp => {
     Object.keys(emp.productCounts).forEach(product => allProducts.add(product));
+    Object.keys(emp.alreadyVerifiedCounts).forEach(product => allProducts.add(product));
     Object.keys(emp.slabBonuses).forEach(slabName => allSlabColumns.add(slabName));
   });
   const productList = Array.from(allProducts).sort();
@@ -424,9 +439,14 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
       'Date Range': filterText,
     };
     
-    // Add product count columns
+    // Add product count columns (Fully Verified)
     productList.forEach(product => {
-      row[`${product} Count`] = emp.productCounts[product] || 0;
+      row[`${product} (Fully Verified)`] = emp.productCounts[product] || 0;
+    });
+
+    // Add Already Verified count columns
+    productList.forEach(product => {
+      row[`${product} (Already Verified)`] = emp.alreadyVerifiedCounts[product] || 0;
     });
     
     // Add Auto Points column (from verified forms only)
@@ -521,9 +541,12 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
     const month = (mDate && !isNaN(mDate.getTime())) 
       ? `${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][mDate.getMonth()]} ${mDate.getFullYear()}`
       : '';
-    const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+    const p = getProductFieldWithSubType(f);
     const vKey = p ? `${f.customerNumber}__${p}__${month}` : `${f.customerNumber}__${month}`;
-    const verification = verifyMap[vKey] || {};
+    const verification = verifyMap[f._id] || {};
+    if (f.customerName === 'Rishu Raj') {
+      console.log('EXPORT RISHU RAJ:', { vKey, verification, checksLength: verification.checks?.length });
+    }
     
     // 🔥 NEW: Determine designation based on formType
     let designation = 'FSE'; // Default
@@ -583,12 +606,55 @@ async function exportToExcel(forms, cachedVerifyMap = {}, filterInfo = {}, empPo
   ws3['!cols'] = colWidths3;
 
   // ═══════════════════════════════════════════════════════════
-  // Create workbook with all three sheets
+  // Create additional sheets for FSE and TL Details
+  // ═══════════════════════════════════════════════════════════
+  const fseDetailsRows = empList.map(emp => {
+    const tlName = emp.reportingManager || 'Not Assigned';
+    const tl = tlMap[(emp.reportingManager || '').toLowerCase().trim()] || {};
+    return {
+      'Employee ID': emp.employeeId || emp._id,
+      'Name': emp.newJoinerName || emp.name || '',
+      'Email': emp.newJoinerEmailId || emp.email || '',
+      'Phone': emp.newJoinerPhone || emp.phone || '',
+      'Registered Date': emp.createdAt ? new Date(emp.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Unknown',
+      'TL Name': tlName,
+      'TL Email': tl.email || '',
+      'TL Phone': tl.phone || ''
+    };
+  });
+  const ws4 = XLSX.utils.json_to_sheet(fseDetailsRows);
+  ws4['!cols'] = Object.keys(fseDetailsRows[0] || {}).map(key => ({
+    wch: Math.max(key.length, ...fseDetailsRows.map(r => String(r[key] || '').length), 15)
+  }));
+
+  const tlDetailsRows = tlList.map(tl => {
+    const mgrName = tl.reportingManager || 'Not Assigned';
+    const mgr = managerMap[(tl.reportingManager || '').toLowerCase().trim()] || {};
+    return {
+      'Employee ID': tl.employeeId || tl._id,
+      'Name': tl.name || '',
+      'Email': tl.email || '',
+      'Phone': tl.phone || '',
+      'Registered Date': tl.createdAt ? new Date(tl.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Unknown',
+      'Manager Name': mgrName,
+      'Manager Email': mgr.email || '',
+      'Manager Phone': mgr.phone || ''
+    };
+  });
+  const ws5 = XLSX.utils.json_to_sheet(tlDetailsRows);
+  ws5['!cols'] = Object.keys(tlDetailsRows[0] || {}).map(key => ({
+    wch: Math.max(key.length, ...tlDetailsRows.map(r => String(r[key] || '').length), 15)
+  }));
+
+  // ═══════════════════════════════════════════════════════════
+  // Create workbook with all five sheets
   // ═══════════════════════════════════════════════════════════
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws1, 'Merchant Forms');
   XLSX.utils.book_append_sheet(wb, ws2, 'FSE Summary');
   XLSX.utils.book_append_sheet(wb, ws3, 'Verification Details');
+  XLSX.utils.book_append_sheet(wb, ws4, 'FSE Details');
+  XLSX.utils.book_append_sheet(wb, ws5, 'TL Details');
   
   XLSX.writeFile(wb, `Merchant_Forms_${new Date().toISOString().slice(0,10)}.xlsx`);
 }
@@ -720,70 +786,39 @@ const PRODUCT_COLORS = {
   'Tide Credit Card':    { bg: '#e1f5fe', color: '#01579b' },
 };
 
-function ProductChip({ product, form, verifyData }) {
-  console.log("PRODUCT CHIP RENDER:", product, verifyData?.points, window.dynamicPointsMap?.[product.toLowerCase().trim()]);
-  // 🔥 GENERIC: Use window.dynamicPointsMap (loaded from Points Config API) to determine bracket
-  // Works automatically for ANY product added to Points Configuration — no hardcoding needed
+export function getProductDisplayLabel(product, form, verifyData) {
   let subType = '';
-
   if (product) {
     const productKey = product.toLowerCase().trim();
     const cfg = window.dynamicPointsMap?.[productKey];
-
     if (cfg && form) {
       if (cfg.type === 'mapped' && cfg.fieldMapping?.mappedColumn) {
-        // MAPPED product (e.g. Tide Insurance) — show the value of the mapped column in brackets
-        // The mapped column (e.g. "amount") lives in the verification collection, not FormResponse
-        // Priority: verifyData.record → verifyData.checks → form directly
-        const col = cfg.fieldMapping.mappedColumn; // e.g. "amount"
-
-        let val = '';
-
-        // 1. Try form field directly (in case it's stored on FormResponse)
-        val = String(form[col] || '').trim();
-
-        // 2. Try verifyData.record (the raw row from verification collection e.g. insurance_june)
+        const col = cfg.fieldMapping.mappedColumn;
+        let val = String(form[col] || '').trim();
         if (!val && verifyData?.record) {
           val = String(verifyData.record[col] || verifyData.record[col.toLowerCase()] || '').trim();
         }
-
-        // 3. Try verifyData.checks — find a check whose field matches the mappedColumn
         if (!val && verifyData?.checks && Array.isArray(verifyData.checks)) {
-          const match = verifyData.checks.find(c =>
-            c.field && c.field.toLowerCase() === col.toLowerCase()
-          );
+          const match = verifyData.checks.find(c => c.field && c.field.toLowerCase() === col.toLowerCase());
           if (match?.sheetValue) val = String(match.sheetValue).trim();
-          
-          // Broader fallback: field name contains the column name
           if (!val) {
-            const broader = verifyData.checks.find(c =>
-              c.field && c.field.toLowerCase().includes(col.toLowerCase())
-            );
+            const broader = verifyData.checks.find(c => c.field && c.field.toLowerCase().includes(col.toLowerCase()));
             if (broader?.sheetValue) val = String(broader.sheetValue).trim();
           }
         }
-
-        // 4. Reverse map from assigned points (Backend saves `points`, we can look up which value gave these points)
         if (!val && verifyData?.points !== undefined && Array.isArray(cfg.valueMapping)) {
           const mapped = cfg.valueMapping.find(m => Number(m.points) === Number(verifyData.points));
-          if (mapped && mapped.value) {
-             val = String(mapped.value).trim();
-          }
+          if (mapped && mapped.value) val = String(mapped.value).trim();
         }
-
-        // Show value with ₹ prefix if it looks like a number (amount), plain otherwise
         if (val) {
           const num = parseFloat(val);
           subType = !isNaN(num) ? `₹${num}` : val;
         }
-
       } else if (cfg.type === 'complex' && cfg.fieldMapping) {
-        // COMPLEX product — show plan + tier from fieldMapping
         const planField = cfg.fieldMapping.planField || 'planName';
         const tierField = cfg.fieldMapping.tierField || 'tierName';
         const planVal = String(form[planField] || '').trim();
         const tierVal = String(form[tierField] || '').trim();
-
         if (planVal && tierVal) subType = `${planVal} - ${tierVal}`;
         else if (planVal) subType = planVal;
         else if (tierVal) subType = tierVal;
@@ -799,18 +834,41 @@ function ProductChip({ product, form, verifyData }) {
   if (normalizedBase.toLowerCase() === 'tide insurance') matchKey = 'Tide Insurance';
   if (normalizedBase.toLowerCase() === 'tide credit card') matchKey = 'Tide Credit Card';
 
-  const c = PRODUCT_COLORS[matchKey] || PRODUCT_COLORS[product] || { bg: '#f5f5f5', color: '#555' };
-  
+  let insuranceType = '';
+  if (matchKey === 'Tide Insurance' || matchKey === 'Insurance' || matchKey.includes('Insurance')) {
+    const getVal = (...keys) => {
+      for (const k of keys) {
+        if (form?.[k]) return form[k];
+        if (verifyData?.record?.[k]) return verifyData.record[k];
+        if (verifyData?.checks && Array.isArray(verifyData.checks)) {
+          const check = verifyData.checks.find(c => c.field && c.field.toLowerCase() === k.toLowerCase());
+          if (check?.actual || check?.sheetValue) return check.actual || check.sheetValue;
+        }
+      }
+      return '';
+    };
+    insuranceType = getVal('tideIns_type', 'tideInsType', 'insurance_plan', 'ins_insuranceType', 'insuranceType', 'insurance_type');
+  }
+
   let displayLabel = product || '–';
   if (product) {
     const hasBracket = product.includes('(');
     const bracketPart = hasBracket ? '(' + product.split('(')[1] : '';
     displayLabel = matchKey + bracketPart;
-    // Add bracket with the points-determining value
     if (subType && !hasBracket) {
       displayLabel += ` (${subType})`;
     }
+    if (insuranceType) {
+      displayLabel += ` (${insuranceType})`;
+    }
   }
+  
+  return { displayLabel, matchKey };
+}
+
+function ProductChip({ product, form, verifyData }) {
+  const { displayLabel, matchKey } = getProductDisplayLabel(product, form, verifyData);
+  const c = PRODUCT_COLORS[matchKey] || PRODUCT_COLORS[product] || { bg: '#f5f5f5', color: '#555' };
 
   return (
     <Chip label={displayLabel} size="small"
@@ -1662,6 +1720,7 @@ function SettleDialog({ form, open, onClose, onSettle, settling, employees }) {
 function VerifyChip({ status, onClick }) {
   const map = {
     'Fully Verified':   { bg: '#e6f4ea', color: '#2e7d32', icon: '✓' },
+    'Already Verified': { bg: '#fff3e0', color: '#e65100', icon: '⧉' },
     'Critical Failure': { bg: '#ffebee', color: '#c62828', icon: '⚠' },
     'Partially Done':   { bg: '#fff8e1', color: '#f57f17', icon: '◑' },
     'Not Verified':     { bg: '#fdecea', color: '#c62828', icon: '✗' },
@@ -1776,10 +1835,12 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading, onD
             {/* Verification Status */}
             <Card sx={{ 
               bgcolor: verification.status === 'Fully Verified' ? '#e6f4ea' : 
+                       verification.status === 'Already Verified' ? '#fff3e0' :
                        verification.status === 'Critical Failure' ? '#ffebee' :
                        verification.status === 'Partially Done' ? '#fff8e1' : '#fdecea',
               border: `2px solid ${
                 verification.status === 'Fully Verified' ? '#2e7d32' : 
+                verification.status === 'Already Verified' ? '#e65100' :
                 verification.status === 'Critical Failure' ? '#c62828' :
                 verification.status === 'Partially Done' ? '#f57f17' : '#c62828'
               }`
@@ -1911,9 +1972,8 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading, onD
 // ── Employee Group Row ────────────────────────────────────────
 const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmpForms, duplicatePhones, empPointsData, empData, tlData, filterProduct, setFilterProduct, onEditPoints, onManualVerify, onRevertVerification, onReload, globalVerifyMap: parentVerifyMap, onUpdateVerifyMap, dynamicPointsMap }) {
 
-  // ✅ FIXED: Use same priority order as backend (formFillingFor first)
-  const getProduct = (f) =>
-    (f?.formFillingFor || f?.tideProduct || f?.brand || '').toLowerCase().trim();
+  // ✅ FIXED: Use exact product matching including sub-types
+  const getProduct = (f) => getProductFieldWithSubType(f);
 
   // ✅ FIXED: unique key
   const getKey = (f) => {
@@ -1931,20 +1991,23 @@ const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmp
   const [editSaving, setEditSaving] = useState(false);
   const [editSnack, setEditSnack]   = useState('');
 
-  // 🚀 WRITE-TIME ARCHITECTURE: Build verifyMap instantly from the pre-attached form data!
-  const verifyMap = React.useMemo(() => {
-    const map = {};
-    forms.forEach(f => {
-      const key = getKey(f);
-      if (f.verificationStatus) {
-        map[key] = {
-          status: f.verificationStatus,
-          ...f.verificationChecks
-        };
-      }
-    });
-    return map;
-  }, [forms]);
+  // 🔥 FIX: Points fallback for sub-products (Tide Insurance Accidental/Cyber Security)
+  const EMPLOYEE_GROUP_FALLBACK_POINTS = {
+    'tide': 2, 'tide msme': 0.3, 'tide insurance': 1, 'tide credit card': 1, 'tide bt': 1
+  };
+  const normalizeProductForPoints = (raw) => {
+    const n = (raw || '').toLowerCase().trim();
+    if (n.includes('tide insurance')) return 'tide insurance';
+    if (n.includes('tide msme'))      return 'tide msme';
+    if (n.includes('tide credit card')) return 'tide credit card';
+    if (n.includes('tide bt'))        return 'tide bt';
+    if (n.includes('tide'))           return 'tide';
+    return n;
+  };
+
+  // 🚀 Use the globally computed verifyMap which includes deduplication from universalCache!
+  const verifyMap = parentVerifyMap;
+
 
   // ✅ FIXED: Check duplicates by phone+product combination, not just phone
   const dupCount = forms.filter(f => {
@@ -1959,14 +2022,13 @@ const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmp
     
     // Count each form that is verified
     forms.forEach(form => {
-      const formKey = getKey(form);
-      const verificationStatus = verifyMap[formKey]?.status;
+      const verificationStatus = verifyMap[form._id]?.status;
       
       // Only count if this specific form is Fully Verified
       if (verificationStatus === 'Fully Verified') {
-        const matchedRow = verifyMap[formKey]?.record;
+        const matchedRow = verifyMap[form._id]?.record;
         
-        sum += (verifyMap[formKey]?.points || 0);
+        sum += (verifyMap[form._id]?.points || 0);
       }
     });
     
@@ -2108,7 +2170,8 @@ const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmp
   };
 
   const openVerifyDetail = async (f) => {
-    const product = getProduct(f);
+    // The backend /verify/details endpoint expects the BASE product to look up VerificationRules
+    const baseProduct = (f?.formFillingFor || f?.tideProduct || f?.brand || '').trim();
     
     // Optimistically open modal with loading state
     setVerifyDetail({ 
@@ -2119,7 +2182,7 @@ const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmp
 
     try {
       const month = formatFormMonth(f.createdAt);
-      const url = `${EMP_API}/verify/details?phone=${f.customerNumber}&product=${encodeURIComponent(product)}&name=${encodeURIComponent(f.customerName || '')}&month=${encodeURIComponent(month)}`;
+      const url = `${EMP_API}/verify/details?phone=${f.customerNumber}&product=${encodeURIComponent(baseProduct)}&name=${encodeURIComponent(f.customerName || '')}&month=${encodeURIComponent(month)}`;
       
       const res = await fetch(url);
       if (res.ok) {
@@ -2210,10 +2273,7 @@ const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmp
                 if (verificationStatus === 'Fully Verified') {
                   // ✅ FIXED: Use same priority order as backend
                   const rawProduct = form.formFillingFor || form.tideProduct || form.brand || '';
-                  // Normalize: trim and lowercase for grouping
-                  const normalized = rawProduct.trim().toLowerCase();
-                  const product = normalized === 'msme' ? 'Tide MSME' :
-                                 normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Other';
+                  const { displayLabel: product } = getProductDisplayLabel(rawProduct, form, verifyMap[formKey]);
                   
                   // Count every verified form (no deduplication)
                   if (!productBreakdown[product]) productBreakdown[product] = 0;
@@ -2253,19 +2313,15 @@ const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmp
             const productBreakdown = {};
             const allForms4Emp = allEmpForms || forms;
             allForms4Emp.forEach(form => {
-              const formKey = getKey(form);
-              const verificationStatus = verifyMap[formKey]?.status;
+              const verificationStatus = verifyMap[form._id]?.status;
               
               if (verificationStatus === 'Fully Verified') {
                 // ✅ FIXED: Use same priority order as backend
                 const rawProduct = form.formFillingFor || form.tideProduct || form.brand || '';
-                const normalized = rawProduct.trim().toLowerCase();
-                // Simple grouping by product name only (no brackets in summary chips)
-                const product = normalized === 'msme' ? 'Tide MSME' :
-                               normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Other';
+                const { displayLabel: product, matchKey: baseProduct } = getProductDisplayLabel(rawProduct, form, verifyMap[form._id]);
                 
                 // Count every verified form (no deduplication)
-                if (!productBreakdown[product]) productBreakdown[product] = { count: 0, baseProduct: product };
+                if (!productBreakdown[product]) productBreakdown[product] = { count: 0, baseProduct: baseProduct };
                 productBreakdown[product].count++;
               }
             });
@@ -2315,10 +2371,8 @@ const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmp
           const filteredList = forms.filter(f => {
             if (!filterProduct) return true;
             const rawProduct = f.formFillingFor || f.tideProduct || f.brand || '';
-            const normalized = rawProduct.trim().toLowerCase();
-            const product = normalized === 'msme' ? 'Tide MSME' :
-                           normalized ? normalized.charAt(0).toUpperCase() + normalized.slice(1) : 'Other';
-            return product === filterProduct;
+            const { displayLabel: product, matchKey: baseProduct } = getProductDisplayLabel(rawProduct, f, verifyMap[f._id]);
+            return product === filterProduct || baseProduct === filterProduct;
           });
           const pageSize = 10;
           const totalPages = Math.ceil(filteredList.length / pageSize) || 1;
@@ -2340,11 +2394,11 @@ const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmp
                         <TableCell>{f.customerName}</TableCell>
                         <TableCell>{f.customerNumber}</TableCell>
                         <TableCell>
-                          <ProductChip product={getProduct(f)} form={f} verifyData={verifyMap[getKey(f)]} />
+                          <ProductChip product={getProduct(f)} form={f} verifyData={verifyMap[f._id]} />
                         </TableCell>
                         <TableCell>
                           <VerifyChip
-                            status={verifyMap[getKey(f)]?.status}
+                            status={verifyMap[f._id]?.status}
                             onClick={() => openVerifyDetail(f)}
                           />
                         </TableCell>
@@ -2802,7 +2856,7 @@ export default function MerchantForms({ onReady }) {
   const [toDate, setToDate]         = useState('');
   const [fromDate, setFromDate]     = useState('');
   const [globalVerifyMap,  setGlobalVerifyMap]  = useState({});
-  const [verifyKpiOpen,    setVerifyKpiOpen]    = useState(null); // 'Fully Verified' | 'Critical Failure' | 'Partially Done' | 'Not Found'
+  const [verifyKpiOpen,    setVerifyKpiOpen]    = useState(null); // 'Fully Verified' | 'Already Verified' | 'Critical Failure' | 'Partially Done' | 'Not Found'
   const [drillProduct,     setDrillProduct]     = useState(null); // { product, status }
   const [filterProduct,    setFilterProduct]    = useState(''); // For product chip filtering
   const [selectedMonth,    setSelectedMonth]    = useState(new Date().toLocaleString('en-US', { month: 'long' })); // Default current month
@@ -3407,27 +3461,30 @@ export default function MerchantForms({ onReady }) {
   }, [load]);
 
   const handleRevertVerification = useCallback(async (form) => {
-    // This would delete the manual verification record
-    const product = form.formFillingFor || form.tideProduct || form.brand || '';
-    
     try {
-      const res = await fetch(`${EMP_API}/manual-verification/list?phone=${form.customerNumber}&product=${product}`);
-      if (res.ok) {
-        const data = await res.json();
+      // 1. Delete manual verification if it exists
+      const product = form.formFillingFor || form.tideProduct || form.brand || '';
+      const listRes = await fetch(`${EMP_API}/manual-verification/list?phone=${form.customerNumber}&product=${product}`);
+      if (listRes.ok) {
+        const data = await listRes.json();
         if (data.verifications && data.verifications.length > 0) {
-          const verification = data.verifications[0];
-          const deleteRes = await fetch(`${EMP_API}/manual-verification/${verification._id}`, {
-            method: 'DELETE'
-          });
-          
-          if (deleteRes.ok) {
-            setNotifySnack('✓ Verification reverted successfully');
-            if (window.clearVvCache) window.clearVvCache();
-            load();
-          } else {
-            setNotifySnack('Error reverting verification');
-          }
+          await fetch(`${EMP_API}/manual-verification/${data.verifications[0]._id}`, { method: 'DELETE' });
         }
+      }
+
+      // 2. Revert the actual form status in the database
+      const res = await fetch(`${EMP_API}/forms/admin/revert-verification/${form._id}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+      if (res.ok) {
+        setNotifySnack('✓ Verification reverted successfully');
+        if (window.clearVvCache) window.clearVvCache();
+        load();
+      } else {
+        const err = await res.json();
+        setNotifySnack(`Error reverting verification: ${err.message}`);
       }
     } catch (err) {
       setNotifySnack('Failed to revert verification');
@@ -3479,7 +3536,7 @@ export default function MerchantForms({ onReady }) {
     const s = new Set();
     duplicates.forEach(d => {
       const phone = d._id.customerNumber;
-      const product = (d._id.formFillingFor || '').toLowerCase().trim();
+      const product = getProductFieldWithSubType(d._id);
       // Store as "phone__product" to match the key format used elsewhere
       s.add(product ? `${phone}__${product}` : phone);
     });
@@ -3604,7 +3661,7 @@ export default function MerchantForms({ onReady }) {
 
   // Fetch global verification for all filtered forms
   // ✅ FIXED: Use same priority order as backend (formFillingFor first)
-  const getFormProduct = (f) => (f?.formFillingFor || f?.tideProduct || f?.brand || '').toLowerCase().trim();
+  const getFormProduct = (f) => getProductFieldWithSubType(f);
   const getFormKey     = (f) => {
     const p = getFormProduct(f);
     const month = f?.createdAt ? formatFormMonth(f.createdAt) : '';
@@ -3617,28 +3674,75 @@ export default function MerchantForms({ onReady }) {
     console.log('✅ Generating globalVerifyMap instantly from precomputed forms & session cache');
     const universalCache = (window.vv_cache && window.vv_cache.universalVerify) || null;
     const vMap = { ...(universalCache || {}) };
+
+    // 🔥 FIX: Points map for sub-product normalization
+    const FALLBACK_POINTS = {
+      'tide': 2,
+      'tide msme': 0.3,
+      'tide insurance': 1,
+      'tide credit card': 1,
+      'tide bt': 1,
+    };
+    const normalizeForPoints = (rawProduct) => {
+      const n = (rawProduct || '').toLowerCase().trim();
+      if (n.includes('tide insurance')) return 'tide insurance';
+      if (n.includes('tide msme'))      return 'tide msme';
+      if (n.includes('tide credit card')) return 'tide credit card';
+      if (n.includes('tide bt'))        return 'tide bt';
+      if (n.includes('tide'))           return 'tide';
+      return n;
+    };
     
-    forms.forEach(f => {
+    const seenMap = {};
+    const finalMap = {};
+    
+    // Process from oldest to newest (forms array is sorted newest first)
+    for (let i = forms.length - 1; i >= 0; i--) {
+      const f = forms[i];
       const vKey = getFormKey(f);
       const p = getFormProduct(f);
       const shortKey = p ? `${f.customerNumber}__${p}` : f.customerNumber;
       
-      const cachedEntry = vMap[vKey] || vMap[shortKey] || (universalCache && (universalCache[vKey] || universalCache[shortKey]));
+      const cachedEntry = universalCache && (universalCache[vKey] || universalCache[shortKey]);
+
+      let rawStatus = cachedEntry?.status || f.verificationStatus || 'Not Found';
+      let rawPoints = cachedEntry?.points ?? (f.verificationChecks?.points || 0);
+
+      // 🔥 FRONTEND DEDUPLICATION: Ensure exactly one Fully Verified form per merchant/product
+      if (rawStatus === 'Fully Verified' || rawStatus === 'Already Verified') {
+        if (!seenMap[vKey]) {
+          seenMap[vKey] = true;
+          rawStatus = 'Fully Verified';
+        } else {
+          rawStatus = 'Already Verified';
+          rawPoints = 0; // duplicates don't get points
+        }
+      }
+
+      if (rawPoints === 0 && rawStatus === 'Fully Verified') {
+        const baseProduct = normalizeForPoints(f.formFillingFor || f.tideProduct || f.brand || '');
+        rawPoints = FALLBACK_POINTS[baseProduct] || 0;
+      }
       
-      vMap[vKey] = {
-        status: cachedEntry?.status || f.verificationStatus || 'Not Found',
-        points: cachedEntry?.points ?? (f.verificationChecks?.points || 0),
-        rulesCache: cachedEntry?.rulesCache || f.verificationChecks?.rulesCache || {},
-        checks: cachedEntry?.checks || f.verificationChecks?.checks || [],
+      const bestChecks = (cachedEntry?.checks && cachedEntry.checks.length > 0) 
+        ? cachedEntry.checks 
+        : (f.verificationChecks?.checks || []);
+        
+      const bestRules = (cachedEntry?.rulesCache && Object.keys(cachedEntry.rulesCache).length > 0)
+        ? cachedEntry.rulesCache
+        : (f.verificationChecks?.rulesCache || {});
+      
+      finalMap[f._id] = {
+        status: rawStatus,
+        points: rawPoints,
+        rulesCache: bestRules,
+        checks: bestChecks,
         phoneMatch: cachedEntry?.phoneMatch ?? (f.verificationChecks?.phoneMatch || false),
         inSheet: cachedEntry?.inSheet ?? (f.verificationChecks?.matched || f.verificationChecks?.inSheet || false)
       };
-      if (shortKey) vMap[shortKey] = vMap[vKey];
-    });
+    }
     
-    setGlobalVerifyMap(vMap);
-    if (!window.vv_cache) window.vv_cache = {};
-    window.vv_cache.universalVerify = vMap;
+    setGlobalVerifyMap(finalMap);
   }, [forms]); // ✅ Generates instantly when forms load & integrates window cache
 
 // ✅ SYNC POINTS TO BACKEND: Runs when globalVerifyMap + grouped data are both ready
@@ -3655,12 +3759,11 @@ useEffect(() => {
         // EXACT same logic as EmployeeGroup autoPoints calculation
         let autoPoints = 0;
         empForms.forEach(form => {
-          const vKey = getFormKey(form);
-          const status = globalVerifyMap[vKey]?.status;
+          const status = globalVerifyMap[form._id]?.status;
           if (status === 'Fully Verified') {
             
             
-            autoPoints += (globalVerifyMap[vKey]?.points || 0);
+            autoPoints += (globalVerifyMap[form._id]?.points || 0);
           }
         });
         autoPoints = Math.round(autoPoints * 10) / 10;
@@ -3734,10 +3837,11 @@ useEffect(() => {
 
   // Compute verification KPI counts from global map - Dynamic based on roleFilter
   const verifyKpiCounts = useMemo(() => {
-    const counts = { 'Fully Verified': 0, 'Critical Failure': 0, 'Partially Done': 0, 'Not Verified': 0, 'Not Found': 0 };
+    const counts = { 'Fully Verified': 0, 'Already Verified': 0, 'Critical Failure': 0, 'Partially Done': 0, 'Not Verified': 0, 'Not Found': 0 };
     filteredForms.forEach(f => {
-      const status = globalVerifyMap[getFormKey(f)]?.status || 'Not Found';
+      const status = globalVerifyMap[f._id]?.status || 'Not Found';
       if (status === 'Fully Verified') counts['Fully Verified']++;
+      else if (status === 'Already Verified') counts['Already Verified']++;
       else if (status === 'Critical Failure') counts['Critical Failure']++;
       else if (status === 'Partially Done') counts['Partially Done']++;
       else if (status === 'Not Verified') counts['Not Verified']++;
@@ -3755,7 +3859,7 @@ useEffect(() => {
     if (!verifyKpiOpen) return [];
     const productMap = {};
     filteredForms.forEach(f => {
-      const status  = globalVerifyMap[getFormKey(f)]?.status || 'Not Found';
+      const status  = globalVerifyMap[f._id]?.status || 'Not Found';
       const rawProduct = f.formFillingFor || f.tideProduct || f.brand || '–';
       // Normalize: trim and lowercase for grouping
       const normalized = rawProduct.trim().toLowerCase();
@@ -3873,7 +3977,7 @@ useEffect(() => {
           <Button
             variant="contained"
             size="small"
-            disabled={exporting || forms.length === 0}
+            disabled={exporting}
             onClick={e => setExportAnchor(e.currentTarget)}
             sx={{ 
               bgcolor: BRAND.primary, 
@@ -4132,6 +4236,7 @@ useEffect(() => {
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)', md: 'repeat(5, 1fr)' }, gap: { xs: 1.5, sm: 2 }, mb: 3 }}>
         {[
           { label: 'Fully Verified',   key: 'Fully Verified',   color: '#2e7d32', bg: '#e6f4ea', icon: '✓' },
+          { label: 'Already Verified', key: 'Already Verified', color: '#e65100', bg: '#fff3e0', icon: '⧉' },
           { label: 'Critical Failure',  key: 'Critical Failure',  color: '#c62828', bg: '#ffebee', icon: '⚠' },
           { label: 'Partially Done',   key: 'Partially Done',   color: '#f57f17', bg: '#fff8e1', icon: '◑' },
           { label: 'Not Verified',     key: 'Not Verified',     color: '#c62828', bg: '#fdecea', icon: '✗' },
@@ -4211,7 +4316,7 @@ useEffect(() => {
           const normalized = rawProduct.trim().toLowerCase();
           const product = normalized === 'msme' ? 'Tide MSME' :
                          normalized.charAt(0).toUpperCase() + normalized.slice(1);
-          const status  = globalVerifyMap[getFormKey(f)]?.status || 'Not Found';
+          const status  = globalVerifyMap[f._id]?.status || 'Not Found';
           return product === drillProduct.product && status === drillProduct.status;
         });
         return (

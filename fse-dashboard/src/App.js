@@ -76,7 +76,7 @@ function NavbarContent({ page, setPage, pendingCount, mode, setMode, user, handl
     { value: "attendance",    label: "Attendance",           icon: <AssignmentIndIcon fontSize="small" /> },
     { value: "verification",  label: "Verification Rules",   icon: <RuleIcon fontSize="small" /> },
     { value: "approvals",     label: "Approvals",            icon: <HowToRegIcon fontSize="small" /> },
-    { value: "salary",        label: "Salary Slips",         icon: <ReceiptLongIcon fontSize="small" /> },
+    // { value: "salary",        label: "Salary Slips",         icon: <ReceiptLongIcon fontSize="small" /> },
     { value: "points-config", label: "Points Configuration", icon: <SettingsSuggestIcon fontSize="small" /> },
     { value: "form-builder",  label: "Form Builder",         icon: <ConstructionIcon fontSize="small" /> },
   ];
