@@ -34,6 +34,23 @@ export default function Login({ onLogin }) {
         picture: decoded.picture || "",
       };
 
+      // Acquire backend Admin JWT token
+      try {
+        const empApi = process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api';
+        const res = await fetch(`${empApi}/auth/google-admin-login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ credential: credentialResponse.credential, email })
+        });
+        const data = await res.json();
+        if (data.success && data.token) {
+          localStorage.setItem('token', data.token);
+          localStorage.setItem('emp_token', data.token);
+        }
+      } catch (err) {
+        console.warn('Could not acquire admin token at login:', err);
+      }
+
       // Admin always has Tide BT access, show popup
       setPendingAuth(authObj);
       setShowTidePopup(true);

@@ -887,24 +887,53 @@ function App() {
     setDataReady(false);
   };
   const handleLogout = () => {
+    const token = localStorage.getItem("token") || localStorage.getItem("emp_token") || sessionStorage.getItem("token");
+    if (token) {
+      fetch(`${EMP_BASE}/auth/logout`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer ' + token
+        }
+      }).catch(() => {});
+    }
     localStorage.removeItem("vv_auth");
+    localStorage.removeItem("token");
+    localStorage.removeItem("emp_token");
+    sessionStorage.removeItem("token");
     sessionStorage.removeItem("mf_loaded");
     sessionStorage.removeItem("tl_loaded");
     sessionStorage.removeItem("pd_loaded");
     sessionStorage.removeItem("ao_loaded");
+    sessionStorage.clear();
     setPagesLoaded({});
     setUser(null);
   };
 
-  // Subscribe to push notifications when user is logged in
+  // Subscribe to push notifications and ensure valid admin token when user is logged in
   useEffect(() => {
-    if (user) {
-      const token = localStorage.getItem('token') || localStorage.getItem('emp_token');
-      if (token) {
-        subscribeUserToPush(EMP_BASE, token);
+    if (user && user.email) {
+      const existingToken = localStorage.getItem('token') || localStorage.getItem('emp_token');
+      if (!existingToken) {
+        fetch(`${EMP_BASE}/auth/google-admin-login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: user.email })
+        })
+          .then(r => r.json())
+          .then(data => {
+            if (data.success && data.token) {
+              localStorage.setItem('token', data.token);
+              localStorage.setItem('emp_token', data.token);
+              subscribeUserToPush(EMP_BASE, data.token);
+            }
+          })
+          .catch(err => console.warn('Could not acquire admin token:', err));
+      } else {
+        subscribeUserToPush(EMP_BASE, existingToken);
       }
     }
-  }, [user]);
+  }, [user, EMP_BASE]);
 
   const theme = createTheme({
     palette: {
