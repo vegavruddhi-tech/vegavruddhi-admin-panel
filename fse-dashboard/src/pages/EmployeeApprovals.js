@@ -177,7 +177,7 @@ function EmployeeRow({ emp, onApprove, onReject, showActions, onEdit, onView }) 
       </TableCell>
       <TableCell><Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 500 }}>{emp.position}</Typography></TableCell>
       <TableCell><Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 500 }}>{emp.location}</Typography></TableCell>
-      <TableCell><Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 500 }}>{emp.reportingManager}</Typography></TableCell>
+      {/* <TableCell><Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 500 }}>{emp.reportingManager}</Typography></TableCell> */}
       <TableCell><Typography variant="body2" sx={{ color: 'text.primary', fontWeight: 500 }}>{emp.newJoinerPhone}</Typography></TableCell>
       <TableCell>
         <Typography variant="caption" sx={{ color: 'text.primary', fontWeight: 500 }}>
@@ -585,7 +585,7 @@ export default function EmployeeApprovals({ onReady }) {
                 <TableCell>Employee</TableCell>
                 <TableCell>Position</TableCell>
                 <TableCell>Location</TableCell>
-                <TableCell>Reporting Manager</TableCell>
+                {/* <TableCell>Reporting Manager</TableCell> */}
                 <TableCell>Phone</TableCell>
                 <TableCell>Registered On</TableCell>
                 <TableCell>Status</TableCell>
@@ -633,7 +633,7 @@ export default function EmployeeApprovals({ onReady }) {
       <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: 'repeat(3, 1fr)' }, gap: 2, mb: 3 }}>
         {[
           { label: 'Pending Approval', count: pending.length, color: '#e65100', bg: '#fff3e0' },
-          { label: 'Approved', count: approved.filter(e => !['tl', 'team lead', 'team leader'].includes((e.position || '').toLowerCase())).length + tlApprovedList.length, color: '#2e7d32', bg: '#e6f4ea' },
+          { label: 'Approved', count: approved.filter(e => !['tl', 'team lead', 'team leader'].includes((e.position || '').toLowerCase())).length, color: '#2e7d32', bg: '#e6f4ea' },
           { label: 'Rejected', count: rejected.length, color: '#c62828', bg: '#fdecea' },
         ].map(s => (
           <Card key={s.label} sx={{ borderRadius: 3, border: `1.5px solid ${s.color}20` }}>
@@ -657,11 +657,11 @@ export default function EmployeeApprovals({ onReady }) {
             '& .MuiTabs-indicator': { backgroundColor: BRAND.primary },
           }}>
             <Tab value="pending" label={
-              <Badge badgeContent={pending.length + tlPending.length + managerPending.length} color="warning" max={99} sx={{ '& .MuiBadge-badge': { right: -8, top: -2 } }}>
+              <Badge badgeContent={pending.length /* + tlPending.length + managerPending.length */} color="warning" max={99} sx={{ '& .MuiBadge-badge': { right: -8, top: -2 } }}>
                 <Box sx={{ pr: 2 }}>Pending</Box>
               </Badge>
             } />
-            <Tab value="approved" label={`Approved (${approved.filter(e => !['tl', 'team lead', 'team leader'].includes((e.position || '').toLowerCase())).length + tlApprovedList.length})`} />
+            <Tab value="approved" label={`Approved (${approved.filter(e => !['tl', 'team lead', 'team leader'].includes((e.position || '').toLowerCase())).length})`} />
             <Tab value="rejected" label={`Rejected (${rejected.length})`} />
             <Tab value="posreq" label={
               <Badge badgeContent={posRequests.filter(r => r.status === 'pending').length} color="error" max={99} sx={{ '& .MuiBadge-badge': { right: -8, top: -2 } }}>
@@ -670,9 +670,9 @@ export default function EmployeeApprovals({ onReady }) {
             } />
             <Tab value="changereq" label={
               <Badge badgeContent={
-                changeRequests.filter(r => r.status === 'pending' && (r.type === 'profile_change' || r.type === 'merchant_edit' || r.type === 'merchant_delete')).length +
-                tlChangeRequests.filter(r => r.status === 'pending').length +
-                managerChangeRequests.filter(r => r.status === 'pending').length
+                changeRequests.filter(r => r.status === 'pending' && (r.type === 'profile_change' || r.type === 'merchant_edit' || r.type === 'merchant_delete')).length
+                /* + tlChangeRequests.filter(r => r.status === 'pending').length */
+                /* + managerChangeRequests.filter(r => r.status === 'pending').length */
               } color="error" max={99} sx={{ '& .MuiBadge-badge': { right: -8, top: -2 } }}>
                 <Box sx={{ pr: 2 }}>Change Requests</Box>
               </Badge>
@@ -736,8 +736,8 @@ export default function EmployeeApprovals({ onReady }) {
                     <Box sx={{ display: 'flex', gap: 1, px: 3, pt: 2, pb: 1, flexWrap: 'wrap' }}>
                       {[
                         { key: 'fse', label: 'FSE', count: pending.length },
-                        { key: 'tl', label: 'TL', count: tlPending.length },
-                        { key: 'manager', label: 'Manager', count: managerPending.length },
+                        /* { key: 'tl', label: 'TL', count: tlPending.length }, */
+                        /* { key: 'manager', label: 'Manager', count: managerPending.length }, */
                       ].map(s => (
                         <Badge key={s.key} badgeContent={s.count} color="warning" max={99}
                           sx={{ '& .MuiBadge-badge': { right: -4, top: -4, fontSize: 10, minWidth: 18, height: 18 } }}>
@@ -892,7 +892,7 @@ export default function EmployeeApprovals({ onReady }) {
                 const tlApproved = tlApprovedList.filter(matchTL);
                 const managerApproved = managerApprovedList.filter(m => !q || (m.name || '').toLowerCase().includes(q) || (m.email || '').toLowerCase().includes(q) || (m.location || '').toLowerCase().includes(q));
                 const approvedNonTL = approved.filter(e => !['tl', 'team lead', 'team leader', 'manager'].includes((e.position || '').toLowerCase())).filter(matchFSE);
-                const allApproved = [...approvedNonTL, ...tlApprovedList.filter(matchTL)];
+                const allApproved = approvedNonTL; /* [...approvedNonTL, ...tlApprovedList.filter(matchTL)]; */
                 const subList =
                   approvedSubTab === 'fse' ? fseApproved :
                     approvedSubTab === 'tl' ? tlApproved :
@@ -904,8 +904,8 @@ export default function EmployeeApprovals({ onReady }) {
                       {[
                         { key: 'all', label: 'All', count: allApproved.length },
                         { key: 'fse', label: 'FSE', count: fseApproved.length },
-                        { key: 'tl', label: 'TL', count: tlApproved.length },
-                        { key: 'manager', label: 'Manager', count: managerApproved.length },
+                        /* { key: 'tl', label: 'TL', count: tlApproved.length }, */
+                        /* { key: 'manager', label: 'Manager', count: managerApproved.length }, */
                       ].map(s => (
                         <Button key={s.key} size="small"
                           variant={approvedSubTab === s.key ? 'contained' : 'outlined'}
@@ -1482,7 +1482,7 @@ export default function EmployeeApprovals({ onReady }) {
               <InputLabel>Position</InputLabel>
               <Select value={editForm.position || ''} label="Position"
                 onChange={e => setEditForm(f => ({ ...f, position: e.target.value }))}>
-                <MenuItem value="Team Lead">Team Lead</MenuItem>
+                {/* <MenuItem value="Team Lead">Team Lead</MenuItem> */}
                 <MenuItem value="FSE">FSE</MenuItem>
               </Select>
             </FormControl>
@@ -1491,7 +1491,7 @@ export default function EmployeeApprovals({ onReady }) {
               value={editForm.location || ''}
               onChange={e => setEditForm(f => ({ ...f, location: e.target.value }))} />
 
-            <TextField select fullWidth label="Reporting Manager" size="small"
+            {/* <TextField select fullWidth label="Reporting Manager" size="small"
               value={editForm.reportingManager || ''}
               onChange={e => setEditForm(f => ({ ...f, reportingManager: e.target.value }))}
               sx={{ gridColumn: '1/-1' }}>
@@ -1499,7 +1499,7 @@ export default function EmployeeApprovals({ onReady }) {
               {tlApprovedList.map(tl => (
                 <MenuItem key={tl._id} value={tl.name}>{tl.name}</MenuItem>
               ))}
-            </TextField>
+            </TextField> */}
             <TextField fullWidth label="Phone Number" size="small"
               value={editForm.newJoinerPhone || ''}
               onChange={e => {
@@ -1568,8 +1568,8 @@ export default function EmployeeApprovals({ onReady }) {
               </Box>
             </Paper>
 
-            {/* Option 2: Tide BT Dashboard */}
-            <Paper
+            {/* Option 2: Tide BT Dashboard commented out */}
+            {/* <Paper
               onClick={() => {
                 const target = viewModal.target;
                 const type = viewModal.type;
@@ -1595,7 +1595,7 @@ export default function EmployeeApprovals({ onReady }) {
                   Balance Transfer (BT) Specialized Panel
                 </Typography>
               </Box>
-            </Paper>
+            </Paper> */}
           </Box>
         </DialogContent>
         <DialogActions sx={{ p: 2, pt: 1 }}>

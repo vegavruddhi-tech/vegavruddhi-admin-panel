@@ -1,4 +1,4 @@
-const PUBLIC_VAPID_KEY = process.env.REACT_APP_PUBLIC_VAPID_KEY || 'BMaBuxmwHuqXDdgHQqht9ULvVJ0-G76Y6EqPB_r0i93t3r_rfClWzy4tTY1cqnbCl43D0KeuV-E2OdKqK44wM7k';
+const PUBLIC_VAPID_KEY = process.env.REACT_APP_PUBLIC_VAPID_KEY;
 
 function urlBase64ToUint8Array(base64String) {
   const padding = '='.repeat((4 - (base64String.length % 4)) % 4);
@@ -23,12 +23,12 @@ export async function subscribeUserToPush(apiBaseUrl, token) {
 
   try {
     const registration = await navigator.serviceWorker.ready;
-    
+
     let permission = Notification.permission;
     if (permission === 'default') {
       permission = await Notification.requestPermission();
     }
-    
+
     if (permission !== 'granted') {
       console.warn('Notification permission was not granted.');
       return;

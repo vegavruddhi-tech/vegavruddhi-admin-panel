@@ -61,8 +61,8 @@ const MAIN_NAV_ITEMS = [
   { value: "overview",      label: "Overview" },
   { value: "products",      label: "Products" },
   { value: "merchants",     label: "Merchant Forms" },
-  { value: "tl",            label: "TL Overview" },
-  { value: "manager",       label: "Manager View" },
+  /* { value: "tl",            label: "TL Overview" }, */
+  /* { value: "manager",       label: "Manager View" }, */
 ];
 
 // ── Responsive Navbar inner component (needs theme/breakpoints) ──
@@ -76,7 +76,7 @@ function NavbarContent({ page, setPage, pendingCount, mode, setMode, user, handl
     { value: "attendance",    label: "Attendance",           icon: <AssignmentIndIcon fontSize="small" /> },
     { value: "verification",  label: "Verification Rules",   icon: <RuleIcon fontSize="small" /> },
     { value: "approvals",     label: "Approvals",            icon: <HowToRegIcon fontSize="small" /> },
-    // { value: "salary",        label: "Salary Slips",         icon: <ReceiptLongIcon fontSize="small" /> },
+    /* { value: "salary",        label: "Salary Slips",         icon: <ReceiptLongIcon fontSize="small" /> }, */
     { value: "points-config", label: "Points Configuration", icon: <SettingsSuggestIcon fontSize="small" /> },
     { value: "form-builder",  label: "Form Builder",         icon: <ConstructionIcon fontSize="small" /> },
   ];
@@ -118,7 +118,7 @@ function NavbarContent({ page, setPage, pendingCount, mode, setMode, user, handl
           position: "sticky",
           top: 0,
           zIndex: 1100,
-          background: "linear-gradient(90deg, #071a0f 0%, #0f3320 40%, #1a5c38 100%)",
+          background: "linear-gradient(90deg, #0a192f 0%, #0b3c6d 40%, #0284c7 100%)",
           borderBottom: `2.5px solid ${BRAND.accent}`,
           px: { xs: 2, md: 4 },
           py: 0,
@@ -134,12 +134,15 @@ function NavbarContent({ page, setPage, pendingCount, mode, setMode, user, handl
           <Box
             component="img"
             src="/logo-full.png"
-            alt="Vegavruddhi"
+            alt="Synchronous Build Digital"
             sx={{
-              height: 44,
-              width: 44,
+              height: 40,
+              width: 40,
               objectFit: "contain",
-              filter: "brightness(0) invert(1)",
+              bgcolor: "#ffffff",
+              borderRadius: "8px",
+              p: "3px",
+              boxShadow: "0 2px 8px rgba(0,0,0,0.2)",
               animation: "pulse 3.5s ease-in-out infinite",
             }}
           />
@@ -155,7 +158,7 @@ function NavbarContent({ page, setPage, pendingCount, mode, setMode, user, handl
                 lineHeight: 1.15,
               }}
             >
-              Vegavruddhi
+              Synchronous
             </Typography>
             <Typography
               sx={{
@@ -270,8 +273,8 @@ function NavbarContent({ page, setPage, pendingCount, mode, setMode, user, handl
             </>
           )}
 
-          {/* Theme toggle */}
-          <Tooltip title="Switch to BT Admin Panel">
+          {/* BT Panel button commented out */}
+          {/* <Tooltip title="Switch to BT Admin Panel">
             <Button
               size="small"
               onClick={() => {
@@ -303,7 +306,7 @@ function NavbarContent({ page, setPage, pendingCount, mode, setMode, user, handl
             >
               🔁 BT Panel
             </Button>
-          </Tooltip>
+          </Tooltip> */}
 
           <Tooltip title={mode === "dark" ? "Light Mode" : "Dark Mode"}>
             <IconButton
@@ -383,7 +386,7 @@ function NavbarContent({ page, setPage, pendingCount, mode, setMode, user, handl
         PaperProps={{
           sx: {
             width: 260,
-            background: "linear-gradient(180deg, #071a0f 0%, #0f3320 100%)",
+            background: "linear-gradient(180deg, #0a192f 0%, #0b3c6d 100%)",
             color: "#fff",
           }
         }}
@@ -391,10 +394,10 @@ function NavbarContent({ page, setPage, pendingCount, mode, setMode, user, handl
         {/* Drawer header */}
         <Box sx={{ px: 2.5, py: 2, display: "flex", alignItems: "center", gap: 1.5 }}>
           <Box component="img" src="/logo-full.png" alt="logo"
-            sx={{ height: 36, width: 36, objectFit: "contain", filter: "brightness(0) invert(1)" }} />
+            sx={{ height: 36, width: 36, objectFit: "contain", bgcolor: "#fff", borderRadius: "8px", p: "3px" }} />
           <Box>
             <Typography sx={{ fontWeight: 700, fontSize: "0.9rem", color: "#fff", letterSpacing: 1.5, textTransform: "uppercase" }}>
-              Vegavruddhi
+              Synchronous
             </Typography>
             <Typography sx={{ fontSize: "0.55rem", color: BRAND.accent, letterSpacing: 2, textTransform: "uppercase", fontWeight: 600 }}>
               Admin Panel
@@ -815,7 +818,11 @@ function GlobalSyncMonitor() {
 
 function App() {
   const [mode, setMode] = useState("light");
-  const [page, setPage] = useState(() => localStorage.getItem("vv_page") || "overview");
+  const [page, setPage] = useState(() => {
+    const saved = localStorage.getItem("vv_page");
+    if (["tl", "manager", "salary"].includes(saved)) return "overview";
+    return saved || "overview";
+  });
   const [pendingCount, setPendingCount] = useState(0);
   const [splash, setSplash] = useState(true);
   const [dataReady, setDataReady] = useState(false);
@@ -990,16 +997,16 @@ function App() {
         {splash && (
           <Box sx={{
             position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 99999,
-            bgcolor: '#071a0f',
+            bgcolor: '#0a192f',
             display: 'flex', flexDirection: 'column',
             alignItems: 'center', justifyContent: 'center', gap: 3,
             overflow: 'hidden',
           }}>
             <Box sx={{ animation: 'splashLogoIn 0.8s ease forwards', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1.5 }}>
-              <Box component="img" src="/logo-full.png" alt="Vegavruddhi"
-                sx={{ width: 80, height: 80, objectFit: 'contain', filter: 'brightness(0) invert(1)' }} />
+              <Box component="img" src="/logo-full.png" alt="Synchronous Build Digital"
+                sx={{ width: 76, height: 76, objectFit: 'contain', bgcolor: '#fff', borderRadius: '14px', p: '6px', boxShadow: '0 4px 20px rgba(0,0,0,0.3)' }} />
               <Typography sx={{ color: '#fff', fontFamily: "'Georgia', serif", fontWeight: 700, fontSize: '1.4rem', letterSpacing: 3, textTransform: 'uppercase' }}>
-                Vegavruddhi
+                Synchronous
               </Typography>
               <Typography sx={{ color: BRAND.accent, fontSize: '0.65rem', letterSpacing: 4, textTransform: 'uppercase', fontWeight: 600 }}>
                 Admin Panel
@@ -1041,10 +1048,10 @@ function App() {
                page === "merchants"      ? <MerchantForms onReady={handleDataReady} /> :
                page === "verification"   ? <VerificationRules token={user?.token} onReady={handleDataReady} /> :
                page === "approvals"      ? <EmployeeApprovals onReady={handleDataReady} /> :
-               page === "tl"             ? <TLOverview onLoaded={handleDataReady} /> :
-               page === "manager"        ? <ManagerOverview onReady={handleDataReady} /> :
+               /* page === "tl"             ? <TLOverview onLoaded={handleDataReady} /> : */
+               /* page === "manager"        ? <ManagerOverview onReady={handleDataReady} /> : */
                page === "attendance"     ? <AttendanceManagement onReady={handleDataReady} /> :
-               page === "salary"         ? <SalarySlips onReady={handleDataReady} /> :
+               /* page === "salary"         ? <SalarySlips onReady={handleDataReady} /> : */
                page === "points-config"  ? <PointsConfiguration onReady={handleDataReady} /> :
                page === "form-builder"   ? <FormBuilder onReady={handleDataReady} /> : null}
             </Box>

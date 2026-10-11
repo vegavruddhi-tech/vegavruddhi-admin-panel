@@ -218,8 +218,8 @@ export default function SalarySlips({ onReady }) {
         const base = parseFloat(formData.pointsEarned) || 0;
         const slab = parseFloat(formData.slabPoints) || 0;
         const pv   = parseFloat(formData.pointValue) || 250;
-        totalPts = Math.round((base + slab) * 10) / 10;
-        totalSal = Math.round(totalPts * pv * 10) / 10;
+        totalPts = Math.round((base + slab) * 1000) / 1000;
+        totalSal = Math.round(totalPts * pv * 100) / 100;
       }
 
       const res = await fetch(`${EMP_API}/salary/generate`, {
@@ -310,8 +310,8 @@ export default function SalarySlips({ onReady }) {
         const base = parseFloat(formData.pointsEarned) || 0;
         const slab = parseFloat(formData.slabPoints) || 0;
         const pv   = parseFloat(formData.pointValue) || 250;
-        totalPts = Math.round((base + slab) * 10) / 10;
-        totalSal = Math.round(totalPts * pv * 10) / 10;
+        totalPts = Math.round((base + slab) * 1000) / 1000;
+        totalSal = Math.round(totalPts * pv * 100) / 100;
       }
 
       const res = await fetch(`${EMP_API}/salary/${selectedSlip._id}`, {
@@ -506,7 +506,7 @@ export default function SalarySlips({ onReady }) {
     if (field === 'pointsEarned' || field === 'slabPoints' || field === 'pointValue') {
       const base = parseFloat(newData.pointsEarned) || 0;
       const slab = parseFloat(newData.slabPoints) || 0;
-      newData.totalPoints = Math.round((base + slab) * 10) / 10;
+      newData.totalPoints = Math.round((base + slab) * 1000) / 1000;
       newData.totalSalary = newData.totalPoints * (parseFloat(newData.pointValue) || 250);
     }
     
@@ -973,7 +973,7 @@ export default function SalarySlips({ onReady }) {
             
             if (empRole === 'TL' || empRole === 'Manager') {
               // TL/Manager: Fixed base + incentive
-              const baseSalary = empRole === 'TL' ? 35000 : 60000;
+              const baseSalary = parseFloat(formData.baseSalary) || (empRole === 'TL' ? 35000 : 60000);
               const incentiveAmt = parseFloat(formData.incentiveAmount) || 0;
               pointsSalary = baseSalary + incentiveAmt;
               hasIncentive = incentiveAmt > 0;
@@ -986,10 +986,10 @@ export default function SalarySlips({ onReady }) {
               const base = parseFloat(formData.pointsEarned) || 0;
               const slab = parseFloat(formData.slabPoints) || 0;
               const pv   = parseFloat(formData.pointValue) || 250;
-              const totalPts = Math.round((base + slab) * 10) / 10;
-              pointsSalary = Math.round(totalPts * pv * 10) / 10;
+              const totalPts = Math.round((base + slab) * 1000) / 1000;
+              pointsSalary = Math.round(totalPts * pv * 100) / 100;
               hasIncentive = pointsSalary > FIXED_GROSS;
-              incentive    = hasIncentive ? Math.round((pointsSalary - FIXED_GROSS) * 10) / 10 : 0;
+              incentive    = hasIncentive ? Math.round((pointsSalary - FIXED_GROSS) * 100) / 100 : 0;
               workingDays  = hasIncentive ? TOTAL_WD : Math.round((pointsSalary / FIXED_GROSS) * TOTAL_WD);
               breakBase = hasIncentive ? FIXED_GROSS : pointsSalary;
             }
@@ -1114,7 +1114,7 @@ export default function SalarySlips({ onReady }) {
                 {/* RIGHT: Live Preview */}
                 <Box sx={{ flex: 1, p: 2, overflowY: 'auto' }}>
                   {/* Header */}
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '3px solid #1a5c38', pb: 1.5, mb: 1.5 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `3px solid ${BRAND.primary}`, pb: 1.5, mb: 1.5 }}>
                     <Typography variant="h5" fontWeight={900} color={BRAND.primary}>VEGAVRUDDHI</Typography>
                     <Box sx={{ textAlign: 'right' }}>
                       <Typography variant="subtitle1" fontWeight={900} color={BRAND.primary}>Salary Slip</Typography>
@@ -1139,7 +1139,7 @@ export default function SalarySlips({ onReady }) {
                       ['Department', 'Sales'],
                       ['Pay Period', `${selectedMonth} ${selectedYear}`],
                       ['Working Days', `${workingDays}`],
-                      ['Base Salary', `₹${fmt(empRole === 'TL' ? 35000 : 60000)}`],
+                      ['Base Salary', `₹${fmt(parseFloat(formData.baseSalary) || (empRole === 'TL' ? 35000 : 60000))}`],
                       ...((parseFloat(formData.incentiveAmount) || 0) > 0 ? [['Incentive', `₹${fmt(parseFloat(formData.incentiveAmount) || 0)}`]] : []),
                       ['Total Salary', `₹${fmt(pointsSalary)}`],
                     ]).map(([rowLabel, rowValue]) => (
@@ -1245,15 +1245,31 @@ export default function SalarySlips({ onReady }) {
             const MONTHS_LIST = ['January','February','March','April','May','June','July','August','September','October','November','December'];
             const mIdx = MONTHS_LIST.indexOf(selectedSlip.month);
             const TOTAL_WD = new Date(selectedSlip.year, mIdx + 1, 0).getDate();
-            const base = parseFloat(formData.pointsEarned) || 0;
-            const slab = parseFloat(formData.slabPoints) || 0;
-            const pv   = parseFloat(formData.pointValue) || 250;
-            const totalPts = Math.round((base + slab) * 10) / 10;
-            const pointsSalary = Math.round(totalPts * pv * 10) / 10;
-            const hasIncentive = pointsSalary > FIXED_GROSS;
-            const incentive    = hasIncentive ? Math.round((pointsSalary - FIXED_GROSS) * 10) / 10 : 0;
-            const workingDays  = hasIncentive ? TOTAL_WD : Math.round((pointsSalary / FIXED_GROSS) * TOTAL_WD);
-            const breakBase = hasIncentive ? FIXED_GROSS : pointsSalary;
+            const empRole = selectedSlip.role || 'FSE';
+            
+            let pointsSalary, hasIncentive, incentive, workingDays, breakBase;
+
+            if (empRole === 'TL' || empRole === 'Manager') {
+              // TL/Manager: Fixed base + incentive
+              const baseSalary = parseFloat(formData.baseSalary) || (empRole === 'TL' ? 35000 : 60000);
+              const incentiveAmt = parseFloat(formData.incentiveAmount) || 0;
+              pointsSalary = baseSalary + incentiveAmt;
+              hasIncentive = incentiveAmt > 0;
+              incentive = incentiveAmt;
+              breakBase = pointsSalary; // Breakdown on total salary
+              workingDays = TOTAL_WD;
+            } else {
+              // FSE: Points-based
+              const base = parseFloat(formData.pointsEarned) || 0;
+              const slab = parseFloat(formData.slabPoints) || 0;
+              const pv   = parseFloat(formData.pointValue) || 250;
+              const totalPts = Math.round((base + slab) * 1000) / 1000;
+              pointsSalary = Math.round(totalPts * pv * 100) / 100;
+              hasIncentive = pointsSalary > FIXED_GROSS;
+              incentive    = hasIncentive ? Math.round((pointsSalary - FIXED_GROSS) * 100) / 100 : 0;
+              workingDays  = hasIncentive ? TOTAL_WD : Math.round((pointsSalary / FIXED_GROSS) * TOTAL_WD);
+              breakBase = hasIncentive ? FIXED_GROSS : pointsSalary;
+            }
             const pctB = parseFloat(formData.pctBasic) || 50;
             const pctH = parseFloat(formData.pctHRA)   || 25;
             const pctC = parseFloat(formData.pctConv)  || 5;
@@ -1373,7 +1389,7 @@ export default function SalarySlips({ onReady }) {
 
                 {/* RIGHT: Live Preview */}
                 <Box sx={{ flex: 1, p: 2, overflowY: 'auto' }}>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '3px solid #1a5c38', pb: 1.5, mb: 1.5 }}>
+                  <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: `3px solid ${BRAND.primary}`, pb: 1.5, mb: 1.5 }}>
                     <Typography variant="h5" fontWeight={900} color={BRAND.primary}>VEGAVRUDDHI</Typography>
                     <Box sx={{ textAlign: 'right' }}>
                       <Typography variant="subtitle1" fontWeight={900} color={BRAND.primary}>Salary Slip</Typography>
@@ -1382,16 +1398,25 @@ export default function SalarySlips({ onReady }) {
                   </Box>
 
                   <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0.5, mb: 1.5, p: 1, bgcolor: '#f9f9f9', borderRadius: 1 }}>
-                    {[
+                    {(empRole === 'FSE' ? [
                       ['Employee', selectedSlip.employeeName],
                       ['Designation', selectedSlip.role],
                       ['Department', 'Sales'],
                       ['Month', `${selectedSlip.month} ${selectedSlip.year}`],
                       ['Working Days', `${workingDays}`],
-                      ['Base Points', `${base} pts`],
-                      ...(slab > 0 ? [['Slab Bonus', `+${slab} pts`]] : []),
-                      ['Total Points', `${totalPts} pts × ₹${pv} = ₹${fmt(pointsSalary)}`],
-                    ].map(([rowLabel, rowValue]) => (
+                      ['Base Points', `${parseFloat(formData.pointsEarned) || 0} pts`],
+                      ...((parseFloat(formData.slabPoints) || 0) > 0 ? [['Slab Bonus', `+${parseFloat(formData.slabPoints) || 0} pts`]] : []),
+                      ['Total Points', `${(parseFloat(formData.pointsEarned) || 0) + (parseFloat(formData.slabPoints) || 0)} pts × ₹${parseFloat(formData.pointValue) || 250} = ₹${fmt(pointsSalary)}`],
+                    ] : [
+                      ['Employee', selectedSlip.employeeName],
+                      ['Designation', selectedSlip.role],
+                      ['Department', 'Sales'],
+                      ['Month', `${selectedSlip.month} ${selectedSlip.year}`],
+                      ['Working Days', `${workingDays}`],
+                      ['Base Salary', `₹${fmt(parseFloat(formData.baseSalary) || (empRole === 'TL' ? 35000 : 60000))}`],
+                      ...((parseFloat(formData.incentiveAmount) || 0) > 0 ? [['Incentive', `₹${fmt(parseFloat(formData.incentiveAmount) || 0)}`]] : []),
+                      ['Total Salary', `₹${fmt(pointsSalary)}`],
+                    ]).map(([rowLabel, rowValue]) => (
                       <Box key={rowLabel} sx={{ display: 'flex', gap: 0.5 }}>
                         <Typography variant="caption" fontWeight={600} color="text.secondary" sx={{ minWidth: 85, fontSize: 10 }}>{rowLabel}:</Typography>
                         <Typography variant="caption" fontWeight={700} sx={{ fontSize: 10 }}>{rowValue}</Typography>

@@ -346,8 +346,8 @@ function AttendanceManagement({ onReady }) {
           >
             <MenuItem value="all">All Roles ({allRecords.length})</MenuItem>
             <MenuItem value="employee">FSE ({fseCount})</MenuItem>
-            <MenuItem value="teamlead">TL ({tlCount})</MenuItem>
-            <MenuItem value="manager">Manager ({managerCount})</MenuItem>
+            {/* <MenuItem value="teamlead">TL ({tlCount})</MenuItem> */}
+            {/* <MenuItem value="manager">Manager ({managerCount})</MenuItem> */}
           </Select>
         </FormControl>
       </Box>
@@ -583,7 +583,7 @@ function AttendanceManagement({ onReady }) {
             PaperProps={{ sx: { borderRadius: 3 } }}
           >
             <DialogTitle sx={{
-              background: 'linear-gradient(90deg, #071a0f 0%, #1a5c38 100%)',
+              background: 'linear-gradient(90deg, #0a192f 0%, #0284c7 100%)',
               color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between'
             }}>
               <Box>
@@ -854,8 +854,8 @@ function AttendanceManagement({ onReady }) {
               >
                 <MenuItem value="all">All Roles ({monthRecords.length})</MenuItem>
                 <MenuItem value="employee">FSE ({monthRecords.filter(r => r.userType === 'employee').length})</MenuItem>
-                <MenuItem value="teamlead">Team Lead ({monthRecords.filter(r => r.userType === 'teamlead').length})</MenuItem>
-                <MenuItem value="manager">Manager ({monthRecords.filter(r => r.userType === 'manager').length})</MenuItem>
+                {/* <MenuItem value="teamlead">Team Lead ({monthRecords.filter(r => r.userType === 'teamlead').length})</MenuItem> */}
+                {/* <MenuItem value="manager">Manager ({monthRecords.filter(r => r.userType === 'manager').length})</MenuItem> */}
               </Select>
             </FormControl>
           </Box>

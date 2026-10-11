@@ -591,11 +591,11 @@ const kpiData = useMemo(() => {
     renderInput={(params) => <TextField {...params} label="Month" />}
     sx={{ width: { xs: '100%', sm: 'auto' }, minWidth: { xs: '100%', sm: 150 } }} freeSolo={false} />
 
-  <Autocomplete
+  {/* <Autocomplete
     size="small" options={tlOptions} value={filterTL || null}
     onChange={(_, v) => { setFilterTL(v || ''); setFilterFSE(''); }}
     renderInput={(params) => <TextField {...params} label="Team Leader" />}
-    sx={{ width: { xs: '100%', sm: 'auto' }, minWidth: { xs: '100%', sm: 180 } }} freeSolo={false} />
+    sx={{ width: { xs: '100%', sm: 'auto' }, minWidth: { xs: '100%', sm: 180 } }} freeSolo={false} /> */}
 
   <Autocomplete
     size="small" options={fseOptions} value={filterFSE || null}
@@ -623,9 +623,9 @@ const kpiData = useMemo(() => {
 </Box>
 
     {/* KPI Cards */}
-    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)', md: 'repeat(5, 1fr)' }, gap: { xs: 1.5, sm: 2 }, mb: 3 }}>
+    <Box sx={{ display: 'grid', gridTemplateColumns: { xs: 'repeat(2, 1fr)', sm: 'repeat(3, 1fr)', md: 'repeat(4, 1fr)' }, gap: { xs: 1.5, sm: 2 }, mb: 3 }}>
       {loading ? (
-        Array.from({ length: 5 }).map((_, i) => (
+        Array.from({ length: 4 }).map((_, i) => (
           <Card key={i} variant="outlined" sx={{ borderRadius: 3 }}>
             <Box sx={{ height: 5, borderRadius: '3px 3px 0 0' }}>
               <Skeleton variant="rectangular" height={5} />
@@ -642,7 +642,7 @@ const kpiData = useMemo(() => {
           { label: 'Total Forms',       value: kpiData.totalForms,      color: '#7c3aed', key: 'totalForms' },
           { label: 'Total Employees',   value: kpiData.totalEmployees,  color: '#3b82f6', key: 'totalEmployees' },
           { label: 'Active Employees',  value: kpiData.activeEmployees, color: '#10b981', key: 'activeEmployees' },
-          { label: 'Total TLs',         value: kpiData.totalTLs,        color: '#f59e0b', key: 'totalTLs' },
+          /* { label: 'Total TLs',         value: kpiData.totalTLs,        color: '#f59e0b', key: 'totalTLs' }, */
           { label: 'Ready to Onboard',  value: kpiData.onboarding,      color: '#14b8a6', key: 'onboarding' },
         ].map(k => (
           <Card key={k.label} variant="outlined" sx={{ borderRadius: 3, cursor: 'pointer', transition: 'all 0.2s', '&:hover': { transform: 'translateY(-2px)', boxShadow: `0 4px 16px ${k.color}30` } }}
@@ -890,8 +890,8 @@ const kpiData = useMemo(() => {
       <CardContent>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2, flexWrap: 'wrap', gap: 1 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-            <Typography variant="h6" fontWeight={700}>{chartView === 'fse' ? 'Top 10 FSEs' : 'Top 10 TLs'}</Typography>
-            <Box sx={{ display: 'flex', border: '1px solid #e0e0e0', borderRadius: 2, overflow: 'hidden' }}>
+            <Typography variant="h6" fontWeight={700}>Top 10 FSEs</Typography>
+            {/* <Box sx={{ display: 'flex', border: '1px solid #e0e0e0', borderRadius: 2, overflow: 'hidden' }}>
               {[{ key: 'fse', label: 'FSEs' }, { key: 'tl', label: 'TLs' }].map(v => (
                 <Box key={v.key} onClick={() => setChartView(v.key)}
                   sx={{ px: 1.5, py: 0.4, cursor: 'pointer', fontSize: 11, fontWeight: 700,
@@ -901,7 +901,7 @@ const kpiData = useMemo(() => {
                   {v.label}
                 </Box>
               ))}
-            </Box>
+            </Box> */}
           </Box>
           <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
             {[

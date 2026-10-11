@@ -4,7 +4,7 @@ import { Box, Card, CardContent, Typography, Alert } from "@mui/material";
 import { GoogleLogin } from "@react-oauth/google";
 import { jwtDecode } from "jwt-decode";
 import { BRAND } from "../theme";
-import TideSelectionPopup from "../components/TideSelectionPopup";
+// import TideSelectionPopup from "../components/TideSelectionPopup";
 
 // Allowed admin emails — add more to REACT_APP_ADMIN_EMAILS in .env (comma-separated)
 const ALLOWED_EMAILS = (process.env.REACT_APP_ADMIN_EMAILS || "data.analyst@vegavruddhi.com")
@@ -34,9 +34,14 @@ export default function Login({ onLogin }) {
         picture: decoded.picture || "",
       };
 
+      // Direct login without BT popup
+      localStorage.setItem("vv_auth", JSON.stringify(authObj));
+      onLogin(authObj);
+      /*
       // Admin always has Tide BT access, show popup
       setPendingAuth(authObj);
       setShowTidePopup(true);
+      */
     } catch {
       setError("Failed to verify Google account. Please try again.");
     }
@@ -72,21 +77,21 @@ export default function Login({ onLogin }) {
   return (
     <Box sx={{
       minHeight: "100vh",
-      background: "linear-gradient(135deg, #071a0f 0%, #0f3320 50%, #1a5c38 100%)",
+      background: "linear-gradient(135deg, #0a192f 0%, #0b3c6d 50%, #0284c7 100%)",
       display: "flex", flexDirection: "column",
       alignItems: "center", justifyContent: "center", px: 2,
     }}>
       {/* Logo */}
       <Box sx={{ display: "flex", alignItems: "center", gap: 1.5, mb: 4 }}>
-        <Box component="img" src="/logo-full.png" alt="Vegavruddhi"
-          sx={{ height: 52, objectFit: "contain", filter: "brightness(0) invert(1)" }} />
+        <Box component="img" src="/logo-full.png" alt="Synchronous Build Digital"
+          sx={{ height: 52, width: 52, objectFit: "contain", bgcolor: "#fff", borderRadius: "10px", p: "4px", boxShadow: "0 4px 16px rgba(0,0,0,0.25)" }} />
         <Box>
           <Typography sx={{
             fontFamily: "'Georgia', serif", fontWeight: 700,
             fontSize: "1.4rem", color: "#fff", letterSpacing: 2,
             textTransform: "uppercase", lineHeight: 1.2,
           }}>
-            Vegavruddhi
+            Synchronous
           </Typography>
           <Typography sx={{
             fontSize: "0.65rem", color: BRAND.accent,
@@ -131,13 +136,13 @@ export default function Login({ onLogin }) {
         </CardContent>
       </Card>
 
-      {/* Tide Selection Popup */}
-      <TideSelectionPopup
+      {/* Tide Selection Popup commented out */}
+      {/* <TideSelectionPopup
         open={showTidePopup}
         onClose={() => setShowTidePopup(false)}
         onSelectTide={handleSelectTide}
         onSelectTideBT={handleSelectTideBT}
-      />
+      /> */}
     </Box>
   );
 }

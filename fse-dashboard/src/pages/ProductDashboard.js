@@ -27,8 +27,8 @@ import MeetingTrend from "../components/MeetingTrend";
 import { BRAND } from "../theme";
 import { getProductDisplayLabel } from "./MerchantForms";
 
-const COLORS = ["#7c3aed", "#10b981", "#3b82f6", "#f59e0b", "#14b8a6", "#ec4899", "#0ea5e9", "#ef4444"];
-const PRODUCT_COLORS = ["#7c3aed","#10b981","#3b82f6","#f59e0b","#14b8a6","#ec4899","#0ea5e9","#ef4444","#f97316","#84cc16","#06b6d4","#8b5cf6"];
+const COLORS = [BRAND.primary, "#0ea5e9", "#2563eb", "#0369a1", "#38bdf8", "#1d4ed8", "#7c3aed", "#f59e0b"];
+const PRODUCT_COLORS = [BRAND.primary, "#0ea5e9", "#2563eb", "#0369a1", "#38bdf8", "#1d4ed8", "#7c3aed", "#f59e0b", "#ec4899", "#10b981", "#06b6d4", "#8b5cf6"];
 
 // ── Cache version: Increment this when verification rules change ─
 const CACHE_VERSION = 3; // Change to 2, 3, etc. to invalidate all caches
@@ -39,7 +39,7 @@ function toChartTheme(muiTheme) {
     background: muiTheme.palette.background.default,
     card: isDark ? "#1e2d3d" : "#ffffff",
     text: muiTheme.palette.text.primary,
-    grid: isDark ? "rgba(255,255,255,0.08)" : "rgba(26,92,56,0.15)",
+    grid: isDark ? "rgba(255,255,255,0.08)" : "rgba(2,132,199,0.15)",
     tooltipBg: isDark ? "#1e2d3d" : "#ffffff",
   };
 }
@@ -228,7 +228,7 @@ function OnboardVerifySection({ filteredForms, onboardVerifyMap, onboardVerifyin
                 <Table size="small" stickyHeader>
                   <TableHead>
                     <TableRow>
-                      {['#', 'Customer Name', 'Phone', 'FSE', 'TL', 'FSE Email', 'Date'].map(h => (
+                      {['#', 'Customer Name', 'Phone', 'FSE', /* 'TL', */ 'FSE Email', 'Date'].map(h => (
                         <TableCell key={h} sx={{
                           fontWeight: 700, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.8,
                           bgcolor: drillModal.bg, color: drillModal.color,
@@ -244,7 +244,7 @@ function OnboardVerifySection({ filteredForms, onboardVerifyMap, onboardVerifyin
                         <TableCell><Typography variant="body2" fontWeight={700}>{row.customerName}</Typography></TableCell>
                         <TableCell><Typography variant="body2" sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>{row.customerPhone}</Typography></TableCell>
                         <TableCell><Typography variant="body2" fontWeight={600}>{row.fse}</Typography></TableCell>
-                        <TableCell><Typography variant="body2" color="text.secondary">{row.tl}</Typography></TableCell>
+                        {/* <TableCell><Typography variant="body2" color="text.secondary">{row.tl}</Typography></TableCell> */}
                         <TableCell><Typography variant="caption" color="text.secondary">{row.fseEmail}</Typography></TableCell>
                         <TableCell><Typography variant="caption" sx={{ color: 'text.secondary', whiteSpace: 'nowrap' }}>{row.date}</Typography></TableCell>
                       </TableRow>
@@ -386,7 +386,7 @@ function TideKPI({ rows, tideColumns, ct, openDrill, onboardCol }) {
                   <YAxis dataKey="name" type="category" stroke={ct?.text} width={140} tick={{ fontSize: 11 }} />
                   <Tooltip
                     contentStyle={{ backgroundColor: ct?.tooltipBg, color: ct?.text, border: "none", borderRadius: 8 }}
-                    formatter={(val, _, props) => [`${val}  (TL: ${props.payload.tl})`, kpiModal.label]}
+                    formatter={(val) => [val, kpiModal.label]}
                     cursor={{ fill: `${kpiModal.color}18` }}
                   />
                   <Bar dataKey="value" name={kpiModal.label} fill="url(#kpiBarGrad)"
@@ -537,7 +537,7 @@ function OtherProductKPI({ rows, productGroups, openDrill }) {
                   <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
                   <YAxis dataKey="name" type="category" width={140} tick={{ fontSize: 11 }} />
                   <Tooltip
-                    formatter={(val, _, props) => [`${val}  (TL: ${props.payload.tl})`, kpiModal.label]}
+                    formatter={(val) => [val, kpiModal.label]}
                     cursor={{ fill: `${kpiModal.color}18` }}
                   />
                   <Bar dataKey="value" name={kpiModal.label} fill={kpiModal.color} radius={[0, 8, 8, 0]}
@@ -1630,10 +1630,10 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
           onChange={(_, v) => setTopFilterMonth(v || '')}
           renderInput={(params) => <TextField {...params} label="Month" />}
           sx={{ minWidth: 150 }} freeSolo={false} />
-        <Autocomplete size="small" options={topTlOptions} value={topFilterTL || null}
+        {/* <Autocomplete size="small" options={topTlOptions} value={topFilterTL || null}
           onChange={(_, v) => { setTopFilterTL(v || ''); setTopFilterFSE(''); }}
           renderInput={(params) => <TextField {...params} label="Team Leader" />}
-          sx={{ minWidth: 180 }} freeSolo={false} />
+          sx={{ minWidth: 180 }} freeSolo={false} /> */}
         <Autocomplete size="small" options={topFseOptions} value={topFilterFSE || null}
           onChange={(_, v) => {
             setTopFilterFSE(v || '');
@@ -1721,7 +1721,7 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
       {/* Visit Status KPIs */}
       <Box sx={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 2, mb: showOnboardVerify ? 1 : 3 }}>
         {[
-          { label: 'Ready for Onboarding',          value: visitStatusCounts.onboarding, color: '#2e7d32', bg: '#e6f4ea', clickable: true },
+          { label: 'Ready for Onboarding',          value: visitStatusCounts.onboarding, color: BRAND.primary, bg: BRAND.primaryLight, clickable: true },
           { label: 'Not Interested',                value: visitStatusCounts.notInt,     color: '#c62828', bg: '#fdecea' },
           { label: 'Try but not done due to error', value: visitStatusCounts.tryErr,     color: '#e65100', bg: '#fff3e0' },
           { label: 'Need to visit again',           value: visitStatusCounts.revisit,    color: '#1565c0', bg: '#e3f2fd' },
@@ -1896,7 +1896,7 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
                 </Typography>
                 {[
                   { value: "employee", label: "Employee" },
-                  { value: "tl",       label: "Team Leader" },
+                  /* { value: "tl",       label: "Team Leader" }, */
                 ].map(({ value, label }) => (
                   <Box
                     key={value}
@@ -1915,7 +1915,7 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
                   </Box>
                 ))}
                 <Typography variant="caption" sx={{ ml: "auto", opacity: 0.45, fontSize: 10 }}>
-                  {customChartData.length} {groupBy === "tl" ? "team leaders" : "employees"} · {selectedCols.length} column{selectedCols.length > 1 ? "s" : ""}
+                  {customChartData.length} employees · {selectedCols.length} column{selectedCols.length > 1 ? "s" : ""}
                 </Typography>
               </Box>
 
@@ -2243,7 +2243,7 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
                 <Box>
                   <Typography variant="h6" sx={{ color: '#fff', fontWeight: 800 }}>📦 {productKpiDrill.product}</Typography>
                   <Typography variant="body2" sx={{ color: 'rgba(255,255,255,0.9)', mt: 0.5 }}>
-                    {filteredRows.length} forms submitted · {tlSummaryArray.length} team leader{tlSummaryArray.length !== 1 ? 's' : ''}
+                    {filteredRows.length} forms submitted{/* · {tlSummaryArray.length} team leader{tlSummaryArray.length !== 1 ? 's' : ''} */}
                   </Typography>
                 </Box>
                 <IconButton onClick={() => setProductKpiDrill(null)} sx={{ color: '#fff', bgcolor: 'rgba(255,255,255,0.15)', '&:hover': { bgcolor: 'rgba(255,255,255,0.25)' } }}>
@@ -2290,8 +2290,8 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
             </Box>
 
             <DialogContent sx={{ p: 3 }}>
-              {/* TL Summary Cards */}
-              <Box sx={{ mb: 3 }}>
+              {/* TL Summary Cards commented out */}
+              {/* <Box sx={{ mb: 3 }}>
                 <Typography variant="subtitle1" fontWeight={700} sx={{ mb: 2, color: productKpiDrill.color }}>
                   Team Leader Summary
                 </Typography>
@@ -2337,7 +2337,7 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
                     </Card>
                   ))}
                 </Box>
-              </Box>
+              </Box> */}
 
               {/* All Forms Table */}
               <Box>
@@ -2348,7 +2348,7 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
                   <Table size="small" stickyHeader>
                     <TableHead>
                       <TableRow>
-                        {['#', 'Merchant', 'Phone', 'FSE', 'TL Name', 'TL Phone', 'Status', 'Verification', 'Date'].map(h => (
+                        {['#', 'Merchant', 'Phone', 'FSE', /* 'TL Name', 'TL Phone', */ 'Status', 'Verification', 'Date'].map(h => (
                           <TableCell key={h} sx={{ 
                             fontWeight: 700, 
                             bgcolor: productKpiDrill.color, 
@@ -2374,8 +2374,8 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
                             <TableCell><Typography variant="body2" fontWeight={700}>{row.merchant}</Typography></TableCell>
                             <TableCell><Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: 12 }}>{row.phone}</Typography></TableCell>
                             <TableCell><Typography variant="body2" fontWeight={600}>{row.fse}</Typography></TableCell>
-                            <TableCell><Typography variant="body2" fontWeight={600} sx={{ color: productKpiDrill.color }}>{row.tl}</Typography></TableCell>
-                            <TableCell><Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>{row.tlPhone}</Typography></TableCell>
+                            {/* <TableCell><Typography variant="body2" fontWeight={600} sx={{ color: productKpiDrill.color }}>{row.tl}</Typography></TableCell>
+                            <TableCell><Typography variant="caption" sx={{ fontFamily: 'monospace', color: 'text.secondary' }}>{row.tlPhone}</Typography></TableCell> */}
                             <TableCell>
                               <Box component="span" sx={{ 
                                 px: 1, py: 0.3, borderRadius: 10, fontSize: 10, fontWeight: 700, whiteSpace: 'nowrap',
@@ -2406,7 +2406,7 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
 
             <DialogActions sx={{ px: 3, py: 1.5, borderTop: '1px solid', borderColor: 'divider' }}>
               <Typography variant="caption" color="text.secondary" sx={{ flex: 1 }}>
-                {productKpiDrill.rows.length} records · {tlSummaryArray.length} team leaders
+                {productKpiDrill.rows.length} records{/* · {tlSummaryArray.length} team leaders */}
               </Typography>
               <Button onClick={() => setProductKpiDrill(null)} variant="contained" 
                 sx={{ bgcolor: productKpiDrill.color, fontWeight: 700, borderRadius: 2, '&:hover': { opacity: 0.9 } }}>
@@ -2429,7 +2429,7 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
 
           <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 3 }}>
             {Object.entries(productDailyData).map(([product, chartData], pi) => {
-              const PROD_COLORS = ["#7c3aed","#10b981","#3b82f6","#f59e0b","#14b8a6","#ec4899","#0ea5e9","#ef4444"];
+              const PROD_COLORS = [BRAND.primary, "#0ea5e9", "#2563eb", "#0369a1", "#38bdf8", "#1d4ed8", "#7c3aed", "#f59e0b"];
               const prodColor = PROD_COLORS[pi % PROD_COLORS.length];
               const totalOnboarding = chartData.reduce((s, d) => s + d.onboarding, 0);
               const totalVerified   = chartData.reduce((s, d) => s + d.fullyVerified, 0);
@@ -2451,8 +2451,8 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
                         </Typography>
                       </Box>
                       <Box sx={{ display: 'flex', gap: 0.8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
-                        <Box sx={{ bgcolor: '#e6f4ea', color: '#2e7d32', borderRadius: 5, px: 1.2, py: 0.3, fontSize: 11, fontWeight: 700 }}>
-                          🟢 {totalOnboarding} Onboarding
+                        <Box sx={{ bgcolor: BRAND.primaryLight, color: BRAND.primary, borderRadius: 5, px: 1.2, py: 0.3, fontSize: 11, fontWeight: 700 }}>
+                          🔵 {totalOnboarding} Onboarding
                         </Box>
                         <Box sx={{ bgcolor: '#e8f5e9', color: '#1b5e20', borderRadius: 5, px: 1.2, py: 0.3, fontSize: 11, fontWeight: 700 }}>
                           ✓ {totalVerified} Verified
@@ -2469,7 +2469,7 @@ export default function ProductDashboard({ firstLoad = true, onLoaded }) {
                         <YAxis allowDecimals={false} tick={{ fontSize: 10, fill: ct.text }} stroke={ct.text} width={28} />
                         <Tooltip contentStyle={{ backgroundColor: ct.tooltipBg, color: ct.text, border: 'none', borderRadius: 8 }} labelFormatter={(label) => `Date: ${label}`} />
                         <Legend verticalAlign="top" wrapperStyle={{ fontSize: 11, paddingBottom: 4 }} />
-                        <Bar dataKey="onboarding" name="Ready for Onboarding" fill="#2e7d32" radius={[4, 4, 0, 0]} opacity={0.85} />
+                        <Bar dataKey="onboarding" name="Ready for Onboarding" fill={BRAND.primary} radius={[4, 4, 0, 0]} opacity={0.85} />
                         <Line type="monotone" dataKey="fullyVerified" name="Fully Verified" stroke="#10b981" strokeWidth={2.5} dot={{ r: 4, fill: '#10b981', strokeWidth: 2, stroke: '#fff' }} />
                         <Line type="monotone" dataKey="partiallyDone" name="Partially Done" stroke="#f57f17" strokeWidth={2.5} strokeDasharray="5 3" dot={{ r: 4, fill: '#f57f17', strokeWidth: 2, stroke: '#fff' }} />
                       </ComposedChart>

@@ -1668,8 +1668,8 @@ function SettleDialog({ form, open, onClose, onSettle, settling, employees }) {
             onChange={(e) => setEmployeeRole(e.target.value)}
           >
             <MenuItem value="FSE">FSE (Field Sales Executive)</MenuItem>
-            <MenuItem value="TL">TL (Team Leader)</MenuItem>
-            <MenuItem value="MANAGER">Manager</MenuItem>
+            {/* <MenuItem value="TL">TL (Team Leader)</MenuItem> */}
+            {/* <MenuItem value="MANAGER">Manager</MenuItem> */}
           </TextField>
         </Box>
 
@@ -2235,7 +2235,7 @@ const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmp
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <Typography fontWeight={700}>{empName}</Typography>
               {empData?.employeeId && (
-                <Typography variant="caption" sx={{ bgcolor: '#e6f4ea', color: '#1a5c38', fontWeight: 700, px: 1, py: 0.2, borderRadius: 1, fontSize: 10 }}>
+                <Typography variant="caption" sx={{ bgcolor: BRAND.primaryLight, color: BRAND.primary, fontWeight: 700, px: 1, py: 0.2, borderRadius: 1, fontSize: 10 }}>
                   {empData.employeeId}
                 </Typography>
               )}
@@ -2248,11 +2248,11 @@ const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmp
             <Typography variant="caption" sx={{ display: 'block' }}>
               {forms.length} merchants
             </Typography>
-            {tlData && (
+            {/* {tlData && (
               <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
                 TL: {tlData.name} · {tlData.phone}
               </Typography>
-            )}
+            )} */}
           </Box>
         </Box>
 
@@ -4003,7 +4003,7 @@ useEffect(() => {
             disabled={syncingSheet}
             onClick={handleSyncSheet}
             sx={{ 
-              background: 'linear-gradient(135deg, #1a5c38 0%, #0f3320 100%)',
+              background: 'linear-gradient(135deg, #0284c7 0%, #0369a1 100%)',
               color: '#ffffff',
               fontWeight: 700, 
               fontSize: { xs: '0.7rem', sm: '0.875rem' },
@@ -4011,10 +4011,10 @@ useEffect(() => {
               py: 0.6,
               borderRadius: '8px',
               border: `1px solid ${BRAND.accent}`,
-              boxShadow: '0 2px 8px rgba(26, 92, 56, 0.35)',
+              boxShadow: '0 2px 8px rgba(2, 132, 199, 0.35)',
               textTransform: 'none',
               minWidth: { xs: 'auto', sm: 'auto' },
-              '&:hover': { background: 'linear-gradient(135deg, #2d7a4f 0%, #1a5c38 100%)', borderColor: '#ffc107' },
+              '&:hover': { background: 'linear-gradient(135deg, #0369a1 0%, #0284c7 100%)', borderColor: '#38bdf8' },
               '&:disabled': { background: '#64748b', color: '#f1f5f9', borderColor: 'transparent' }
             }}
           >
