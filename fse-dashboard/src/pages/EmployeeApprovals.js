@@ -28,11 +28,15 @@ async function openFseDashboard(emp, dashboardType = 'normal') {
   const savedAuth = localStorage.getItem('vv_auth');
   const adminObj = savedAuth ? JSON.parse(savedAuth) : {};
   const adminEmail = adminObj?.email || 'data.analyst@vegavruddhi.com';
+  const token = localStorage.getItem('token') || localStorage.getItem('emp_token');
 
   try {
     const res = await fetch(`${EMP_API.replace('/auth', '')}/auth/generate-impersonation-token`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      },
       body: JSON.stringify({ adminEmail, targetEmail: email })
     });
     const data = await res.json();
@@ -67,11 +71,15 @@ async function openTlDashboard(tl, dashboardType = 'normal') {
   const savedAuth = localStorage.getItem('vv_auth');
   const adminObj = savedAuth ? JSON.parse(savedAuth) : {};
   const adminEmail = adminObj?.email || 'data.analyst@vegavruddhi.com';
+  const token = localStorage.getItem('token') || localStorage.getItem('emp_token');
 
   try {
     const res = await fetch(`${EMP_API.replace('/auth', '')}/auth/generate-tl-impersonation-token`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      },
       body: JSON.stringify({ adminEmail, targetEmail: email })
     });
     const data = await res.json();
@@ -106,11 +114,15 @@ async function openManagerDashboard(manager, dashboardType = 'normal') {
   const savedAuth = localStorage.getItem('vv_auth');
   const adminObj = savedAuth ? JSON.parse(savedAuth) : {};
   const adminEmail = adminObj?.email || 'data.analyst@vegavruddhi.com';
+  const token = localStorage.getItem('token') || localStorage.getItem('emp_token');
 
   try {
     const res = await fetch(`${EMP_API.replace('/auth', '')}/auth/generate-manager-impersonation-token`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 
+        'Content-Type': 'application/json',
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      },
       body: JSON.stringify({ adminEmail, targetEmail: email })
     });
     const data = await res.json();

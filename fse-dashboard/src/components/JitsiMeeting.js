@@ -512,8 +512,18 @@ export default function JitsiMeeting({ open, onClose, employees = [], tls = [] }
         const appId = 'vpaas-magic-cookie-85bbd4a4745d48878a0d7c667dd963fe';
         const fullRoomName = `${appId}/${jitsiRoom.roomName}`;
 
-        // Fetch JWT Token from backend
-        fetch(`${process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api'}/meetings/jaas-jwt?name=Admin&isModerator=true`)
+        // Fetch JWT Token from backend with auth credentials
+        const savedAuth = localStorage.getItem('vv_auth');
+        let adminEmail = '';
+        try { adminEmail = savedAuth ? JSON.parse(savedAuth)?.email : ''; } catch (e) {}
+        const authToken = localStorage.getItem('token') || localStorage.getItem('emp_token') || sessionStorage.getItem('token');
+
+        fetch(`${process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api'}/meetings/jaas-jwt?name=Admin&isModerator=true`, {
+          headers: {
+            ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+            ...(adminEmail ? { 'x-admin-email': adminEmail } : {})
+          }
+        })
           .then(res => res.json())
           .then(data => {
             if (!data.token) throw new Error('Failed to fetch JWT token');

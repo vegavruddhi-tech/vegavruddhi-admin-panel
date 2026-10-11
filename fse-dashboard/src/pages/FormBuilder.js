@@ -59,10 +59,12 @@ export default function FormBuilder({ onReady }) {
         }
       });
 
+      const token = localStorage.getItem('token') || localStorage.getItem('emp_token');
       const res = await fetch(`${EMP_API}/form-config`, {
         method: 'PUT',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
         },
         body: JSON.stringify({ brands: payloadBrands })
       });
