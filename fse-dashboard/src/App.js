@@ -877,6 +877,7 @@ function App() {
   const EMP_BASE = process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api';
 
   useEffect(() => {
+    if (!user) return;
     const fetchPending = async () => {
       try {
         const [empRes, posRes, tlRes] = await Promise.all([
@@ -896,7 +897,7 @@ function App() {
     fetchPending();
     const interval = setInterval(fetchPending, 10000);
     return () => clearInterval(interval);
-  }, []);
+  }, [user, EMP_BASE]);
 
   const handleLogin  = (authObj) => {
     setUser(authObj);
