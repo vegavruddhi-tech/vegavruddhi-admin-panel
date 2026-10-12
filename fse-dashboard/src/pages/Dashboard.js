@@ -345,6 +345,7 @@ const loadData = async (isForce = false) => {
   } finally {
     setLoading(false);
     setPageLoading(false);
+    if (onReady) onReady();
   }
 };
 

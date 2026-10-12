@@ -824,23 +824,51 @@ function App() {
     return saved || "overview";
   });
   const [pendingCount, setPendingCount] = useState(0);
+
+  // Handle ?auth= param from BT Admin redirect + normal localStorage auth
+  const [user, setUser] = useState(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const authFromURL = params.get('auth');
+      if (authFromURL) {
+        const decoded = JSON.parse(decodeURIComponent(authFromURL));
+        localStorage.setItem("vv_auth", JSON.stringify(decoded));
+        window.history.replaceState({}, document.title, window.location.pathname);
+        return decoded;
+      }
+    } catch (e) {}
+    try {
+      const saved = localStorage.getItem("vv_auth");
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) { return null; }
+  });
+
   const [splash, setSplash] = useState(true);
   const [dataReady, setDataReady] = useState(false);
   // Track which pages have already loaded in this session (resets on full page refresh)
   const [pagesLoaded, setPagesLoaded] = useState({});
 
-  // Wait for data, with min 1.5s for animation
+  // Dismiss splash quickly (500ms) for login page when not authenticated
+  useEffect(() => {
+    if (!user) {
+      const timer = setTimeout(() => setSplash(false), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [user]);
+
+  // When data is ready, dismiss splash smoothly (400ms)
   useEffect(() => {
     if (!dataReady) return;
-    const timer = setTimeout(() => setSplash(false), 1500);
+    const timer = setTimeout(() => setSplash(false), 400);
     return () => clearTimeout(timer);
   }, [dataReady]);
 
-  // Fallback: hide splash after 15s max if API never responds
+  // Safety Fallback: ensure splash never blocks screen for more than 2.5s
   useEffect(() => {
-    const fallback = setTimeout(() => setSplash(false), 15000);
+    if (!splash) return;
+    const fallback = setTimeout(() => setSplash(false), 2500);
     return () => clearTimeout(fallback);
-  }, []);
+  }, [splash]);
 
   const handleDataReady = useCallback(() => {
     setDataReady(true);
@@ -869,24 +897,6 @@ function App() {
     const interval = setInterval(fetchPending, 10000);
     return () => clearInterval(interval);
   }, []);
-
-  // Handle ?auth= param from BT Admin redirect + normal localStorage auth
-  const [user, setUser] = useState(() => {
-    try {
-      const params = new URLSearchParams(window.location.search);
-      const authFromURL = params.get('auth');
-      if (authFromURL) {
-        const decoded = JSON.parse(decodeURIComponent(authFromURL));
-        localStorage.setItem("vv_auth", JSON.stringify(decoded));
-        window.history.replaceState({}, document.title, window.location.pathname);
-        return decoded;
-      }
-    } catch (e) {}
-    try {
-      const saved = localStorage.getItem("vv_auth");
-      return saved ? JSON.parse(saved) : null;
-    } catch (e) { return null; }
-  });
 
   const handleLogin  = (authObj) => {
     setUser(authObj);
