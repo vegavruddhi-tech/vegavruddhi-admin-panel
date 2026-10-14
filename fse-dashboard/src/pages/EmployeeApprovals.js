@@ -19,6 +19,14 @@ const EMP_API = (process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:400
 const TL_API = (process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api') + '/tl';
 const MANAGER_API = (process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api') + '/manager';
 
+const getAuthHeaders = () => {
+  const token = localStorage.getItem('token') || localStorage.getItem('emp_token');
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+  };
+};
+
 async function openFseDashboard(emp, dashboardType = 'normal') {
   const email = emp?.newJoinerEmailId || emp?.email;
   if (!email) {
@@ -298,13 +306,13 @@ export default function EmployeeApprovals({ onReady }) {
   const load = useCallback(async () => {
     setLoading(true); setError('');
     try {
-      const res = await fetch(`${EMP_API}/all-employees-admin`);
+      const res = await fetch(`${EMP_API}/all-employees-admin`, { headers: getAuthHeaders() });
       if (!res.ok && res.status !== 304) {
         // fallback: fetch pending + approved + rejected separately
         const [pendingRes, approvedRes, rejectedRes] = await Promise.all([
-          fetch(`${EMP_API}/pending`),
-          fetch(`${EMP_API}/approved`),
-          fetch(`${EMP_API}/rejected`).catch(() => ({ ok: false })),
+          fetch(`${EMP_API}/pending`, { headers: getAuthHeaders() }),
+          fetch(`${EMP_API}/approved`, { headers: getAuthHeaders() }),
+          fetch(`${EMP_API}/rejected`, { headers: getAuthHeaders() }).catch(() => ({ ok: false })),
         ]);
         const pendingData = pendingRes.ok ? await pendingRes.json() : [];
         const approvedData = approvedRes.ok ? await approvedRes.json() : [];
@@ -322,7 +330,7 @@ export default function EmployeeApprovals({ onReady }) {
     } catch (err) {
       // Final fallback — just load pending so at least those show
       try {
-        const res = await fetch(`${EMP_API}/pending`);
+        const res = await fetch(`${EMP_API}/pending`, { headers: getAuthHeaders() });
         if (!res.ok) throw new Error('Failed to load — is the employee server running?');
         const data = await res.json();
         setEmployees(data.map(e => ({ ...e, approvalStatus: 'pending' })));
@@ -365,9 +373,9 @@ export default function EmployeeApprovals({ onReady }) {
     setTlReqLoading(true);
     try {
       const [pendingRes, approvedRes, rejectedRes] = await Promise.all([
-        fetch(`${TL_API}/pending`),
-        fetch(`${TL_API}/approved-list`),
-        fetch(`${TL_API}/rejected-list`),
+        fetch(`${TL_API}/pending`, { headers: getAuthHeaders() }),
+        fetch(`${TL_API}/approved-list`, { headers: getAuthHeaders() }),
+        fetch(`${TL_API}/rejected-list`, { headers: getAuthHeaders() }),
       ]);
       const pendingData = await pendingRes.json();
       const approvedData = await approvedRes.json();
@@ -379,13 +387,13 @@ export default function EmployeeApprovals({ onReady }) {
   };
 
   const approveTL = async (id) => {
-    const res = await fetch(`${TL_API}/approve/${id}`, { method: 'PUT' });
+    const res = await fetch(`${TL_API}/approve/${id}`, { method: 'PUT', headers: getAuthHeaders() });
     if (res.ok) { setSnack({ open: true, msg: 'TL approved!', sev: 'success' }); loadTlPending(); }
     else setSnack({ open: true, msg: 'Failed', sev: 'error' });
   };
 
   const rejectTL = async (id) => {
-    const res = await fetch(`${TL_API}/reject/${id}`, { method: 'PUT' });
+    const res = await fetch(`${TL_API}/reject/${id}`, { method: 'PUT', headers: getAuthHeaders() });
     if (res.ok) { setSnack({ open: true, msg: 'TL rejected', sev: 'warning' }); loadTlPending(); }
     else setSnack({ open: true, msg: 'Failed', sev: 'error' });
   };
@@ -431,20 +439,20 @@ export default function EmployeeApprovals({ onReady }) {
   const loadManagerPending = async () => {
     setManagerPendingLoading(true);
     try {
-      const res = await fetch(`${MANAGER_API}/pending`);
+      const res = await fetch(`${MANAGER_API}/pending`, { headers: getAuthHeaders() });
       const data = await res.json();
       setManagerPending(Array.isArray(data) ? data : []);
     } catch { } finally { setManagerPendingLoading(false); }
   };
 
   const approveManager = async (id) => {
-    const res = await fetch(`${MANAGER_API}/approve/${id}`, { method: 'PUT' });
+    const res = await fetch(`${MANAGER_API}/approve/${id}`, { method: 'PUT', headers: getAuthHeaders() });
     if (res.ok) { setSnack({ open: true, msg: 'Manager approved!', sev: 'success' }); loadManagerPending(); }
     else setSnack({ open: true, msg: 'Failed', sev: 'error' });
   };
 
   const rejectManager = async (id) => {
-    const res = await fetch(`${MANAGER_API}/reject/${id}`, { method: 'PUT' });
+    const res = await fetch(`${MANAGER_API}/reject/${id}`, { method: 'PUT', headers: getAuthHeaders() });
     if (res.ok) { setSnack({ open: true, msg: 'Manager rejected', sev: 'warning' }); loadManagerPending(); }
     else setSnack({ open: true, msg: 'Failed', sev: 'error' });
   };
@@ -488,19 +496,19 @@ export default function EmployeeApprovals({ onReady }) {
   };
 
   const approvePosReq = async (id) => {
-    const res = await fetch(`${EMP_API}/position-requests/${id}/approve`, { method: 'PUT' });
+    const res = await fetch(`${EMP_API}/position-requests/${id}/approve`, { method: 'PUT', headers: getAuthHeaders() });
     if (res.ok) { setSnack({ open: true, msg: 'Position updated!', sev: 'success' }); loadPosRequests(); load(); }
     else setSnack({ open: true, msg: 'Failed', sev: 'error' });
   };
 
   const rejectPosReq = async (id) => {
-    const res = await fetch(`${EMP_API}/position-requests/${id}/reject`, { method: 'PUT' });
+    const res = await fetch(`${EMP_API}/position-requests/${id}/reject`, { method: 'PUT', headers: getAuthHeaders() });
     if (res.ok) { setSnack({ open: true, msg: 'Request rejected', sev: 'warning' }); loadPosRequests(); }
     else setSnack({ open: true, msg: 'Failed', sev: 'error' });
   };
 
   const approve = async (id) => {
-    const res = await fetch(`${EMP_API}/approve/${id}`, { method: 'PUT' });
+    const res = await fetch(`${EMP_API}/approve/${id}`, { method: 'PUT', headers: getAuthHeaders() });
     if (res.ok) {
       setSnack({ open: true, msg: 'Employee approved successfully!', sev: 'success' });
       load();
@@ -511,7 +519,7 @@ export default function EmployeeApprovals({ onReady }) {
 
   const reject = async (id) => {
     if (!window.confirm('Are you sure you want to reject this employee?')) return;
-    const res = await fetch(`${EMP_API}/reject/${id}`, { method: 'PUT' });
+    const res = await fetch(`${EMP_API}/reject/${id}`, { method: 'PUT', headers: getAuthHeaders() });
     if (res.ok) {
       setSnack({ open: true, msg: 'Employee rejected.', sev: 'warning' });
       load();
@@ -542,7 +550,7 @@ export default function EmployeeApprovals({ onReady }) {
     try {
       const res = await fetch(`${EMP_API.replace('/auth', '')}/auth/admin/update-employee/${editEmp._id}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: getAuthHeaders(),
         body: JSON.stringify(editForm)
       });
       if (res.ok) {
@@ -669,7 +677,7 @@ export default function EmployeeApprovals({ onReady }) {
             '& .MuiTabs-indicator': { backgroundColor: BRAND.primary },
           }}>
             <Tab value="pending" label={
-              <Badge badgeContent={pending.length /* + tlPending.length + managerPending.length */} color="warning" max={99} sx={{ '& .MuiBadge-badge': { right: -8, top: -2 } }}>
+              <Badge badgeContent={pending.length + tlPending.length /* + managerPending.length */} color="warning" max={99} sx={{ '& .MuiBadge-badge': { right: -8, top: -2 } }}>
                 <Box sx={{ pr: 2 }}>Pending</Box>
               </Badge>
             } />
@@ -748,7 +756,7 @@ export default function EmployeeApprovals({ onReady }) {
                     <Box sx={{ display: 'flex', gap: 1, px: 3, pt: 2, pb: 1, flexWrap: 'wrap' }}>
                       {[
                         { key: 'fse', label: 'FSE', count: pending.length },
-                        /* { key: 'tl', label: 'TL', count: tlPending.length }, */
+                        { key: 'tl', label: 'TL', count: tlPending.length },
                         /* { key: 'manager', label: 'Manager', count: managerPending.length }, */
                       ].map(s => (
                         <Badge key={s.key} badgeContent={s.count} color="warning" max={99}
@@ -916,7 +924,7 @@ export default function EmployeeApprovals({ onReady }) {
                       {[
                         { key: 'all', label: 'All', count: allApproved.length },
                         { key: 'fse', label: 'FSE', count: fseApproved.length },
-                        /* { key: 'tl', label: 'TL', count: tlApproved.length }, */
+                        { key: 'tl', label: 'TL', count: tlApproved.length },
                         /* { key: 'manager', label: 'Manager', count: managerApproved.length }, */
                       ].map(s => (
                         <Button key={s.key} size="small"
