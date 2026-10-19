@@ -308,6 +308,17 @@ def process_sheet(sheet_id, label):
                 # If no date in sheet, use current time
                 created_at = sheet_date if sheet_date else datetime.now(timezone.utc)
 
+                # 🔥 Calculate days difference between intent_date and approved_date
+                try:
+                    intent_d = parse_date(cleaned.get('intent_date'))
+                    approved_d = parse_date(cleaned.get('approved_date'))
+                    if intent_d and approved_d:
+                        cleaned['date_difference_days'] = max(0, (approved_d - intent_d).days)
+                    else:
+                        cleaned['date_difference_days'] = None
+                except Exception:
+                    cleaned['date_difference_days'] = None
+
                 # Generate fingerprint for backward compatibility
                 fp = row_fingerprint(cleaned, cat_fields)
 

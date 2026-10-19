@@ -113,6 +113,81 @@ export function getProductFieldWithSubType(f) {
   return p;
 }
 
+// ⏳ Helper to calculate 5-day QR load countdown safely
+function getQrLoadCountdown(vInfo, form) {
+  if (!vInfo) return null;
+  const product = (form?.formFillingFor || form?.tideProduct || form?.brand || form?.product || '').toLowerCase().trim();
+  // Strictly applies only to Tide onboarding
+  if (product && !product.includes('tide')) return null;
+
+  const checks = vInfo.checks || [];
+  const approvedCheck = checks.find(c => c.field === 'approved_date');
+  const loadCheck = checks.find(c => c.field === 'load_amount_through_qr_within_5_days');
+  
+  const approvedVal = approvedCheck?.actual || vInfo.record?.approved_date || form?.verificationChecks?.record?.approved_date;
+  if (!approvedVal || approvedVal === 'N/A' || approvedVal === 'None') return null;
+
+  // Extract clean YYYY-MM-DD
+  const appDateStr = typeof approvedVal === 'string' ? approvedVal.slice(0, 10) : '';
+  if (!appDateStr || !/^\d{4}-\d{2}-\d{2}$/.test(appDateStr)) return null;
+
+  const loadAmount = parseFloat(loadCheck?.actual ?? vInfo.record?.load_amount_through_qr_within_5_days ?? 0);
+  if (loadAmount >= 100) {
+    return {
+      label: 'QR ₹100 Done',
+      color: '#2e7d32',
+      bg: '#e6f4ea',
+      icon: '✅',
+      remainingDays: 0,
+      isDone: true
+    };
+  }
+
+  // Pure calendar days calculation against today's date
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const diffDays = Math.round((new Date(todayStr).getTime() - new Date(appDateStr).getTime()) / (1000 * 60 * 60 * 24));
+  const remainingDays = 5 - diffDays;
+
+  if (remainingDays > 1) {
+    return {
+      label: `${remainingDays}d left for ₹100 load`,
+      color: '#b78103',
+      bg: '#fff8e1',
+      icon: '⏳',
+      remainingDays,
+      isExpired: false
+    };
+  } else if (remainingDays === 1) {
+    return {
+      label: '1d left (Last Day!)',
+      color: '#e65100',
+      bg: '#fff3e0',
+      icon: '⚠️',
+      remainingDays,
+      isExpired: false
+    };
+  } else if (remainingDays === 0) {
+    return {
+      label: 'Today is 5th day!',
+      color: '#c62828',
+      bg: '#ffebee',
+      icon: '⚠️',
+      remainingDays,
+      isExpired: false
+    };
+  } else {
+    return {
+      label: '5-day QR window expired',
+      color: '#c62828',
+      bg: '#ffebee',
+      icon: '❌',
+      remainingDays,
+      isExpired: true
+    };
+  }
+}
+
+
 function flattenForm(f, empMap = {}, tlMap = {}, managerMap = {}, verifyMap = {}) {
   // 🔥 NEW: Get employee details from correct collection based on formType
   let empEmail = '';
@@ -1866,6 +1941,60 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading, onD
                     ))}
                   </Alert>
                 )}
+
+                {/* ⏳ QR Load 5-Day Window Countdown Box */}
+                {(() => {
+                  const product = (form?.formFillingFor || form?.tideProduct || form?.brand || form?.product || '').toLowerCase().trim();
+                  if (product && !product.includes('tide')) return null;
+
+                  const rec = verifyData?.record || verification?.record || form?.verificationChecks?.record;
+                  const checks = verification?.checks || [];
+                  const approvedVal = rec?.approved_date || checks.find(c => c.field === 'approved_date')?.actual;
+                  const loadVal = rec?.load_amount_through_qr_within_5_days ?? checks.find(c => c.field === 'load_amount_through_qr_within_5_days')?.actual;
+
+                  if (!approvedVal || approvedVal === 'N/A' || approvedVal === 'None') return null;
+                  const appDateStr = typeof approvedVal === 'string' ? approvedVal.slice(0, 10) : '';
+                  if (!appDateStr || !/^\d{4}-\d{2}-\d{2}$/.test(appDateStr)) return null;
+
+                  const loadAmount = parseFloat(loadVal || 0);
+                  const isLoaded = loadAmount >= 100;
+                  const todayStr = new Date().toISOString().slice(0, 10);
+                  const diffDays = Math.round((new Date(todayStr).getTime() - new Date(appDateStr).getTime()) / (1000 * 60 * 60 * 24));
+                  const remainingDays = 5 - diffDays;
+
+                  return (
+                    <Box sx={{
+                      p: 1.5,
+                      mb: 2,
+                      borderRadius: 2,
+                      bgcolor: isLoaded ? '#e8f5e9' : remainingDays > 0 ? '#fff8e1' : '#ffebee',
+                      border: `1.5px solid ${isLoaded ? '#2e7d32' : remainingDays > 0 ? '#f57f17' : '#c62828'}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: 1
+                    }}>
+                      <Box>
+                        <Typography variant="subtitle2" fontWeight={700} sx={{ color: isLoaded ? '#1b5e20' : remainingDays > 0 ? '#b78103' : '#b71c1c' }}>
+                          {isLoaded ? `✅ QR Load Completed (₹${loadAmount} loaded within 5 days)` :
+                           remainingDays > 1 ? `⏳ 5-Day QR Load Deadline: ${remainingDays} Din Bache Hain!` :
+                           remainingDays === 1 ? `⚠️ 5-Day QR Load Deadline: Sirf 1 Din Bacha Hai (Last Day)!` :
+                           remainingDays === 0 ? `⚠️ 5-Day QR Load Deadline: Aaj 5th Day Hai (Aakhri Mauka)!` :
+                           '❌ 5-Day QR Load Window Expired (Time Over)'}
+                        </Typography>
+                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mt: 0.3 }}>
+                          Approved Date: <strong>{appDateStr}</strong> • Current QR Load: <strong>₹{loadAmount}</strong> / ₹100
+                        </Typography>
+                      </Box>
+                      <Chip 
+                        size="small"
+                        label={isLoaded ? "Completed" : remainingDays > 1 ? `${remainingDays} Days Left` : remainingDays === 1 || remainingDays === 0 ? "Last Chance" : "Expired"}
+                        color={isLoaded ? "success" : remainingDays > 0 ? "warning" : "error"}
+                        sx={{ fontWeight: 700 }}
+                      />
+                    </Box>
+                  );
+                })()}
                 
                 {verification.passed !== undefined && verification.total !== undefined && (
                   <Typography variant="body2" sx={{ mb: 2, fontWeight: 600 }}>
@@ -2199,6 +2328,9 @@ const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmp
             } 
           }
         });
+        if (onUpdateVerifyMap) {
+          onUpdateVerifyMap(result, f);
+        }
       } else {
         setVerifyDetail({ form: f, loading: false, data: { verification: { status: 'Error', checks: [] } } });
       }
@@ -2397,10 +2529,34 @@ const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmp
                           <ProductChip product={getProduct(f)} form={f} verifyData={verifyMap[f._id]} />
                         </TableCell>
                         <TableCell>
-                          <VerifyChip
-                            status={verifyMap[f._id]?.status}
-                            onClick={() => openVerifyDetail(f)}
-                          />
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, flexWrap: 'wrap' }}>
+                            <VerifyChip
+                              status={verifyMap[f._id]?.status}
+                              onClick={() => openVerifyDetail(f)}
+                            />
+                            {(() => {
+                              const countdown = getQrLoadCountdown(verifyMap[f._id], f);
+                              if (!countdown || countdown.isDone) return null;
+                              return (
+                                <Tooltip title={`Tide 5-Day Window: Approved ke 5 din me ₹100 load hona chahiye. ${countdown.isExpired ? '5 din nikal chuke hain (Expired).' : countdown.remainingDays + ' din bache hain!'}`}>
+                                  <Chip
+                                    size="small"
+                                    label={`${countdown.icon} ${countdown.label}`}
+                                    onClick={() => openVerifyDetail(f)}
+                                    sx={{
+                                      fontSize: '11px',
+                                      fontWeight: 700,
+                                      bgcolor: countdown.bg,
+                                      color: countdown.color,
+                                      border: `1px solid ${countdown.color}50`,
+                                      cursor: 'pointer',
+                                      height: 22
+                                    }}
+                                  />
+                                </Tooltip>
+                              );
+                            })()}
+                          </Box>
                         </TableCell>
                         <TableCell>
                           <Typography variant="caption" color="text.secondary">{date}</Typography>
@@ -3737,6 +3893,7 @@ export default function MerchantForms({ onReady }) {
         points: rawPoints,
         rulesCache: bestRules,
         checks: bestChecks,
+        record: cachedEntry?.record || f.verificationChecks?.record || null,
         phoneMatch: cachedEntry?.phoneMatch ?? (f.verificationChecks?.phoneMatch || false),
         inSheet: cachedEntry?.inSheet ?? (f.verificationChecks?.matched || f.verificationChecks?.inSheet || false)
       };
