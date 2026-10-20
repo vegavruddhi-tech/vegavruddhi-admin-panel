@@ -7,7 +7,7 @@ import { BRAND } from "../theme";
 // import TideSelectionPopup from "../components/TideSelectionPopup";
 
 // Allowed admin emails — add more to REACT_APP_ADMIN_EMAILS in .env (comma-separated)
-const ALLOWED_EMAILS = (process.env.REACT_APP_ADMIN_EMAILS || "data.analyst@vegavruddhi.com")
+const ALLOWED_EMAILS = (process.env.REACT_APP_ADMIN_EMAILS || "data.analyst@vegavruddhi.com,manish.nair@vegavruddhi.com,saini.aryan9999@gmail.com,nksaroj2001@gmail.com,dheeraj.anand@vegavruddhi.com,er.vishalgiri2612@gmail.com,devam.srivastavads@gmail.com,amanraj005678@gmail.com")
   .split(",")
   .map(e => e.trim().toLowerCase())
   .filter(Boolean);
@@ -23,18 +23,9 @@ export default function Login({ onLogin }) {
       const decoded = jwtDecode(credentialResponse.credential);
       const email = (decoded.email || "").toLowerCase();
 
-      if (!ALLOWED_EMAILS.includes(email)) {
-        setError(`Access denied. "${decoded.email}" is not authorized to access this dashboard. Contact your administrator.`);
-        return;
-      }
+      let isAuthorized = ALLOWED_EMAILS.includes(email);
 
-      const authObj = {
-        email,
-        username: decoded.name || email,
-        picture: decoded.picture || "",
-      };
-
-      // Acquire backend Admin JWT token
+      // Acquire backend Admin JWT token & verify admin status with backend
       try {
         const empApi = process.env.REACT_APP_EMPLOYEE_API_URL || 'http://localhost:4000/api';
         const res = await fetch(`${empApi}/auth/google-admin-login`, {
@@ -44,12 +35,24 @@ export default function Login({ onLogin }) {
         });
         const data = await res.json();
         if (data.success && data.token) {
+          isAuthorized = true;
           localStorage.setItem('token', data.token);
           localStorage.setItem('emp_token', data.token);
         }
       } catch (err) {
         console.warn('Could not acquire admin token at login:', err);
       }
+
+      if (!isAuthorized) {
+        setError(`Access denied. "${decoded.email}" is not authorized to access this dashboard. Contact your administrator.`);
+        return;
+      }
+
+      const authObj = {
+        email,
+        username: decoded.name || email,
+        picture: decoded.picture || "",
+      };
 
       // Direct login without BT popup
       localStorage.setItem("vv_auth", JSON.stringify(authObj));
