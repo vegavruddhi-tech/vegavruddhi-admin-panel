@@ -2424,13 +2424,14 @@ const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmp
               const allForms4Emp = allEmpForms || forms;
               allForms4Emp.forEach(form => {
                 const formKey = getKey(form);
-                const verificationStatus = verifyMap[formKey]?.status;
+                const vItem = verifyMap[form._id] || verifyMap[formKey];
+                const verificationStatus = vItem?.status;
                 
                 // Only count if this specific form is Fully Verified
                 if (verificationStatus === 'Fully Verified') {
                   // ✅ FIXED: Use same priority order as backend
                   const rawProduct = form.formFillingFor || form.tideProduct || form.brand || '';
-                  const { displayLabel: product } = getProductDisplayLabel(rawProduct, form, verifyMap[formKey]);
+                  const { displayLabel: product } = getProductDisplayLabel(rawProduct, form, vItem);
                   
                   // Count every verified form (no deduplication)
                   if (!productBreakdown[product]) productBreakdown[product] = 0;
@@ -3068,12 +3069,17 @@ export default function MerchantForms({ onReady }) {
       const k1 = p ? `${form.customerNumber}__${p}` : form.customerNumber;
       const k2 = p ? `${form.customerNumber}__${p}__${m}` : `${form.customerNumber}__${m}`;
       
-      const updated = { ...prev, [k1]: verificationData, [k2]: verificationData };
+      const updated = {
+        ...prev,
+        [form._id]: verificationData,
+        [k1]: verificationData,
+        [k2]: verificationData
+      };
       
       // Also update window cache for fast session switching
       if (!window.vv_cache) window.vv_cache = {};
       window.vv_cache.universalVerify = updated;
-      console.log(`✅ Updated session verification cache for ${form.customerNumber}:`, verificationData.status);
+      console.log(`✅ Updated session verification cache for ${form.customerNumber} (${form._id}):`, verificationData.status);
       
       return updated;
     });
@@ -3914,7 +3920,7 @@ export default function MerchantForms({ onReady }) {
         ? cachedEntry.rulesCache
         : (f.verificationChecks?.rulesCache || {});
       
-      finalMap[f._id] = {
+      const verifyItem = {
         status: rawStatus,
         points: rawPoints,
         rulesCache: bestRules,
@@ -3923,6 +3929,9 @@ export default function MerchantForms({ onReady }) {
         phoneMatch: cachedEntry?.phoneMatch ?? (f.verificationChecks?.phoneMatch || false),
         inSheet: cachedEntry?.inSheet ?? (f.verificationChecks?.matched || f.verificationChecks?.inSheet || false)
       };
+      finalMap[f._id] = verifyItem;
+      if (vKey) finalMap[vKey] = verifyItem;
+      if (shortKey) finalMap[shortKey] = verifyItem;
     }
     
     setGlobalVerifyMap(finalMap);
