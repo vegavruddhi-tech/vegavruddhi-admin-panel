@@ -26,6 +26,7 @@ import { BRAND }          from '../theme';
 import JitsiMeeting       from '../components/JitsiMeeting';
 import TideMerchantTimeline from '../components/TideMerchantTimeline';
 import PriorityPassTracking from '../components/PriorityPassTracking';
+import LoanAppliedDialog from '../components/LoanAppliedDialog';
 
 // Module-level cache for loaded data to prevent loading spinners on tab switches
 // Cache is now stored globally on window.vv_cache.merchantForms
@@ -2028,14 +2029,19 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading, onD
                         }}>
                           {check.pass ? '✓' : '✗'}
                         </Box>
-                        <Box sx={{ flex: 1 }}>
-                          <Typography variant="body2" fontWeight={600}>
-                            {check.label}
-                          </Typography>
-                          {check.actual && (
-                            <Typography variant="caption" color="text.secondary">
-                              Value: {check.actual}
+                        <Box sx={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <Box>
+                            <Typography variant="body2" fontWeight={600}>
+                              {check.label}
                             </Typography>
+                            {check.actual && (
+                              <Typography variant="caption" color="text.secondary">
+                                Value: {check.actual}
+                              </Typography>
+                            )}
+                          </Box>
+                          {(check.isDisplayOnly || /cibil/i.test(check.field || '') || /cibil/i.test(check.label || '')) && (
+                            <Chip label="Display Only" size="small" sx={{ bgcolor: '#e0f2fe', color: '#0369a1', fontWeight: 700, fontSize: '0.65rem', height: 20 }} />
                           )}
                         </Box>
                       </Box>
@@ -2340,6 +2346,8 @@ const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmp
     }
   };
 
+  const resolvedTlName = tlData?.name || empData?.reportingManager || forms.find(f => f.tlName)?.tlName || '';
+
   return (
     <Card sx={{ mb: 2, border: `1.5px solid ${BRAND.primaryLight || '#c8e6c9'}`, borderRadius: 2 }}>
 
@@ -2364,7 +2372,7 @@ const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmp
           <Avatar sx={{ bgcolor: BRAND.primary }}>{initials(empName)}</Avatar>
 
           <Box>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
               <Typography fontWeight={700}>{empName}</Typography>
               {empData?.employeeId && (
                 <Typography variant="caption" sx={{ bgcolor: BRAND.primaryLight, color: BRAND.primary, fontWeight: 700, px: 1, py: 0.2, borderRadius: 1, fontSize: 10 }}>
@@ -2376,15 +2384,32 @@ const EmployeeGroup = React.memo(function EmployeeGroup({ empName, forms, allEmp
                   · {empData.newJoinerPhone}
                 </Typography>
               )}
+              {resolvedTlName && resolvedTlName.toLowerCase().trim() !== empName.toLowerCase().trim() && (
+                <Tooltip title={tlData?.phone ? `TL Phone: ${tlData.phone}` : `Reporting Manager: ${resolvedTlName}`}>
+                  <Typography
+                    variant="caption"
+                    sx={{
+                      bgcolor: '#f3e8ff',
+                      color: '#7c3aed',
+                      fontWeight: 700,
+                      px: 1,
+                      py: 0.2,
+                      borderRadius: 1,
+                      fontSize: 10,
+                      border: '1px solid #e9d5ff',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      cursor: 'default'
+                    }}
+                  >
+                    TL: {resolvedTlName}
+                  </Typography>
+                </Tooltip>
+              )}
             </Box>
             <Typography variant="caption" sx={{ display: 'block' }}>
               {forms.length} merchants
             </Typography>
-            {/* {tlData && (
-              <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block' }}>
-                TL: {tlData.name} · {tlData.phone}
-              </Typography>
-            )} */}
           </Box>
         </Box>
 
@@ -2804,6 +2829,7 @@ export default function MerchantForms({ onReady }) {
   const [exportAnchor, setExportAnchor] = useState(null);
   const [jitsiOpen, setJitsiOpen] = useState(false); // Jitsi meeting modal
   const [priorityPassOpen, setPriorityPassOpen] = useState(false); // Priority Pass tracking modal
+  const [loanAppliedOpen, setLoanAppliedOpen] = useState(false); // Loan Applied modal
   const [notifying,  setNotifying]  = useState(null); // index of dup being notified
   const [notifySnack, setNotifySnack] = useState('');
   const [settling,   setSettling]   = useState(null); // index of dup being settled
@@ -3992,6 +4018,62 @@ useEffect(() => {
     } catch (err) {}
   }, []);
 
+  // Helper to determine if a form has Loan Applied (PCS Quote Form = 'Yes')
+  const isLoanApplied = useCallback((f) => {
+    if (!f) return false;
+    const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
+    const vKey = p ? `${f.customerNumber}__${p}` : f.customerNumber;
+    const month = f?.createdAt ? (typeof formatFormMonth === 'function' ? formatFormMonth(f.createdAt) : '') : '';
+    const monthKey = p ? `${f.customerNumber}__${p}__${month}` : `${f.customerNumber}__${month}`;
+    const vData = globalVerifyMap[f._id] || (monthKey && globalVerifyMap[monthKey]) || (vKey && globalVerifyMap[vKey]) || globalVerifyMap[f.customerNumber];
+
+    // 1. Check in verification checks array
+    const checks = vData?.checks || f.verificationChecks?.checks;
+    if (checks && Array.isArray(checks)) {
+      const loanCheck = checks.find(c =>
+        c.field === 'pcs_quote_form' ||
+        c.field === 'loan_applied' ||
+        (c.label && (c.label.toLowerCase().includes('loan') || c.label.toLowerCase().includes('pcs quote')))
+      );
+      if (loanCheck) {
+        const val = String(loanCheck.actual ?? '').trim().toLowerCase();
+        if (val === 'yes' || val === 'true' || val === '1') return true;
+        if (val === 'no' || val === 'false' || val === '0') return false;
+      }
+    }
+
+    // 2. Check in sheet record
+    const rec = vData?.record || f.verificationChecks?.record;
+    if (rec && typeof rec === 'object') {
+      for (const [k, v] of Object.entries(rec)) {
+        const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '_');
+        if (cleanK === 'pcs_quote_form' || cleanK === 'loan_applied' || cleanK.includes('pcs_quote')) {
+          const vStr = String(v ?? '').trim().toLowerCase();
+          if (vStr === 'yes' || vStr === 'true' || vStr === '1') return true;
+          if (vStr === 'no' || vStr === 'false' || vStr === '0') return false;
+        }
+      }
+    }
+
+    // 3. Check directly on form object
+    if (typeof f === 'object') {
+      for (const [k, v] of Object.entries(f)) {
+        const cleanK = k.toLowerCase().replace(/[^a-z0-9]/g, '_');
+        if (cleanK === 'pcs_quote_form' || cleanK === 'loan_applied' || cleanK.includes('pcs_quote')) {
+          const vStr = String(v ?? '').trim().toLowerCase();
+          if (vStr === 'yes' || vStr === 'true' || vStr === '1') return true;
+        }
+      }
+    }
+
+    return false;
+  }, [globalVerifyMap]);
+
+  // List of all filtered forms that have Loan Applied
+  const loanAppliedForms = useMemo(() => {
+    return filteredForms.filter(f => isLoanApplied(f));
+  }, [filteredForms, isLoanApplied]);
+
   // Compute verification KPI counts from global map - Dynamic based on roleFilter
   const verifyKpiCounts = useMemo(() => {
     const counts = { 'Fully Verified': 0, 'Already Verified': 0, 'Critical Failure': 0, 'Partially Done': 0, 'Not Verified': 0, 'Not Found': 0 };
@@ -4311,24 +4393,13 @@ useEffect(() => {
           ? new Set(filteredForms.map(f => f.employeeName).filter(Boolean)).size 
           : groupedEntries.length;
         
-        // Calculate Priority Pass Active count (Tide merchants verified in selected month with active Priority Pass in future months)
-        // This requires checking future months, so we'll use a simpler approach for now
-        // Count Tide merchants fully verified in the selected month
-        const priorityPassActive = filteredForms.filter(f => {
-          // Only Tide product
-          const product = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
-          if (product !== 'tide') return false;
-          
-          // Only fully verified
-          const key = `${f.customerNumber}__tide`;
-          return globalVerifyMap[key]?.status === 'Fully Verified';
-        }).length;
+        const loanAppliedCount = loanAppliedForms.length;
         
         // 🔥 Log KPI values for debugging
         console.log(`📊 KPIs for ${roleFilter}:`, {
           filteredTotal,
           filteredEmps,
-          priorityPassActive,
+          loanAppliedCount,
           activeCount,
           settledDupCount,
           formsCount: forms.length
@@ -4339,38 +4410,38 @@ useEffect(() => {
         {[
           { label: roleFilter === 'ALL' ? 'Total Submissions' : `Total ${roleFilter} Submissions`, value: filteredTotal, color: BRAND.primary, bg: '#e6f4ea', key: 'total' },
           { label: roleFilter === 'ALL' ? 'Total FSEs' : `${roleFilter}s`, value: filteredEmps, color: '#1565c0', bg: '#e3f2fd', key: 'emp' },
-          { label: 'Priority Pass Active', value: priorityPassActive, color: '#7c3aed', bg: '#f3e5f5', key: 'priority' },
+          { label: 'Loan Applied', value: loanAppliedCount, color: '#7c3aed', bg: '#f3e5f5', key: 'loan_applied' },
           { label: 'Cross Duplicates',  value: activeCount,   color: '#c62828',     bg: '#fdecea', key: 'dup' },
           { label: 'Settled Duplicates',value: settledDupCount,  color: '#2e7d32',     bg: '#e6f4ea', key: 'settled' },
         ].map(k => (
           <Card key={k.label}
             onClick={
-              k.key === 'dup'      && activeCount   > 0 ? () => setDupOpen(true)     :
-              k.key === 'settled'  && settledDupCount  > 0 ? () => setSettledOpen(true) :
-              k.key === 'priority' && priorityPassActive > 0 ? () => setPriorityPassOpen(true) :
+              k.key === 'dup'          && activeCount      > 0 ? () => setDupOpen(true)         :
+              k.key === 'settled'      && settledDupCount  > 0 ? () => setSettledOpen(true)     :
+              k.key === 'loan_applied' && loanAppliedCount > 0 ? () => setLoanAppliedOpen(true) :
               undefined
             }
             sx={{
               borderRadius: 3,
               border: `1.5px solid ${k.color}20`,
-              cursor: (k.key === 'dup' && activeCount > 0) || (k.key === 'settled' && settledDupCount > 0) || (k.key === 'priority' && priorityPassActive > 0) ? 'pointer' : 'default',
+              cursor: (k.key === 'dup' && activeCount > 0) || (k.key === 'settled' && settledDupCount > 0) || (k.key === 'loan_applied' && loanAppliedCount > 0) ? 'pointer' : 'default',
               transition: 'box-shadow 0.2s, transform 0.15s',
               ...((k.key === 'dup' && activeCount > 0) && { '&:hover': { boxShadow: '0 4px 20px rgba(198,40,40,0.18)', transform: 'translateY(-2px)' } }),
               ...((k.key === 'settled' && settledDupCount > 0) && { '&:hover': { boxShadow: '0 4px 20px rgba(46,125,50,0.18)', transform: 'translateY(-2px)' } }),
-              ...((k.key === 'priority' && priorityPassActive > 0) && { '&:hover': { boxShadow: '0 4px 20px rgba(124,58,237,0.18)', transform: 'translateY(-2px)' } }),
+              ...((k.key === 'loan_applied' && loanAppliedCount > 0) && { '&:hover': { boxShadow: '0 4px 20px rgba(124,58,237,0.18)', transform: 'translateY(-2px)' } }),
             }}>
             <CardContent sx={{ py: { xs: 1, sm: 2 }, px: { xs: 1.5, sm: 2 } }}>
               <Typography variant="h4" fontWeight={800} sx={{ color: k.color, fontSize: { xs: '1.25rem', sm: '2rem' }, lineHeight: 1, mb: 0.5 }}>{k.value}</Typography>
               <Typography variant="body2" color="text.secondary" fontWeight={600} sx={{ fontSize: { xs: '0.65rem', sm: '0.875rem' }, lineHeight: 1.2 }}>
                 {k.label}
-                {((k.key === 'dup' && activeCount > 0) || (k.key === 'settled' && settledDupCount > 0) || (k.key === 'priority' && priorityPassActive > 0)) && (
+                {((k.key === 'dup' && activeCount > 0) || (k.key === 'settled' && settledDupCount > 0) || (k.key === 'loan_applied' && loanAppliedCount > 0)) && (
                   <Typography component="span" variant="caption" sx={{ ml: 1, color: k.color, fontWeight: 700, display: { xs: 'none', sm: 'inline' }, fontSize: '0.7rem' }}>
                     (click to view)
                   </Typography>
                 )}
-                {k.key === 'priority' && (
+                {k.key === 'loan_applied' && (
                   <Typography component="span" variant="caption" sx={{ display: 'block', mt: 0.3, color: k.color, opacity: 0.8, fontSize: { xs: '0.6rem', sm: '0.75rem' } }}>
-                    Tide · {selectedMonth.split(' ')[0]}
+                    PCS Quote · Yes
                   </Typography>
                 )}
               </Typography>
@@ -5374,6 +5445,15 @@ useEffect(() => {
         onClose={() => setPriorityPassOpen(false)}
         verificationMonth={selectedMonth}
         forms={forms}
+        globalVerifyMap={globalVerifyMap}
+      />
+
+      {/* Loan Applied Dialog */}
+      <LoanAppliedDialog
+        open={loanAppliedOpen}
+        onClose={() => setLoanAppliedOpen(false)}
+        forms={loanAppliedForms}
+        selectedMonth={selectedMonth}
         globalVerifyMap={globalVerifyMap}
       />
       <Snackbar

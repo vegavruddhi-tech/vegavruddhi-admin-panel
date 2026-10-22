@@ -127,7 +127,7 @@ const allFieldOptions = cond.field && !fieldOptions.includes(cond.field) && cond
           <Switch
             checked={cond.isCritical || false}
             onChange={e => onChange(index, "isCritical", e.target.checked)}
-            disabled={disabled}
+            disabled={disabled || cond.isDisplayOnly}
             size="small"
             color="error"
           />
@@ -136,6 +136,27 @@ const allFieldOptions = cond.field && !fieldOptions.includes(cond.field) && cond
           <Tooltip title="If checked, failure of this condition will show as 'Critical Failure' status">
             <Typography variant="caption" sx={{ color: cond.isCritical ? 'error.main' : 'text.secondary', fontWeight: cond.isCritical ? 600 : 400 }}>
               Critical
+            </Typography>
+          </Tooltip>
+        }
+        sx={{ ml: 1 }}
+      />
+
+      {/* Display Only Switch */}
+      <FormControlLabel
+        control={
+          <Switch
+            checked={cond.isDisplayOnly || false}
+            onChange={e => onChange(index, "isDisplayOnly", e.target.checked)}
+            disabled={disabled || cond.isCritical}
+            size="small"
+            color="primary"
+          />
+        }
+        label={
+          <Tooltip title="If checked, this field is for display/information only (e.g. CIBIL score). It will NEVER block Fully Verified status!">
+            <Typography variant="caption" sx={{ color: cond.isDisplayOnly ? 'primary.main' : 'text.secondary', fontWeight: cond.isDisplayOnly ? 700 : 400 }}>
+              Display Only
             </Typography>
           </Tooltip>
         }
@@ -180,11 +201,17 @@ function RuleCard({ rule, token, onSaved }) {
   };
 
   const handleCondChange = (i, key, val) => {
-    setConditions(prev => prev.map((c, idx) => idx === i ? { ...c, [key]: val } : c));
+    setConditions(prev => prev.map((c, idx) => {
+      if (idx !== i) return c;
+      const updated = { ...c, [key]: val };
+      if (key === 'isDisplayOnly' && val) updated.isCritical = false;
+      if (key === 'isCritical' && val) updated.isDisplayOnly = false;
+      return updated;
+    }));
   };
 
   const handleAddCond = () => {
-    setConditions(prev => [...prev, { field: "UPI_Active", operator: "equals", value: "Yes", label: "" }]);
+    setConditions(prev => [...prev, { field: "UPI_Active", operator: "equals", value: "Yes", label: "", isCritical: false, isDisplayOnly: false }]);
   };
 
   const handleDeleteCond = (i) => {
@@ -206,7 +233,8 @@ function RuleCard({ rule, token, onSaved }) {
           field, 
           values, 
           value: values.length > 0 ? values[0] : c.value,
-          isCritical: c.isCritical || false  // ← Explicitly include isCritical
+          isCritical: c.isCritical || false,
+          isDisplayOnly: c.isDisplayOnly || false  // ← Include isDisplayOnly
         };
       });
 
