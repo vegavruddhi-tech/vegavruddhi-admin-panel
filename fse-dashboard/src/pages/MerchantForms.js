@@ -2034,7 +2034,7 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading, onD
                             <Typography variant="body2" fontWeight={600}>
                               {check.label}
                             </Typography>
-                            {check.actual && (
+                            {(check.actual !== undefined && check.actual !== null && check.actual !== '') && (
                               <Typography variant="caption" color="text.secondary">
                                 Value: {check.actual}
                               </Typography>

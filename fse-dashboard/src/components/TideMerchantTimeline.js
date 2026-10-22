@@ -336,7 +336,7 @@ function TideMerchantTimeline({ phone, customerName }) {
                                   <Typography variant="body2" sx={{ fontWeight: 600, fontSize: 12 }}>
                                     {check.label}
                                   </Typography>
-                                  {check.actual && (
+                                  {(check.actual !== undefined && check.actual !== null && check.actual !== '') && (
                                     <Typography variant="caption" color="text.secondary" sx={{ fontSize: 10 }}>
                                       Value: {check.actual}
                                     </Typography>

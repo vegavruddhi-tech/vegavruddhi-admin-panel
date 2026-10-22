@@ -310,10 +310,14 @@ def process_sheet(sheet_id, label):
 
                 # 🔥 Calculate days difference between intent_date and approved_date
                 try:
-                    intent_d = parse_date(cleaned.get('intent_date'))
-                    approved_d = parse_date(cleaned.get('approved_date'))
+                    raw_intent = cleaned.get('intent_date') or cleaned.get('intent_onboarding_date') or cleaned.get('intent')
+                    raw_approved = cleaned.get('approved_date') or cleaned.get('approved_onboarding_date') or cleaned.get('approved')
+                    intent_d = parse_date(raw_intent)
+                    approved_d = parse_date(raw_approved)
                     if intent_d and approved_d:
                         cleaned['date_difference_days'] = max(0, (approved_d - intent_d).days)
+                    elif raw_intent and raw_approved:
+                        cleaned['date_difference_days'] = 0
                     else:
                         cleaned['date_difference_days'] = None
                 except Exception:
