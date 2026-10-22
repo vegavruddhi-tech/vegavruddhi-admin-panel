@@ -1827,13 +1827,59 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading, onD
   const product = getProduct(form);
 
   // Extract verification data (backend returns { verification, phoneCheck })
-  const verification = verifyData?.verification || verifyData;
+  const rawVerification = verifyData?.verification || verifyData;
   const phoneCheck = verifyData?.phoneCheck;
+
+  const getNormalizedVerification = () => {
+    if (!rawVerification || !rawVerification.checks) return rawVerification;
+    
+    let modified = false;
+    const checks = rawVerification.checks.map(c => {
+      const copy = { ...c };
+      if (copy.field === 'date_difference_days' && (copy.actual === 'N/A' || copy.actual === null || copy.actual === undefined || copy.actual === '')) {
+        const intentCheck = rawVerification.checks.find(k => k.field === 'intent_date');
+        const approvedCheck = rawVerification.checks.find(k => k.field === 'approved_date');
+        const rawIntent = intentCheck?.actual || rawVerification.record?.intent_date || form?.intent_date;
+        const rawApproved = approvedCheck?.actual || rawVerification.record?.approved_date || form?.approved_date;
+        if (rawIntent && rawApproved && rawIntent !== 'N/A' && rawApproved !== 'N/A') {
+          const d1 = new Date(rawIntent);
+          const d2 = new Date(rawApproved);
+          if (!isNaN(d1.getTime()) && !isNaN(d2.getTime())) {
+            const diffDays = Math.max(0, Math.round((d2 - d1) / (1000 * 60 * 60 * 24)));
+            copy.actual = diffDays;
+            const maxAllowed = parseFloat(copy.expected) || 7;
+            copy.pass = diffDays <= maxAllowed;
+            modified = true;
+          }
+        }
+      }
+      return copy;
+    });
+
+    if (!modified) return rawVerification;
+
+    const allPassed = checks.every(c => c.pass || c.isDisplayOnly);
+    const hasCriticalFail = checks.some(c => !c.pass && !c.isDisplayOnly && c.isCritical);
+    let status = rawVerification.status;
+    if (allPassed && status !== 'Already Verified') {
+      status = 'Fully Verified';
+    } else if (hasCriticalFail) {
+      status = 'Critical Failure';
+    }
+
+    return {
+      ...rawVerification,
+      checks,
+      status
+    };
+  };
+
+  const verification = getNormalizedVerification();
   
   // Notify parent when modal closes with fresh data
   const handleClose = () => {
-    if (verifyData && form && onDataFetched) {
-      onDataFetched(verifyData, form);
+    if (verification && form && onDataFetched) {
+      onDataFetched(verification, form);
     }
     onClose();
   };
