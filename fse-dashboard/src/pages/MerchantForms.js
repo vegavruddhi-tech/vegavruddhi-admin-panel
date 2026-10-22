@@ -1836,7 +1836,9 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading, onD
     let modified = false;
     const checks = rawVerification.checks.map(c => {
       const copy = { ...c };
-      if (copy.field === 'date_difference_days' && (copy.actual === 'N/A' || copy.actual === null || copy.actual === undefined || copy.actual === '')) {
+
+      // 1. Fallback for date_difference_days if backend returned N/A or failed
+      if (copy.field === 'date_difference_days' && (copy.actual === 'N/A' || copy.actual === null || copy.actual === undefined || copy.actual === '' || !copy.pass)) {
         const intentCheck = rawVerification.checks.find(k => k.field === 'intent_date');
         const approvedCheck = rawVerification.checks.find(k => k.field === 'approved_date');
         const rawIntent = intentCheck?.actual || rawVerification.record?.intent_date || form?.intent_date;
@@ -1853,19 +1855,40 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading, onD
           }
         }
       }
+
+      // 2. 🛡️ Display Only handling: if condition is marked display-only OR matches cibil_score
+      const isDisplayOnly = Boolean(
+        copy.isDisplayOnly || 
+        copy.displayOnly || 
+        /cibil/i.test(copy.field || '') || 
+        /cibil/i.test(copy.label || '')
+      );
+      if (isDisplayOnly) {
+        copy.isDisplayOnly = true;
+        copy.isCritical = false;
+        copy.pass = true; // Display only conditions NEVER fail
+        if (copy.actual === undefined || copy.actual === null || copy.actual === '') {
+          copy.actual = rawVerification.record?.cibil_score || form?.cibil_score || 'N/A';
+        }
+        modified = true;
+      }
+
       return copy;
     });
 
-    if (!modified) return rawVerification;
-
-    const allPassed = checks.every(c => c.pass || c.isDisplayOnly);
-    const hasCriticalFail = checks.some(c => !c.pass && !c.isDisplayOnly && c.isCritical);
+    const isDisplayCheck = (c) => Boolean(c.isDisplayOnly || /cibil/i.test(c.field || '') || /cibil/i.test(c.label || ''));
+    const allPassed = checks.every(c => c.pass || isDisplayCheck(c));
+    const hasCriticalFail = checks.some(c => !c.pass && !isDisplayCheck(c) && c.isCritical);
     let status = rawVerification.status;
     if (allPassed && status !== 'Already Verified') {
       status = 'Fully Verified';
+      modified = true;
     } else if (hasCriticalFail) {
       status = 'Critical Failure';
+      modified = true;
     }
+
+    if (!modified) return rawVerification;
 
     return {
       ...rawVerification,
@@ -3941,6 +3964,16 @@ export default function MerchantForms({ onReady }) {
 
       let rawStatus = cachedEntry?.status || f.verificationStatus || 'Not Found';
       let rawPoints = cachedEntry?.points ?? (f.verificationChecks?.points || 0);
+
+      // 🛡️ Normalization for Display Only fields (e.g. cibil_score)
+      const checksToCheck = cachedEntry?.checks || f.verificationChecks?.checks || [];
+      if (checksToCheck.length > 0) {
+        const isDisplayCheck = (c) => Boolean(c.isDisplayOnly || /cibil/i.test(c.field || '') || /cibil/i.test(c.label || ''));
+        const hasRealFailure = checksToCheck.some(c => !c.pass && !isDisplayCheck(c));
+        if (!hasRealFailure && rawStatus === 'Critical Failure') {
+          rawStatus = 'Fully Verified';
+        }
+      }
 
       // 🔥 FRONTEND DEDUPLICATION: Ensure exactly one Fully Verified form per merchant/product
       if (rawStatus === 'Fully Verified' || rawStatus === 'Already Verified') {
