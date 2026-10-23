@@ -1908,6 +1908,43 @@ function evaluateConditionPass(actual, operator, expected) {
   }
 }
 
+// Global set for dynamically discovered display-only rule field names & labels from MongoDB
+const globalDisplayOnlySet = new Set(['cibil_score', 'cibil', 'bank_transfer', 'bank transfer amount']);
+
+// Helper to determine if a check is display-only
+function isDisplayOnlyCheck(c) {
+  if (!c) return false;
+  if (c.isDisplayOnly || c.displayOnly) return true;
+  const field = String(c.field || '').toLowerCase().trim();
+  const label = String(c.label || '').toLowerCase().trim();
+  if (/cibil/i.test(field) || /cibil/i.test(label)) return true;
+  if (/bank.*transfer/i.test(field) || /bank.*transfer/i.test(label)) return true;
+  if (field && globalDisplayOnlySet.has(field)) return true;
+  if (label && globalDisplayOnlySet.has(label)) return true;
+  return false;
+}
+
+// Dynamically fetch and sync display only rules from MongoDB
+async function syncDisplayOnlyRules() {
+  try {
+    const res = await fetch(`${EMP_API}/verify/rules`);
+    if (res.ok) {
+      const rules = await res.json();
+      if (Array.isArray(rules)) {
+        rules.forEach(r => {
+          (r.conditions || []).forEach(c => {
+            if (c.isDisplayOnly || c.displayOnly) {
+              if (c.field) globalDisplayOnlySet.add(String(c.field).toLowerCase().trim());
+              if (c.label) globalDisplayOnlySet.add(String(c.label).toLowerCase().trim());
+            }
+          });
+        });
+      }
+    }
+  } catch { /* ignore network error, defaults already protect */ }
+}
+syncDisplayOnlyRules();
+
 // ── Verification Detail Modal ─────────────────────────────────
 function VerificationDetailModal({ open, onClose, form, verifyData, loading, onDataFetched }) {
   if (!form) return null;
@@ -1946,12 +1983,7 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading, onD
       }
 
       // 2. 🛡️ Display Only handling: dynamic condition evaluation (✓ pass / ✗ fail) without blocking Fully Verified
-      const isDisplayOnly = Boolean(
-        copy.isDisplayOnly || 
-        copy.displayOnly || 
-        /cibil/i.test(copy.field || '') || 
-        /cibil/i.test(copy.label || '')
-      );
+      const isDisplayOnly = isDisplayOnlyCheck(copy);
       if (isDisplayOnly) {
         copy.isDisplayOnly = true;
         copy.isCritical = false;
@@ -1981,9 +2013,8 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading, onD
       return copy;
     });
 
-    const isDisplayCheck = (c) => Boolean(c.isDisplayOnly || /cibil/i.test(c.field || '') || /cibil/i.test(c.label || ''));
-    const allPassed = checks.every(c => c.pass || isDisplayCheck(c));
-    const hasCriticalFail = checks.some(c => !c.pass && !isDisplayCheck(c) && c.isCritical);
+    const allPassed = checks.every(c => c.pass || isDisplayOnlyCheck(c));
+    const hasCriticalFail = checks.some(c => !c.pass && !isDisplayOnlyCheck(c) && c.isCritical);
     let status = rawVerification.status;
     if (allPassed && status !== 'Already Verified') {
       status = 'Fully Verified';
@@ -2219,7 +2250,7 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading, onD
                               </Typography>
                             )}
                           </Box>
-                          {(check.isDisplayOnly || /cibil/i.test(check.field || '') || /cibil/i.test(check.label || '')) && (
+                          {isDisplayOnlyCheck(check) && (
                             <Chip label="Display Only" size="small" sx={{ bgcolor: '#e0f2fe', color: '#0369a1', fontWeight: 700, fontSize: '0.65rem', height: 20 }} />
                           )}
                         </Box>
@@ -4103,12 +4134,7 @@ export default function MerchantForms({ onReady }) {
           }
 
           // 2. Display Only handling (e.g. cibil_score, bank_amount, etc.)
-          const isDisplayOnly = Boolean(
-            copy.isDisplayOnly || 
-            copy.displayOnly || 
-            /cibil/i.test(copy.field || '') || 
-            /cibil/i.test(copy.label || '')
-          );
+          const isDisplayOnly = isDisplayOnlyCheck(copy);
           if (isDisplayOnly) {
             copy.isDisplayOnly = true;
             copy.isCritical = false;
@@ -4138,9 +4164,8 @@ export default function MerchantForms({ onReady }) {
           return copy;
         });
 
-        const isDisplayCheck = (c) => Boolean(c.isDisplayOnly || /cibil/i.test(c.field || '') || /cibil/i.test(c.label || ''));
-        const allPassed = checksToCheck.every(c => c.pass || isDisplayCheck(c));
-        const hasRealCriticalFail = checksToCheck.some(c => !c.pass && !isDisplayCheck(c) && c.isCritical);
+        const allPassed = checksToCheck.every(c => c.pass || isDisplayOnlyCheck(c));
+        const hasRealCriticalFail = checksToCheck.some(c => !c.pass && !isDisplayOnlyCheck(c) && c.isCritical);
 
         if (allPassed && rawStatus !== 'Already Verified' && rawStatus !== 'Not Found') {
           rawStatus = 'Fully Verified';
