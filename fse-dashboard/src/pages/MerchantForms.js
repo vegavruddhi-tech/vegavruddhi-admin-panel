@@ -3965,13 +3965,57 @@ export default function MerchantForms({ onReady }) {
       let rawStatus = cachedEntry?.status || f.verificationStatus || 'Not Found';
       let rawPoints = cachedEntry?.points ?? (f.verificationChecks?.points || 0);
 
-      // 🛡️ Normalization for Display Only fields (e.g. cibil_score)
-      const checksToCheck = cachedEntry?.checks || f.verificationChecks?.checks || [];
+      // 🛡️ Normalization for Display Only fields (e.g. cibil_score) & date_difference_days fallback
+      let checksToCheck = (cachedEntry?.checks && cachedEntry.checks.length > 0) 
+        ? cachedEntry.checks 
+        : (f.verificationChecks?.checks || []);
+
       if (checksToCheck.length > 0) {
+        checksToCheck = checksToCheck.map(c => {
+          const copy = { ...c };
+
+          // 1. Fallback for date_difference_days if backend returned N/A, null or failed
+          if (copy.field === 'date_difference_days' && (!copy.pass || copy.actual === 'N/A' || copy.actual === null || copy.actual === undefined || copy.actual === '')) {
+            const intentCheck = checksToCheck.find(k => k.field === 'intent_date');
+            const approvedCheck = checksToCheck.find(k => k.field === 'approved_date');
+            const rawIntent = intentCheck?.actual || f.verificationChecks?.record?.intent_date || f.intent_date;
+            const rawApproved = approvedCheck?.actual || f.verificationChecks?.record?.approved_date || f.approved_date;
+            if (rawIntent && rawApproved && rawIntent !== 'N/A' && rawApproved !== 'N/A') {
+              const d1 = new Date(rawIntent);
+              const d2 = new Date(rawApproved);
+              if (!isNaN(d1.getTime()) && !isNaN(d2.getTime())) {
+                const diffDays = Math.max(0, Math.round((d2 - d1) / (1000 * 60 * 60 * 24)));
+                copy.actual = diffDays;
+                const maxAllowed = parseFloat(copy.expected) || 7;
+                copy.pass = diffDays <= maxAllowed;
+              }
+            }
+          }
+
+          // 2. Display Only handling (e.g. cibil_score)
+          const isDisplayOnly = Boolean(
+            copy.isDisplayOnly || 
+            copy.displayOnly || 
+            /cibil/i.test(copy.field || '') || 
+            /cibil/i.test(copy.label || '')
+          );
+          if (isDisplayOnly) {
+            copy.isDisplayOnly = true;
+            copy.isCritical = false;
+            copy.pass = true;
+          }
+
+          return copy;
+        });
+
         const isDisplayCheck = (c) => Boolean(c.isDisplayOnly || /cibil/i.test(c.field || '') || /cibil/i.test(c.label || ''));
-        const hasRealFailure = checksToCheck.some(c => !c.pass && !isDisplayCheck(c));
-        if (!hasRealFailure && rawStatus === 'Critical Failure') {
+        const allPassed = checksToCheck.every(c => c.pass || isDisplayCheck(c));
+        const hasRealCriticalFail = checksToCheck.some(c => !c.pass && !isDisplayCheck(c) && c.isCritical);
+
+        if (allPassed && rawStatus !== 'Already Verified' && rawStatus !== 'Not Found') {
           rawStatus = 'Fully Verified';
+        } else if (hasRealCriticalFail && rawStatus !== 'Already Verified' && rawStatus !== 'Not Found') {
+          rawStatus = 'Critical Failure';
         }
       }
 
@@ -3991,9 +4035,7 @@ export default function MerchantForms({ onReady }) {
         rawPoints = FALLBACK_POINTS[baseProduct] || 0;
       }
       
-      const bestChecks = (cachedEntry?.checks && cachedEntry.checks.length > 0) 
-        ? cachedEntry.checks 
-        : (f.verificationChecks?.checks || []);
+      const bestChecks = checksToCheck;
         
       const bestRules = (cachedEntry?.rulesCache && Object.keys(cachedEntry.rulesCache).length > 0)
         ? cachedEntry.rulesCache
