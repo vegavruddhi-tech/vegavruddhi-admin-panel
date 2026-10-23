@@ -1819,6 +1819,95 @@ function VerifyChip({ status, onClick }) {
   );
 }
 
+// ── Helper to retrieve a field value case-insensitively from a record ──
+function getRecordVal(record, field) {
+  if (!record || !field) return undefined;
+  if (record[field] !== undefined) return record[field];
+  const target = String(field).toLowerCase().replace(/[^a-z0-9]/g, '');
+  const matchKey = Object.keys(record).find(k => String(k).toLowerCase().replace(/[^a-z0-9]/g, '') === target);
+  return matchKey ? record[matchKey] : undefined;
+}
+
+// ── Evaluate condition dynamically for Verification Checks ──────
+function evaluateConditionPass(actual, operator, expected) {
+  // If no operator or no expected threshold is defined, condition passes/pure display
+  if (!operator || expected === undefined || expected === null || expected === '') {
+    return true;
+  }
+  
+  // If actual value is missing or N/A
+  if (actual === undefined || actual === null || actual === '' || actual === 'N/A') {
+    return false;
+  }
+
+  // Helper to parse clean number (e.g. ₹100 or "100.50" or 100)
+  const parseNum = (val) => {
+    if (typeof val === 'number') return val;
+    if (typeof val === 'string') {
+      const cleaned = val.replace(/[^0-9.-]/g, '');
+      if (!cleaned) return null;
+      const parsed = parseFloat(cleaned);
+      return isNaN(parsed) ? null : parsed;
+    }
+    return null;
+  };
+
+  const numActual = parseNum(actual);
+  const numExpected = parseNum(expected);
+  const bothNumeric = numActual !== null && numExpected !== null;
+
+  const op = String(operator).toLowerCase().trim();
+
+  switch (op) {
+    case 'greater_than_or_equal':
+    case 'gte':
+    case '>=':
+      return bothNumeric ? numActual >= numExpected : false;
+
+    case 'greater_than':
+    case 'gt':
+    case '>':
+      return bothNumeric ? numActual > numExpected : false;
+
+    case 'less_than_or_equal':
+    case 'lte':
+    case '<=':
+      return bothNumeric ? numActual <= numExpected : false;
+
+    case 'less_than':
+    case 'lt':
+    case '<':
+      return bothNumeric ? numActual < numExpected : false;
+
+    case 'equals':
+    case 'eq':
+    case '==': {
+      if (bothNumeric) return numActual === numExpected;
+      return String(actual).trim().toLowerCase() === String(expected).trim().toLowerCase();
+    }
+
+    case 'not_equals':
+    case 'ne':
+    case '!=': {
+      if (bothNumeric) return numActual !== numExpected;
+      return String(actual).trim().toLowerCase() !== String(expected).trim().toLowerCase();
+    }
+
+    case 'in': {
+      const list = Array.isArray(expected) 
+        ? expected.map(x => String(x).trim().toLowerCase())
+        : String(expected).split(',').map(x => x.trim().toLowerCase());
+      return list.includes(String(actual).trim().toLowerCase());
+    }
+
+    case 'exists':
+      return actual !== undefined && actual !== null && actual !== '' && actual !== 'N/A';
+
+    default:
+      return String(actual).trim().toLowerCase() === String(expected).trim().toLowerCase();
+  }
+}
+
 // ── Verification Detail Modal ─────────────────────────────────
 function VerificationDetailModal({ open, onClose, form, verifyData, loading, onDataFetched }) {
   if (!form) return null;
@@ -1856,7 +1945,7 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading, onD
         }
       }
 
-      // 2. 🛡️ Display Only handling: if condition is marked display-only OR matches cibil_score
+      // 2. 🛡️ Display Only handling: dynamic condition evaluation (✓ pass / ✗ fail) without blocking Fully Verified
       const isDisplayOnly = Boolean(
         copy.isDisplayOnly || 
         copy.displayOnly || 
@@ -1866,9 +1955,25 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading, onD
       if (isDisplayOnly) {
         copy.isDisplayOnly = true;
         copy.isCritical = false;
-        copy.pass = true; // Display only conditions NEVER fail
-        if (copy.actual === undefined || copy.actual === null || copy.actual === '') {
-          copy.actual = rawVerification.record?.cibil_score || form?.cibil_score || 'N/A';
+
+        // Resolve actual value if missing or N/A
+        if (copy.actual === undefined || copy.actual === null || copy.actual === '' || copy.actual === 'N/A') {
+          const found = getRecordVal(rawVerification.record, copy.field) ?? 
+                        getRecordVal(form, copy.field) ?? 
+                        rawVerification.record?.cibil_score ?? 
+                        form?.cibil_score;
+          if (found !== undefined && found !== null && found !== '') {
+            copy.actual = found;
+          } else {
+            copy.actual = 'N/A';
+          }
+        }
+
+        // Dynamically evaluate condition if operator & expected exist
+        if (copy.operator && copy.expected !== undefined && copy.expected !== null && copy.expected !== '') {
+          copy.pass = evaluateConditionPass(copy.actual, copy.operator, copy.expected);
+        } else if (copy.pass === undefined) {
+          copy.pass = true;
         }
         modified = true;
       }
@@ -2106,6 +2211,11 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading, onD
                             {(check.actual !== undefined && check.actual !== null && check.actual !== '') && (
                               <Typography variant="caption" color="text.secondary">
                                 Value: {check.actual}
+                                {(check.operator && check.expected !== undefined && check.expected !== null && check.expected !== '') ? (
+                                  <span style={{ marginLeft: 6, opacity: 0.85, fontWeight: 500 }}>
+                                    (Rule: {check.operator === 'greater_than_or_equal' || check.operator === 'gte' ? '>=' : check.operator === 'less_than_or_equal' || check.operator === 'lte' ? '<=' : check.operator === 'greater_than' || check.operator === 'gt' ? '>' : check.operator === 'less_than' || check.operator === 'lt' ? '<' : check.operator === 'equals' ? '==' : check.operator} {String(check.expected)})
+                                  </span>
+                                ) : null}
                               </Typography>
                             )}
                           </Box>
@@ -3992,7 +4102,7 @@ export default function MerchantForms({ onReady }) {
             }
           }
 
-          // 2. Display Only handling (e.g. cibil_score)
+          // 2. Display Only handling (e.g. cibil_score, bank_amount, etc.)
           const isDisplayOnly = Boolean(
             copy.isDisplayOnly || 
             copy.displayOnly || 
@@ -4002,7 +4112,27 @@ export default function MerchantForms({ onReady }) {
           if (isDisplayOnly) {
             copy.isDisplayOnly = true;
             copy.isCritical = false;
-            copy.pass = true;
+
+            // Resolve actual value if missing or N/A
+            const recordObj = cachedEntry?.record || f.verificationChecks?.record || {};
+            if (copy.actual === undefined || copy.actual === null || copy.actual === '' || copy.actual === 'N/A') {
+              const found = getRecordVal(recordObj, copy.field) ?? 
+                            getRecordVal(f, copy.field) ?? 
+                            recordObj?.cibil_score ?? 
+                            f?.cibil_score;
+              if (found !== undefined && found !== null && found !== '') {
+                copy.actual = found;
+              } else {
+                copy.actual = 'N/A';
+              }
+            }
+
+            // Dynamically evaluate condition if operator & expected exist
+            if (copy.operator && copy.expected !== undefined && copy.expected !== null && copy.expected !== '') {
+              copy.pass = evaluateConditionPass(copy.actual, copy.operator, copy.expected);
+            } else if (copy.pass === undefined) {
+              copy.pass = true;
+            }
           }
 
           return copy;
