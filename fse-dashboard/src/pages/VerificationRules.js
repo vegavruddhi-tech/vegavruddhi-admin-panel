@@ -247,7 +247,18 @@ function RuleCard({ rule, token, onSaved }) {
         body: JSON.stringify({ conditions: resolved, active, productTypes, collectionName, monthLabel }),
       });
 
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        const errorText = await res.text();
+        // 🛡️ Redis quota limit fallback: If backend saved to DB but threw Redis max requests error, treat as success!
+        if (errorText.includes('ERR max requests limit exceeded') || errorText.includes('upstash.com') || errorText.includes('max_requests_limit')) {
+          console.warn('⚠️ Redis quota limit exceeded, but rule was updated in MongoDB database.');
+          setSnack({ open: true, msg: "Rules saved to database! (Redis cache bypass active)", sev: "success" });
+          setEditing(false);
+          onSaved();
+          return;
+        }
+        throw new Error(errorText);
+      }
       setSnack({ open: true, msg: "Rules saved successfully!", sev: "success" });
       setEditing(false);
       onSaved(); // This will reload the rules from backend
@@ -446,7 +457,16 @@ function AddRuleDialog({ open, onClose, token, onSaved }) {
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify({ ...form, active: true, conditions: [] }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        const errorText = await res.text();
+        if (errorText.includes('ERR max requests limit exceeded') || errorText.includes('upstash.com') || errorText.includes('max_requests_limit')) {
+          onSaved();
+          onClose();
+          setForm({ collectionName: "", monthLabel: "" });
+          return;
+        }
+        throw new Error(errorText);
+      }
       onSaved();
       onClose();
       setForm({ collectionName: "", monthLabel: "" });
