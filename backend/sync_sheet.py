@@ -373,7 +373,7 @@ if __name__ == "__main__":
         import time
         
         try:
-            api_url = os.getenv('API_URL', 'https://vegavruddhi-employee-panel.vercel.app')
+            api_url = os.getenv('API_URL', 'https://empbackend.vegavruddhi.com')
             current_month = datetime.now().strftime("%B %Y")
             logging.info(f"🚀 Calling pre-computation API for active month ({current_month}): {api_url}/api/verify/precompute-all?month={current_month}")
             
