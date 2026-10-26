@@ -263,7 +263,7 @@ function RuleCard({ rule, token, onSaved }) {
           console.warn('⚠️ Redis quota limit exceeded, but rule was updated in MongoDB database.');
           setSnack({ open: true, msg: "Rules saved to database! (Redis cache bypass active)", sev: "success" });
           setEditing(false);
-          onSaved();
+          onSaved(rule.monthLabel);
           return;
         }
         throw new Error(errorText);
@@ -274,7 +274,7 @@ function RuleCard({ rule, token, onSaved }) {
       }
       setSnack({ open: true, msg: "Rules saved successfully!", sev: "success" });
       setEditing(false);
-      onSaved(); // This will reload the rules from backend
+      onSaved(rule.monthLabel); // This will reload the rules and recalculate this month
     } catch (err) {
       setSnack({ open: true, msg: "Save failed: " + err.message, sev: "error" });
     } finally {
@@ -546,14 +546,17 @@ export default function VerificationRules({ token: propToken, onReady }) {
 
   useEffect(() => { load(); }, [load]);
 
-  const handleRuleSaved = useCallback(async () => {
+  const handleRuleSaved = useCallback(async (savedMonthLabel) => {
     // 1. First reload the rules list immediately
     load();
     // 2. Trigger background precomputation and toaster
     setRecomputing(true);
-    setRecomputeMsg("⚡ Rule updated! Re-calculating all employee verifications in background...");
+    setRecomputeMsg("⚡ Rule updated! Re-calculating employee verifications in background...");
     try {
-      await fetch(`${EMPLOYEE_API}/verify/precompute-all?force=true`, { method: 'POST' });
+      const monthQuery = (typeof savedMonthLabel === 'string' && savedMonthLabel)
+        ? `&month=${encodeURIComponent(savedMonthLabel)}`
+        : '&month=current';
+      await fetch(`${EMPLOYEE_API}/verify/precompute-all?force=true${monthQuery}`, { method: 'POST' });
       const interval = setInterval(async () => {
         try {
           const res = await fetch(`${EMPLOYEE_API}/verify/status`);

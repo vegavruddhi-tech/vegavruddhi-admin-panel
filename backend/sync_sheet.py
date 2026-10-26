@@ -374,12 +374,13 @@ if __name__ == "__main__":
         
         try:
             api_url = os.getenv('API_URL', 'https://vegavruddhi-employee-panel.vercel.app')
-            logging.info(f"🚀 Calling pre-computation API: {api_url}/api/verify/precompute-all")
+            current_month = datetime.now().strftime("%B %Y")
+            logging.info(f"🚀 Calling pre-computation API for active month ({current_month}): {api_url}/api/verify/precompute-all?month={current_month}")
             
             start_time = time.time()
             response = requests.post(
-                f'{api_url}/api/verify/precompute-all',
-                timeout=600  # 10 minutes timeout
+                f'{api_url}/api/verify/precompute-all?month={current_month}',
+                timeout=120
             )
             elapsed = time.time() - start_time
             
