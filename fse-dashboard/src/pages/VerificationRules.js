@@ -533,10 +533,7 @@ export default function VerificationRules({ token: propToken, onReady }) {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`${EMPLOYEE_API}/verify/rules?t=${Date.now()}`, {
-        cache: 'no-store',
-        headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache' }
-      });
+      const res = await fetch(`${EMPLOYEE_API}/verify/rules?t=${Date.now()}`);
       if (!res.ok && res.status !== 304) throw new Error("Failed to load rules — is the employee server running on port 4000?");
       const data = await res.json();
       setRules(data);
