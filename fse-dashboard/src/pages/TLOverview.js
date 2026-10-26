@@ -495,7 +495,21 @@ export default function TLOverview({ firstLoad = true, onLoaded }) {
     allForms.forEach(f => {
       const p = (f.formFillingFor || f.tideProduct || f.brand || '').toLowerCase().trim();
       const key = p ? `${f.customerNumber}__${p}` : f.customerNumber;
-      const s = f.verificationStatus || f.verificationChecks?.status || 'Not Found';
+      let s = f.verificationStatus || f.verificationChecks?.status || 'Not Found';
+      // 🛡️ Normalization for Display Only checks
+      const rawChecks = f.verificationChecks?.checks;
+      if (Array.isArray(rawChecks) && rawChecks.length > 0 && s !== 'Not Found' && s !== 'Already Verified') {
+        const isDisplayCheck = (c) => Boolean(
+          c.isDisplayOnly || c.displayOnly ||
+          /cibil/i.test(c.field || '') || /cibil/i.test(c.label || '') ||
+          /bank.*transfer/i.test(c.field || '') || /bank.*transfer/i.test(c.label || '')
+        );
+        const allPassed = rawChecks.every(c => c.pass || isDisplayCheck(c));
+        const hasCritical = rawChecks.some(c => !c.pass && !isDisplayCheck(c) && c.isCritical);
+        if (allPassed && !hasCritical) {
+          s = 'Fully Verified';
+        }
+      }
       map[key] = { status: s, points: f.verificationChecks?.points || 0, manualVerification: f.verificationChecks?.manualVerification };
     });
     setGlobalVerifyMap(map);

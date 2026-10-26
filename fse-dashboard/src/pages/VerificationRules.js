@@ -186,6 +186,15 @@ function RuleCard({ rule, token, onSaved }) {
   const [collectionName, setCollectionName] = useState(rule.collectionName || "");
   const [monthLabel,     setMonthLabel]     = useState(rule.monthLabel || "");
 
+  // Sync state whenever rule prop updates
+  useEffect(() => {
+    setConditions(rule.conditions || []);
+    setActive(rule.active);
+    setProductTypes(rule.productTypes || []);
+    setCollectionName(rule.collectionName || "");
+    setMonthLabel(rule.monthLabel || "");
+  }, [rule]);
+
   // Load real column names from the collection when editing starts
   const loadColumns = async () => {
     if (collectionColumns.length > 0) return; // already loaded
@@ -233,8 +242,8 @@ function RuleCard({ rule, token, onSaved }) {
           field, 
           values, 
           value: values.length > 0 ? values[0] : c.value,
-          isCritical: c.isCritical || false,
-          isDisplayOnly: c.isDisplayOnly || false  // ← Include isDisplayOnly
+          isCritical: Boolean(c.isCritical),
+          isDisplayOnly: Boolean(c.isDisplayOnly)  // ← Include isDisplayOnly explicitly
         };
       });
 
@@ -258,6 +267,10 @@ function RuleCard({ rule, token, onSaved }) {
           return;
         }
         throw new Error(errorText);
+      }
+      const savedRule = await res.json().catch(() => null);
+      if (savedRule && savedRule.conditions) {
+        setConditions(savedRule.conditions);
       }
       setSnack({ open: true, msg: "Rules saved successfully!", sev: "success" });
       setEditing(false);
@@ -512,7 +525,7 @@ export default function VerificationRules({ token: propToken, onReady }) {
   const [recomputeMsg, setRecomputeMsg] = useState("");
 
   // Allow admin to paste a JWT token from the employee app
-  const [token, setToken] = useState(propToken || localStorage.getItem("emp_token") || "");
+  const [token, setToken] = useState(propToken || localStorage.getItem("emp_token") || localStorage.getItem("token") || "");
   const [tokenInput, setTokenInput] = useState("");
   const [showTokenForm, setShowTokenForm] = useState(!token);
 
@@ -520,7 +533,10 @@ export default function VerificationRules({ token: propToken, onReady }) {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch(`${EMPLOYEE_API}/verify/rules`);
+      const res = await fetch(`${EMPLOYEE_API}/verify/rules?t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache, no-store, must-revalidate', 'Pragma': 'no-cache' }
+      });
       if (!res.ok && res.status !== 304) throw new Error("Failed to load rules — is the employee server running on port 4000?");
       const data = await res.json();
       setRules(data);
@@ -698,7 +714,7 @@ export default function VerificationRules({ token: propToken, onReady }) {
       )}
 
       {!loading && rules.map(rule => (
-        <RuleCard key={rule._id} rule={rule} token={token} onSaved={handleRuleSaved} />
+        <RuleCard key={`${rule._id}_${rule.updatedAt || ''}`} rule={rule} token={token} onSaved={handleRuleSaved} />
       ))}
 
       <AddRuleDialog open={addOpen} onClose={() => setAddOpen(false)} token={token} onSaved={handleRuleSaved} />
