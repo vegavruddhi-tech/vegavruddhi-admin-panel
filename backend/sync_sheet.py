@@ -315,9 +315,14 @@ def process_sheet(sheet_id, label):
                     intent_d = parse_date(raw_intent)
                     approved_d = parse_date(raw_approved)
                     if intent_d and approved_d:
-                        cleaned['date_difference_days'] = max(0, (approved_d - intent_d).days)
+                        diff_days = max(0, (approved_d - intent_d).days)
+                        cleaned['date_difference_days'] = diff_days
+                        if not cleaned.get('intent_to_approved_difference') or str(cleaned.get('intent_to_approved_difference')).strip() in ['', 'None', 'null', 'N/A']:
+                            cleaned['intent_to_approved_difference'] = str(diff_days)
                     elif raw_intent and raw_approved:
                         cleaned['date_difference_days'] = 0
+                        if not cleaned.get('intent_to_approved_difference') or str(cleaned.get('intent_to_approved_difference')).strip() in ['', 'None', 'null', 'N/A']:
+                            cleaned['intent_to_approved_difference'] = '0'
                     else:
                         cleaned['date_difference_days'] = None
                 except Exception:

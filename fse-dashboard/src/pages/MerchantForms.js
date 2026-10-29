@@ -1963,10 +1963,17 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading, onD
     const checks = rawVerification.checks.map(c => {
       const copy = { ...c };
 
-      // 1. Fallback for date_difference_days if backend returned N/A or failed
-      if (copy.field === 'date_difference_days' && (copy.actual === 'N/A' || copy.actual === null || copy.actual === undefined || copy.actual === '' || !copy.pass)) {
-        const intentCheck = rawVerification.checks.find(k => k.field === 'intent_date');
-        const approvedCheck = rawVerification.checks.find(k => k.field === 'approved_date');
+      // 1. Fallback for date_difference_days & intent_to_approved_difference if backend returned N/A or failed
+      const isDateDiff = copy.field === 'date_difference_days' || 
+                         copy.field === 'date_difference' || 
+                         copy.field === 'intent_to_approved_difference' ||
+                         /intent.*approv.*diff/i.test(copy.field || '') ||
+                         /intent.*approv.*diff/i.test(copy.label || '') ||
+                         /date.*diff/i.test(copy.field || '');
+
+      if (isDateDiff && (copy.actual === 'N/A' || copy.actual === null || copy.actual === undefined || copy.actual === '' || !copy.pass)) {
+        const intentCheck = rawVerification.checks.find(k => k.field === 'intent_date' || /intent.*date/i.test(k.field || ''));
+        const approvedCheck = rawVerification.checks.find(k => k.field === 'approved_date' || /approved.*date/i.test(k.field || ''));
         const rawIntent = intentCheck?.actual || rawVerification.record?.intent_date || form?.intent_date;
         const rawApproved = approvedCheck?.actual || rawVerification.record?.approved_date || form?.approved_date;
         if (rawIntent && rawApproved && rawIntent !== 'N/A' && rawApproved !== 'N/A') {
@@ -1974,6 +1981,14 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading, onD
           const d2 = new Date(rawApproved);
           if (!isNaN(d1.getTime()) && !isNaN(d2.getTime())) {
             const diffDays = Math.max(0, Math.round((d2 - d1) / (1000 * 60 * 60 * 24)));
+            copy.actual = diffDays;
+            const maxAllowed = parseFloat(copy.expected) || 7;
+            copy.pass = diffDays <= maxAllowed;
+            modified = true;
+          }
+        } else if (rawVerification.record?.date_difference_days !== undefined && rawVerification.record?.date_difference_days !== null && rawVerification.record?.date_difference_days !== '') {
+          const diffDays = Number(rawVerification.record.date_difference_days);
+          if (!isNaN(diffDays)) {
             copy.actual = diffDays;
             const maxAllowed = parseFloat(copy.expected) || 7;
             copy.pass = diffDays <= maxAllowed;
@@ -2013,13 +2028,13 @@ function VerificationDetailModal({ open, onClose, form, verifyData, loading, onD
       return copy;
     });
 
-    const allPassed = checks.every(c => c.pass || isDisplayOnlyCheck(c));
+    const allPassed = checks.length > 0 && checks.every(c => c.pass || isDisplayOnlyCheck(c));
     const hasCriticalFail = checks.some(c => !c.pass && !isDisplayOnlyCheck(c) && c.isCritical);
     let status = rawVerification.status;
-    if (allPassed && status !== 'Already Verified') {
+    if (allPassed && status !== 'Already Verified' && status !== 'Not Found') {
       status = 'Fully Verified';
       modified = true;
-    } else if (hasCriticalFail) {
+    } else if (hasCriticalFail && status !== 'Not Found') {
       status = 'Critical Failure';
       modified = true;
     }
@@ -4115,17 +4130,32 @@ export default function MerchantForms({ onReady }) {
         checksToCheck = checksToCheck.map(c => {
           const copy = { ...c };
 
-          // 1. Fallback for date_difference_days if backend returned N/A, null or failed
-          if (copy.field === 'date_difference_days' && (!copy.pass || copy.actual === 'N/A' || copy.actual === null || copy.actual === undefined || copy.actual === '')) {
-            const intentCheck = checksToCheck.find(k => k.field === 'intent_date');
-            const approvedCheck = checksToCheck.find(k => k.field === 'approved_date');
-            const rawIntent = intentCheck?.actual || f.verificationChecks?.record?.intent_date || f.intent_date;
-            const rawApproved = approvedCheck?.actual || f.verificationChecks?.record?.approved_date || f.approved_date;
+          // 1. Fallback for date_difference_days & intent_to_approved_difference if backend returned N/A, null or failed
+          const isDateDiff = copy.field === 'date_difference_days' || 
+                             copy.field === 'date_difference' || 
+                             copy.field === 'intent_to_approved_difference' ||
+                             /intent.*approv.*diff/i.test(copy.field || '') ||
+                             /intent.*approv.*diff/i.test(copy.label || '') ||
+                             /date.*diff/i.test(copy.field || '');
+
+          if (isDateDiff && (!copy.pass || copy.actual === 'N/A' || copy.actual === null || copy.actual === undefined || copy.actual === '')) {
+            const intentCheck = checksToCheck.find(k => k.field === 'intent_date' || /intent.*date/i.test(k.field || ''));
+            const approvedCheck = checksToCheck.find(k => k.field === 'approved_date' || /approved.*date/i.test(k.field || ''));
+            const recordObj = cachedEntry?.record || f.verificationChecks?.record || {};
+            const rawIntent = intentCheck?.actual || recordObj?.intent_date || f.intent_date;
+            const rawApproved = approvedCheck?.actual || recordObj?.approved_date || f.approved_date;
             if (rawIntent && rawApproved && rawIntent !== 'N/A' && rawApproved !== 'N/A') {
               const d1 = new Date(rawIntent);
               const d2 = new Date(rawApproved);
               if (!isNaN(d1.getTime()) && !isNaN(d2.getTime())) {
                 const diffDays = Math.max(0, Math.round((d2 - d1) / (1000 * 60 * 60 * 24)));
+                copy.actual = diffDays;
+                const maxAllowed = parseFloat(copy.expected) || 7;
+                copy.pass = diffDays <= maxAllowed;
+              }
+            } else if (recordObj?.date_difference_days !== undefined && recordObj?.date_difference_days !== null && recordObj?.date_difference_days !== '') {
+              const diffDays = Number(recordObj.date_difference_days);
+              if (!isNaN(diffDays)) {
                 copy.actual = diffDays;
                 const maxAllowed = parseFloat(copy.expected) || 7;
                 copy.pass = diffDays <= maxAllowed;
